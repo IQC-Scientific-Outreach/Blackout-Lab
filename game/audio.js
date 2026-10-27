@@ -54,11 +54,6 @@ export function createAudio() {
       tone(520, 0, 0.1, 'triangle', 0.07);
       tone(330, 0.08, 0.2, 'triangle', 0.07);
     },
-    glitch: () => {
-      tone(180, 0, 0.06, 'sawtooth', 0.06);
-      tone(140, 0.07, 0.06, 'sawtooth', 0.06);
-      tone(200, 0.14, 0.08, 'sawtooth', 0.06);
-    },
     denied: () => {
       tone(160, 0, 0.16, 'square', 0.05);
       tone(120, 0.18, 0.22, 'square', 0.05);

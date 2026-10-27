@@ -63,7 +63,6 @@ function opSvg(op, x, yOf) {
     );
   }
   if (op.kind === 'reset') return gateBox(x, y, KET[0], 'g-reset');
-  if (op.kind === 'noise') return gateBox(x, y, `!${op.gate.toUpperCase()}`, 'g-noise');
   const auto = op.kind === 'auto' ? ' g-auto' : '';
   if (op.gate === 'cx') {
     const yc = yOf(op.qubits[0]);
@@ -81,7 +80,6 @@ function opWords(op, labels) {
   const names = op.qubits.map((q) => labels[q]);
   if (op.kind === 'measure') return `${MEASURED_BY[op.by] || 'Measured'} ${names[0]}: found in state ${op.result}`;
   if (op.kind === 'reset') return `${names[0]} reset to state 0`;
-  if (op.kind === 'noise') return `Hardware noise: stray ${op.gate.toUpperCase()} on ${names[0]}`;
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
   return `${who}${op.gate.toUpperCase()} on ${names[0]}`;

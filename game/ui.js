@@ -4,25 +4,17 @@
 import { GATE_INFO } from './levels.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
-const pct1 = (p) => `${(p * 100).toFixed(p > 0 && p < 0.1 ? 1 : 0)}%`;
-// The two shares of a 0 / 1 split, to one decimal, always adding up to 100.
-const split = (pOne) => {
-  const one = Math.round(pOne * 1000);
-  const show = (tenths) => `${tenths % 10 ? (tenths / 10).toFixed(1) : tenths / 10}%`;
-  return `${show(1000 - one)} / ${show(one)}`;
-};
 const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'hud-backend', 'btn-restart', 'btn-pause', 'btn-sound', 'note', 'opt-floor',
-    'boot', 'boot-status', 'selftest', 'selftest-caption', 'selftest-body', 'selftest-pause', 'selftest-pause-caption',
-    'selftest-pause-body', 'btn-start', 'btn-skip', 'btn-floors', 'title-floors', 'opt-lives', 'opt-noise', 'opt-noise-note', 'btn-resume',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'note', 'opt-floor',
+    'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'engine-name', 'about', 'circuit-expand',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand',
   ];
   const dom = {};
   for (const id of ids) {
@@ -76,36 +68,9 @@ export function createUI(dom, handlers) {
     }
   }
 
-  function selfTestRows(report) {
-    const row = (name, value, cls) => `<tr><th scope="row">${esc(name)}</th><td class="${cls || ''}">${esc(value)}</td></tr>`;
-    const pass = (v) => (v >= 0.9995 ? 't-pass' : 't-warn');
-    return (
-      row('X: a certain flip reads 1', pct1(report.x_ok), pass(report.x_ok)) +
-      row('H, Z, H: interference reads 1', pct1(report.interference_ok), pass(report.interference_ok)) +
-      row('H: superposition, 0 / 1', split(report.plus_one)) +
-      row('Bell pair: both agree', pct1(report.bell_agree), pass(report.bell_agree)) +
-      row('GHZ trio: all agree', pct1(report.ghz_agree), pass(report.ghz_agree)) +
-      row('Error chance used in the game', report.ideal ? 'none: ideal' : `1-qubit ${pct1(report.p1)}, CNOT ${pct1(report.p2)}`, report.ideal ? 't-pass' : 't-warn')
-    );
-  }
-
-  function setSelfTest(report) {
-    const caption = `Lab self-test on ${report.backend}: ${report.shots} shots, ${report.seconds} s`;
-    for (const [table, cap, body] of [
-      [dom.selftest, dom.selftestCaption, dom.selftestBody],
-      [dom.selftestPause, dom.selftestPauseCaption, dom.selftestPauseBody],
-    ]) {
-      cap.textContent = caption;
-      body.innerHTML = selfTestRows(report);
-      table.hidden = false;
-    }
-    dom.optNoiseNote.textContent = report.ideal ? '(this backend measured none)' : `(1-qubit ${pct1(report.p1)}, CNOT ${pct1(report.p2)})`;
-  }
-
-  function setHud({ floorText, name, lives, maxLives, infinite, backendText, torch }) {
+  function setHud({ floorText, name, lives, maxLives, infinite, torch }) {
     if (floorText !== undefined) dom.hudFloor.textContent = floorText;
     if (name !== undefined) dom.hudName.textContent = name;
-    if (backendText !== undefined) dom.hudBackend.textContent = backendText;
     if (torch !== undefined) {
       dom.hudTorch.hidden = !TORCH_TEXT[torch];
       dom.hudTorch.textContent = TORCH_TEXT[torch] || '';
@@ -221,7 +186,6 @@ export function createUI(dom, handlers) {
 
   const click = (el, fn) => el.addEventListener('click', () => fn && fn());
   click(dom.btnStart, handlers.start);
-  click(dom.btnSkip, handlers.skip);
   click(dom.btnPause, handlers.pause);
   click(dom.btnResume, handlers.resume);
   click(dom.btnRestart, handlers.restart);
@@ -245,7 +209,6 @@ export function createUI(dom, handlers) {
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
   });
   dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
-  dom.optNoise.addEventListener('change', () => handlers.option('noise', dom.optNoise.checked));
   dom.btnFloors.addEventListener('click', () => {
     const open = dom.titleFloors.hidden;
     dom.titleFloors.hidden = !open;
@@ -288,20 +251,11 @@ export function createUI(dom, handlers) {
   return {
     showScreen,
     screen: () => screen,
-    setBoot(text, kind) {
-      dom.bootStatus.textContent = text;
-      dom.boot.classList.toggle('is-error', kind === 'error');
-    },
-    setSelfTest,
     enableStart(label) {
       dom.btnStart.disabled = false;
       dom.btnFloors.disabled = false;
       dom.btnStart.textContent = label;
       if (screen === 'title') focusLater(dom.btnStart);
-    },
-    showSkip(show) {
-      dom.btnSkip.hidden = !show;
-      if (show) dom.btnFloors.disabled = false;
     },
     setHud,
     setPrompt,
@@ -329,9 +283,8 @@ export function createUI(dom, handlers) {
     setSound(on) {
       dom.btnSound.setAttribute('aria-pressed', on ? 'true' : 'false');
     },
-    setOptions({ lives, noise, floor }) {
+    setOptions({ lives, floor }) {
       dom.optLives.checked = lives;
-      dom.optNoise.checked = noise;
       dom.optFloor.value = String(floor);
     },
     setFloors(names, ending) {

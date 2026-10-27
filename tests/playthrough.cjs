@@ -1,17 +1,40 @@
 // End-to-end playthrough: a bot plays all seven floors and the ending in a real
-// browser, using only the keyboard, the pointer and the on-screen gate buttons,
-// against whichever engine the page loads.
+// browser, using only the keyboard, the pointer and the on-screen gate buttons.
 //
-//   python dev/server.py --port 8123 &
-//   NODE_PATH=$(npm root -g) node tests/playthrough.cjs http://127.0.0.1:8123/dev/ [screenshot-dir]
+//   node tests/playthrough.cjs                            the site (index.html), served locally
+//   node tests/playthrough.cjs dist/blackout-lab.html     the single-file build, opened from disk
+//   node tests/playthrough.cjs https://example.org/       any running copy, e.g. the GitHub Pages site
 //
-// Add ?engine=js to the URL to run the same playthrough on the JavaScript stand-in.
+// A second argument names a folder to save screenshots in.
 // Needs the `playwright` package and a Chromium it can launch.
 
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { chromium } = require('playwright');
 
-const url = process.argv[2] || 'http://127.0.0.1:8123/dev/';
+const ROOT = path.resolve(__dirname, '..');
+const target = process.argv[2] || null;
 const shotDir = process.argv[3] || null;
+
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
+
+// Serves the project folder, as GitHub Pages would. Resolves to the server and its address.
+function serve() {
+  const server = http.createServer((req, res) => {
+    const name = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const file = path.join(ROOT, name.endsWith('/') ? `${name}index.html` : name);
+    if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
+    fs.createReadStream(file).pipe(res);
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/` })));
+}
 
 // Runs inside the page: drives the game through real DOM events.
 function installBot() {
@@ -194,6 +217,11 @@ function installBot() {
 }
 
 async function main() {
+  let server = null;
+  let url = target;
+  if (!url) ({ server, url } = await serve());
+  else if (!/^[a-z]+:\/\//i.test(url)) url = pathToFileURL(path.resolve(url)).href;
+  console.log(`playing ${url}`);
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const problems = [];
@@ -695,6 +723,7 @@ async function main() {
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');
   await browser.close();
+  if (server) server.close();
   process.exit(problems.length ? 1 : 0);
 }
 

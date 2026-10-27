@@ -128,14 +128,6 @@ kbd {
 
 .boot { border-left: 2px solid var(--qubit); padding-left: 10px; display: flex; flex-direction: column; gap: 6px; }
 .boot-line { font-family: var(--mono); font-size: 12px; color: var(--qubit); }
-.boot.is-error { border-left-color: var(--bad); }
-.boot.is-error .boot-line { color: var(--bad); }
-.selftest { border-collapse: collapse; font-size: 12px; width: 100%; max-width: 430px; }
-.selftest caption { text-align: left; font-family: var(--mono); font-size: 11px; color: var(--dim); padding-bottom: 3px; }
-.selftest th, .selftest td { text-align: left; padding: 2px 10px 2px 0; border-top: 1px solid var(--line); font-weight: 400; }
-.selftest td { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.selftest td.t-pass { color: var(--ok); }
-.selftest td.t-warn { color: var(--torch); }
 
 .keys { display: grid; gap: 4px; font-size: 13px; }
 .keys > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; border-top: 1px solid var(--line); padding-top: 4px; }
@@ -232,7 +224,6 @@ kbd {
 .g-cx line { stroke: var(--link); } .g-cx .ctrl { fill: var(--link); } .g-cx .targ { fill: var(--panel-2); stroke: var(--link); stroke-width: 1.5; }
 .g-measure rect { stroke: var(--ink); } .g-measure .result { fill: var(--torch); } .g-measure .result-text { fill: #1c1403; font-size: 10px; }
 .g-reset rect { stroke: var(--dim); stroke-dasharray: 3 2; } .g-reset text { fill: var(--dim); font-size: 10px; }
-.g-noise rect { stroke: var(--bad); stroke-dasharray: 3 2; } .g-noise text { fill: var(--bad); font-size: 10px; }
 .readout rect { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.5; }
 .readout .r-ket { fill: var(--ink); font-size: 11px; font-weight: 700; text-anchor: middle; }
 .readout .r-word { fill: var(--dim); font-size: 10px; }

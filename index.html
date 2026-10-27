@@ -11,11 +11,11 @@
 <body>
 <div class="lab" id="lab">
   <header class="topbar">
-    <p class="brand"><span class="brand-mark">Blackout Lab</span> <span class="brand-sub">A Quantum Jumping Puzzle Game</span></p>
-    <div class="hud" id="hud" aria-label="Game status">
+    <h1 class="brand"><span class="brand-mark">Blackout Lab</span> <span class="brand-sub">A Quantum Jumping Puzzle Game</span></h1>
+    <div class="hud" id="hud" role="group" aria-label="Game status">
       <span class="hud-item" id="hud-floor">Floor 1 of 7</span>
       <span class="hud-item hud-name" id="hud-name">Superposition</span>
-      <span class="hud-item" id="hud-lives" aria-label="Lives: 3"></span>
+      <span class="hud-item" id="hud-lives" role="img" aria-label="Lives: 3"></span>
       <span class="hud-item hud-torch" id="hud-torch" hidden></span>
     </div>
     <div class="top-actions">
@@ -25,7 +25,7 @@
     </div>
   </header>
 
-  <div class="deck">
+  <main class="deck">
     <div class="left">
       <div class="viewport" id="viewport">
         <canvas id="game" width="960" height="540" tabindex="0" role="img"
@@ -36,7 +36,7 @@
           <section class="screen" id="screen-title" aria-labelledby="title-h">
             <div class="title-main">
               <p class="eyebrow">Seven floors &middot; one flashlight</p>
-              <h1 id="title-h">Blackout Lab</h1>
+              <h2 class="title-name" id="title-h">Blackout Lab</h2>
               <p class="lede">The power is out in a quantum research facility, and the lift platforms have become
                 entangled with the laboratory's qubits, exhibiting macroscopic quantum behaviour!</p>
               <p class="lede">Use your flashlight to perform measurements and terminals to alter quantum states.</p>
@@ -211,7 +211,7 @@
         </section>
       </div>
     </aside>
-  </div>
+  </main>
 
   <footer class="credit">
     <p>This effort is supported by Qollab &amp; IonQ.</p>

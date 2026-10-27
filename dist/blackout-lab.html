@@ -71,7 +71,7 @@ kbd {
 
 /* ---- top bar ---- */
 .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
-.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand { display: flex; align-items: baseline; gap: 10px; font-size: inherit; font-weight: inherit; }
 .brand-mark { font-family: var(--sign); font-weight: 800; font-size: 26px; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1; }
 .brand-sub { color: var(--dim); font-size: 13px; }
 .hud { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-inline-start: auto; font-family: var(--mono); font-size: 12px; }
@@ -130,8 +130,8 @@ kbd {
 .title-main, .title-side, .screen-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .screen-card { max-width: 560px; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--qubit); }
-.screen h1 { font-family: var(--sign); font-weight: 800; font-size: clamp(34px, 5.4vw, 60px); line-height: 0.92; letter-spacing: 0.04em; text-transform: uppercase; text-wrap: balance; }
 .screen h2 { font-family: var(--sign); font-weight: 800; font-size: clamp(24px, 4vw, 34px); line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; text-wrap: balance; }
+.screen .title-name { font-family: var(--sign); font-weight: 800; font-size: clamp(34px, 5.4vw, 60px); line-height: 0.92; letter-spacing: 0.04em; text-transform: uppercase; text-wrap: balance; }
 .title-side h2 { font-size: 18px; color: var(--dim); }
 .lede { font-size: 14px; max-width: 62ch; }
 .fine { font-size: 12px; color: var(--dim); }
@@ -315,11 +315,11 @@ kbd {
 <body>
 <div class="lab" id="lab">
   <header class="topbar">
-    <p class="brand"><span class="brand-mark">Blackout Lab</span> <span class="brand-sub">A Quantum Jumping Puzzle Game</span></p>
-    <div class="hud" id="hud" aria-label="Game status">
+    <h1 class="brand"><span class="brand-mark">Blackout Lab</span> <span class="brand-sub">A Quantum Jumping Puzzle Game</span></h1>
+    <div class="hud" id="hud" role="group" aria-label="Game status">
       <span class="hud-item" id="hud-floor">Floor 1 of 7</span>
       <span class="hud-item hud-name" id="hud-name">Superposition</span>
-      <span class="hud-item" id="hud-lives" aria-label="Lives: 3"></span>
+      <span class="hud-item" id="hud-lives" role="img" aria-label="Lives: 3"></span>
       <span class="hud-item hud-torch" id="hud-torch" hidden></span>
     </div>
     <div class="top-actions">
@@ -329,7 +329,7 @@ kbd {
     </div>
   </header>
 
-  <div class="deck">
+  <main class="deck">
     <div class="left">
       <div class="viewport" id="viewport">
         <canvas id="game" width="960" height="540" tabindex="0" role="img"
@@ -340,7 +340,7 @@ kbd {
           <section class="screen" id="screen-title" aria-labelledby="title-h">
             <div class="title-main">
               <p class="eyebrow">Seven floors &middot; one flashlight</p>
-              <h1 id="title-h">Blackout Lab</h1>
+              <h2 class="title-name" id="title-h">Blackout Lab</h2>
               <p class="lede">The power is out in a quantum research facility, and the lift platforms have become
                 entangled with the laboratory's qubits, exhibiting macroscopic quantum behaviour!</p>
               <p class="lede">Use your flashlight to perform measurements and terminals to alter quantum states.</p>
@@ -515,7 +515,7 @@ kbd {
         </section>
       </div>
     </aside>
-  </div>
+  </main>
 
   <footer class="credit">
     <p>This effort is supported by Qollab &amp; IonQ.</p>
@@ -1973,6 +1973,7 @@ function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
   const mctx = mask.getContext('2d');
+  const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let scale = 1;
 
   function resize() {
@@ -3435,7 +3436,7 @@ function createRenderer(canvas) {
       return;
     }
     const room = G.room;
-    const shake = G.shake;
+    const shake = calm.matches ? 0 : G.shake;
     ctx.save();
     if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 8, (Math.random() - 0.5) * shake * 8);
 
@@ -4762,12 +4763,13 @@ function startGame() {
     if (t.battery === 'low' && G.mode === 'play') {
       t.flickT -= dt;
       if (t.flickT <= 0) {
-        t.flickLeft = 0.5;
+        t.flickLeft = 0.8;
         t.flickT = 2.6 + Math.random() * 3;
       }
       if (t.flickLeft > 0) {
         t.flickLeft -= dt;
-        blink = Math.sin(t.flickLeft * 55) > -0.1;
+        // About 2.4 blinks a second: under the 3 flashes a second that can trigger seizures (WCAG 2.3.1).
+        blink = Math.sin(t.flickLeft * 15) > -0.1;
       }
     }
     t.lowered = G.mode !== 'play';

@@ -662,12 +662,13 @@ export function startGame() {
     if (t.battery === 'low' && G.mode === 'play') {
       t.flickT -= dt;
       if (t.flickT <= 0) {
-        t.flickLeft = 0.5;
+        t.flickLeft = 0.8;
         t.flickT = 2.6 + Math.random() * 3;
       }
       if (t.flickLeft > 0) {
         t.flickLeft -= dt;
-        blink = Math.sin(t.flickLeft * 55) > -0.1;
+        // About 2.4 blinks a second: under the 3 flashes a second that can trigger seizures (WCAG 2.3.1).
+        blink = Math.sin(t.flickLeft * 15) > -0.1;
       }
     }
     t.lowered = G.mode !== 'play';

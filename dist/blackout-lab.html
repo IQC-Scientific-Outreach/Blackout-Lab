@@ -129,6 +129,10 @@ kbd {
 #screen-title { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: clamp(14px, 3%, 32px); align-items: start; }
 .title-main, .title-side, .screen-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .screen-card { max-width: 560px; }
+#screen-pause { max-width: 860px; }
+.pause-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px 24px; align-items: start; }
+.pause-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pause-keys { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--qubit); }
 .screen h2 { font-family: var(--sign); font-weight: 800; font-size: clamp(24px, 4vw, 34px); line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; text-wrap: balance; }
 .screen .title-name { font-family: var(--sign); font-weight: 800; font-size: clamp(34px, 5.4vw, 60px); line-height: 0.92; letter-spacing: 0.04em; text-transform: uppercase; text-wrap: balance; }
@@ -195,7 +199,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .touch-btn.is-down { background: var(--torch); color: #1c1403; }
 
 /* ---- console strip under the window ---- */
-.dock { min-height: 98px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; }
+.dock { min-height: 56px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; }
 .dock-play { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; }
 .note { align-self: flex-start; font: 700 12px var(--mono); color: #1c1403; background: var(--torch); border-radius: 3px; padding: 3px 8px; }
 .prompt .fine { margin-inline-start: 6px; white-space: nowrap; }
@@ -220,6 +224,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .term-status { font-size: 13px; color: var(--dim); min-height: 1.45em; }
 .term-status.is-quantum { color: var(--qubit); }
 .term-status.is-bad { color: var(--bad); }
+/* Passive terminal (developer option): the key that applies each gate. */
+.op-key { grid-column: 1 / -1; justify-self: center; margin-top: 4px; min-width: 18px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; font: 700 11px var(--mono); color: var(--torch); text-align: center; }
 
 /* ---- instrument rack ---- */
 .rack { position: relative; min-width: 0; }
@@ -235,6 +241,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .circuit-svg[data-fit] { max-width: 100%; height: auto; }
 .module-head { display: flex; align-items: center; gap: 8px; }
 .module-head .plate { flex: 1; }
+.module.is-idle { display: none; }
+.goal-module { gap: 4px; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }
 .circuit-svg { display: block; font-family: var(--mono); }
@@ -329,6 +337,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 /* ---- narrow screens: the rack moves under the game ---- */
 @media (max-width: 900px) {
   .deck { grid-template-columns: minmax(0, 1fr); }
+  .pause-cols { grid-template-columns: minmax(0, 1fr); }
   .rack-inner { position: static; overflow: visible; }
   #screen-title { grid-template-columns: minmax(0, 1fr); }
   .hud { margin-inline-start: 0; }
@@ -389,6 +398,12 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
                 <label class="dev-opt" title="Landing on a superposed platform measures it: you land if it collapses where you touched it.">
                   <input type="checkbox" role="switch" id="dev-touch-collapse"> <b>Touch-collapse</b>
                   <span class="dev-hint">landing on a superposition measures it</span></label>
+                <label class="dev-opt" title="Platforms move as soon as a gate is applied, while you are still at the terminal.">
+                  <input type="checkbox" role="switch" id="dev-instant"> <b>Instant response</b>
+                  <span class="dev-hint">platforms move while you are at a terminal</span></label>
+                <label class="dev-opt" title="Standing at a terminal shows its gates. Press 1, 2, 3 and so on, or click, to apply one. No E needed.">
+                  <input type="checkbox" role="switch" id="dev-passive-terminal"> <b>Passive terminal</b>
+                  <span class="dev-hint">stand at a terminal, press 1, 2, 3 for gates</span></label>
                 <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
                   <b id="dev-panel-name">Panel position</b>
                   <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
@@ -416,15 +431,23 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 
           <section class="screen screen-card" id="screen-pause" aria-labelledby="pause-h" hidden>
             <h2 id="pause-h">Paused</h2>
-            <fieldset class="options">
-              <legend>Options</legend>
-              <label class="opt" for="opt-lives"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
-              <label class="opt" for="opt-floor">Skip to floor <select id="opt-floor"></select></label>
-            </fieldset>
-            <div class="title-actions">
-              <button type="button" class="primary" id="btn-resume">Resume</button>
-              <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
-              <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+            <div class="pause-cols">
+              <div class="pause-main">
+                <fieldset class="options">
+                  <legend>Options</legend>
+                  <label class="opt"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
+                  <label class="opt">Skip to floor <select id="opt-floor"></select></label>
+                </fieldset>
+                <div id="pause-dev-slot"></div>
+                <div class="title-actions">
+                  <button type="button" class="primary" id="btn-resume">Resume</button>
+                  <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
+                  <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+                </div>
+              </div>
+              <div class="pause-keys" id="pause-keys">
+                <h3 class="plate plate-small">Controls</h3>
+              </div>
             </div>
           </section>
 
@@ -518,10 +541,14 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
             <li><span>View GitHub Repository:</span> <a href="" target="_blank" rel="noopener noreferrer"></a></li>
           </ul>
         </section>
+        <section class="module goal-module" aria-labelledby="floor-tag">
+          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
+          <p class="goal" id="goal"></p>
+        </section>
         <section class="module" aria-labelledby="mod-circuit-h">
           <div class="module-head">
             <h2 class="plate" id="mod-circuit-h">Circuit</h2>
-            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="false">Expand</button>
+            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="true">Collapse</button>
           </div>
           <div class="circuit" id="circuit">
             <div class="circuit-fixed" id="circuit-labels"></div>
@@ -536,6 +563,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
             <button type="button" class="key-btn" id="copy-code">Copy code</button>
           </details>
         </section>
+        <section class="module is-idle" id="code-module" aria-label="Qiskit code"></section>
 
         <section class="module" aria-labelledby="mod-probs-h">
           <h2 class="plate" id="mod-probs-h">Probabilities</h2>
@@ -547,8 +575,6 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 
         <section class="module" aria-labelledby="mod-notes-h">
           <h2 class="plate" id="mod-notes-h">Lab notes</h2>
-          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
-          <p class="goal" id="goal"></p>
           <p class="concept" id="concept"></p>
           <ol class="hints" id="hints"></ol>
           <button type="button" class="key-btn" id="hint-button">Show a hint (H)</button>
@@ -1767,6 +1793,8 @@ const KEYS = {
   mute: ['KeyM'],
   hint: ['KeyH'],
 };
+// 1 to 9 pick a gate at a passive terminal (developer option).
+for (let k = 1; k <= 9; k += 1) KEYS[`op${k}`] = [`Digit${k}`, `Numpad${k}`];
 
 const ACTION_OF = {};
 for (const action of Object.keys(KEYS)) for (const code of KEYS[action]) ACTION_OF[code] = action;
@@ -3624,6 +3652,8 @@ function createPanel(dom) {
   const log = [];
   const circuitModule = dom.circuitGates.closest('.module');
   const home = { parent: circuitModule.parentElement, next: circuitModule.nextElementSibling };
+  const codeBox = dom.code.closest('details');
+  const codeModule = document.getElementById('code-module');
 
   const look = (q) => (lamps.has(q.id) ? 'door' : q.role);
 
@@ -3774,11 +3804,18 @@ function createPanel(dom) {
       .join('');
   }
 
-  // Expanded, the circuit moves under the game, where it has the full width.
+  // Expanded (the default), the circuit moves under the game, where it has the full
+  // width; its Qiskit code listing stays in the rack, in a module of its own.
   function setExpanded(on) {
     expanded = on;
-    if (on) dom.dockPlay.closest('.left').appendChild(circuitModule);
-    else home.parent.insertBefore(circuitModule, home.next);
+    if (on) {
+      dom.dockPlay.closest('.left').appendChild(circuitModule);
+      codeModule.appendChild(codeBox);
+    } else {
+      home.parent.insertBefore(circuitModule, home.next);
+      circuitModule.appendChild(codeBox);
+    }
+    codeModule.classList.toggle('is-idle', !on);
     circuitModule.classList.toggle('is-expanded', on);
     dom.circuitExpand.textContent = on ? 'Collapse' : 'Expand';
     dom.circuitExpand.setAttribute('aria-expanded', on ? 'true' : 'false');
@@ -3802,9 +3839,14 @@ function createPanel(dom) {
       : '<li class="log-quiet">Nothing has happened yet.</li>';
   }
 
+  setExpanded(true);
+
   return {
     setLevel,
     setHints,
+    setGoal(text) {
+      if (dom.goal.textContent !== text) dom.goal.textContent = text;
+    },
     setSequential(on) {
       sequential = !!on;
       refresh();
@@ -3848,7 +3890,7 @@ function grabDom() {
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'pause-dev-slot', 'pause-keys',
   ];
   const dom = {};
   for (const id of ids) {
@@ -3884,6 +3926,11 @@ function createUI(dom, handlers) {
   let screen = 'title';
   let toastLeft = 0;
   let terminal = null;
+  let passive = false; // a passive terminal (developer option): shown, but the game keeps the keys
+  // Developer options live on the title screen and move into the pause screen while it shows.
+  const devHome = { parent: dom.dev.parentElement, next: dom.dev.nextElementSibling };
+  // The pause screen repeats the title screen's list of controls.
+  dom.pauseKeys.appendChild(document.querySelector('#screen-title .keys').cloneNode(true));
 
   function focusLater(el) {
     if (el && el.focus) requestAnimationFrame(() => el.focus({ preventScroll: true }));
@@ -3894,6 +3941,8 @@ function createUI(dom, handlers) {
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;
+    if (name === 'pause') dom.pauseDevSlot.appendChild(dom.dev);
+    else if (name === 'title') devHome.parent.insertBefore(dom.dev, devHome.next);
     if (name) {
       const first = dom[`screen_${name}`].querySelector('.primary:not(:disabled)') || dom[`screen_${name}`].querySelector('button:not(:disabled)');
       focusLater(first);
@@ -3941,12 +3990,15 @@ function createUI(dom, handlers) {
     return op.q.join(', ');
   }
 
-  function openTerminal(term, carrying) {
+  // `asPassive`: shown just by standing at the terminal, gates picked with the number keys.
+  function openTerminal(term, carrying, asPassive) {
     terminal = term;
+    passive = !!asPassive;
     dom.dockPlay.hidden = true;
     dom.dockTerminal.hidden = false;
+    dom.termClose.hidden = passive;
     const kind = term.box ? 'Box port' : term.port ? `${term.id} · dead terminal, canister port only` : `Terminal ${term.id}`;
-    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · flashlight lowered`;
+    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · ${passive ? 'flashlight still on' : 'flashlight lowered'}`;
     dom.termOps.innerHTML = term.ops
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
@@ -3955,16 +4007,22 @@ function createUI(dom, handlers) {
         const on = op.gate === 'cx' ? `from ${op.q[0]} to ${op.q[1]}` : `on ${op.q.join(' and ')}`;
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
-          `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span></button>`
+          `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span>` +
+          `${passive && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
         );
       })
       .join('');
+    if (passive) {
+      setTerminalStatus(`Press ${term.ops.length > 1 ? `1 to ${Math.min(term.ops.length, 9)}` : '1'}, or click a gate. Your flashlight stays on here.`, '');
+      return;
+    }
     setTerminalStatus('Pick a gate. Nothing is observed while you are at the terminal.', '');
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
   }
 
   function closeTerminal() {
     terminal = null;
+    passive = false;
     dom.dockTerminal.hidden = true;
     dom.dockPlay.hidden = false;
     focusLater(dom.game);
@@ -3980,7 +4038,7 @@ function createUI(dom, handlers) {
     const active = document.activeElement;
     if (busy) focusedOp = active && active.dataset ? active.dataset.op : undefined;
     for (const b of dom.termOps.querySelectorAll('button')) b.disabled = busy || b.dataset.locked === '1';
-    if (!busy && terminal) {
+    if (!busy && terminal && !passive) {
       const again = focusedOp !== undefined ? dom.termOps.querySelector(`button[data-op="${focusedOp}"]:not(:disabled)`) : null;
       const now = document.activeElement;
       if (again) again.focus({ preventScroll: true });
@@ -4009,7 +4067,8 @@ function createUI(dom, handlers) {
 
   // -- wiring ---------------------------------------------------------------
 
-  const instruments = Array.from(dom.about.parentElement.children).filter((el) => el !== dom.about);
+  // Every instrument module, wherever it is now (the circuit may sit under the game).
+  const instruments = () => Array.from(document.querySelectorAll('.lab .module')).filter((el) => el !== dom.about);
   // A project link shows its own address as text. Until an address is filled in
   // (index.html), the line says so instead of offering a link that goes nowhere.
   for (const link of dom.about.querySelectorAll('a')) {
@@ -4042,10 +4101,17 @@ function createUI(dom, handlers) {
   dom.termOps.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-op]');
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
+    if (passive && ev.detail > 0) dom.game.focus({ preventScroll: true }); // a click hands the keys back to the game
   });
   dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
   // Developer options: each control is one entry of the game's `dev` settings.
-  const devSwitches = { keyTorch: dom.devKeyTorch, touchCollapse: dom.devTouchCollapse, circuitRight: dom.devCircuitRight };
+  const devSwitches = {
+    keyTorch: dom.devKeyTorch,
+    touchCollapse: dom.devTouchCollapse,
+    instantResponse: dom.devInstant,
+    passiveTerminal: dom.devPassiveTerminal,
+    circuitRight: dom.devCircuitRight,
+  };
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
   for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
@@ -4125,7 +4191,7 @@ function createUI(dom, handlers) {
     },
     // The title screen swaps the instruments in the rack for a short "about" panel.
     setAbout(on) {
-      for (const el of instruments) el.hidden = on;
+      for (const el of instruments()) el.hidden = on;
       dom.about.hidden = !on;
     },
     setSound(on) {
@@ -4212,7 +4278,7 @@ const NO_QUBITS = {
 
 // Developer options (title screen). Remembered in this browser only.
 const DEV_KEY = 'blackoutLab.dev';
-const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, panel: 'right', circuitRight: false };
+const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, instantResponse: false, passiveTerminal: false, panel: 'right', circuitRight: false };
 
 function loadDev() {
   try {
@@ -4281,6 +4347,8 @@ function startGame() {
     hasKey: false,
     busy: false,
     terminal: null,
+    passive: null, // the terminal shown passively (developer option), if any
+    passiveCarrying: false,
     fallT: 0,
     started: false,
   };
@@ -4335,6 +4403,7 @@ function startGame() {
   const LIVE_MODES = ['play', 'terminal', 'dialogue', 'cutscene'];
   function setMode(mode) {
     G.mode = mode;
+    if (mode !== 'play') closePassive();
     input.setEnabled(LIVE_MODES.includes(mode));
     ui.setPlaying(LIVE_MODES.includes(mode));
     ui.setMenuButton(mode !== 'boot' && mode !== 'title');
@@ -4586,6 +4655,7 @@ function startGame() {
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
     G.torch.flickLeft = 0;
     G.terminal = null;
+    G.passive = null;
     G.busy = false;
   }
 
@@ -4595,7 +4665,7 @@ function startGame() {
     const epoch = (G.epoch += 1);
     const backdrop = !!(opts && opts.backdrop);
     const carry = opts && opts.carry;
-    if (G.terminal) ui.closeTerminal();
+    if (G.terminal || G.passive) ui.closeTerminal();
     G.levelIndex = index;
     buildFloor(level);
     ui.setNote(null);
@@ -4658,6 +4728,7 @@ function startGame() {
     if (index < 0) return;
     G.roomIndex = index;
     G.room = G.rooms[index];
+    closePassive();
     placePlayer(portal.arrive.x, portal.arrive.y);
     G.fx = [];
     G.floaters = [];
@@ -4693,6 +4764,25 @@ function startGame() {
     setMode('play');
   }
 
+  // Developer option: standing at a terminal shows its gates, and 1 to 9 apply them,
+  // without entering the terminal (so the player can still move and look).
+  function updatePassive(hit) {
+    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !(hit.obj.port && !carrying()) ? hit.obj : null;
+    if (!hit && G.passive && !G.player.onGround) return; // a hop at the terminal keeps it open
+    if (term === G.passive && (!term || G.passiveCarrying === carrying())) return;
+    closePassive();
+    if (!term) return;
+    G.passive = term;
+    G.passiveCarrying = carrying();
+    ui.openTerminal(term, carrying(), true);
+  }
+
+  function closePassive() {
+    if (!G.passive) return;
+    G.passive = null;
+    ui.closeTerminal();
+  }
+
   async function machineMeasure(term, op) {
     const epoch = G.epoch;
     const before = G.q;
@@ -4725,7 +4815,7 @@ function startGame() {
   }
 
   async function applyOp(i) {
-    const term = G.terminal;
+    const term = G.terminal || G.passive;
     if (!term || G.busy || !term.ops[i]) return;
     const op = term.ops[i];
     if (op.needsCanister && !carrying()) {
@@ -5062,7 +5152,8 @@ function startGame() {
     return out;
   }
 
-  function physicsStep(dt) {
+  // Definite platforms glide to the height their state says, carrying the player.
+  function movePlatforms(dt) {
     const pl = G.player;
     for (const p of G.platforms) {
       if (p.state === null) continue;
@@ -5071,6 +5162,11 @@ function startGame() {
       p.y += Math.sign(gap) * Math.min(Math.abs(gap), 300 * dt);
       if (pl.standing === p) pl.y += p.y - before;
     }
+  }
+
+  function physicsStep(dt) {
+    const pl = G.player;
+    movePlatforms(dt);
     const want = G.mode === 'play' ? (input.held.right ? 1 : 0) - (input.held.left ? 1 : 0) : 0;
     const targetV = want * PHYS.speed;
     const dv = targetV - pl.vx;
@@ -5226,7 +5322,7 @@ function startGame() {
   function loadTerrace() {
     const s = TERRACE.scene;
     G.epoch += 1;
-    if (G.terminal) ui.closeTerminal();
+    if (G.terminal || G.passive) ui.closeTerminal();
     G.levelIndex = LEVELS.length;
     buildFloor(TERRACE);
     ui.setNote(null);
@@ -5470,6 +5566,7 @@ function startGame() {
       G.terminal = null;
       ui.closeTerminal();
     }
+    closePassive();
     G.dialogue = null;
     G.bubbles = [];
     setMode('title');
@@ -5524,6 +5621,7 @@ function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate to apply it.`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -5536,6 +5634,7 @@ function startGame() {
     const act = interactPrompt(hit);
     const orAct = act ? ` ${act}` : '';
     const station = G.room.battery;
+    panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
@@ -5553,7 +5652,7 @@ function startGame() {
       );
     }
     else if (d && d.open && (d.key || d.item)) ui.setPrompt('The exit is open. Walk through it.');
-    else ui.setPrompt(esc(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal));
+    else ui.setPrompt('Walk with <b>&larr;</b> <b>&rarr;</b>, jump with <b>Space</b>, and use terminals with <b>E</b>. The goal is at the top of the panel.');
   }
 
   function update(dt) {
@@ -5585,6 +5684,7 @@ function startGame() {
     if (G.mode === 'terminal') {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
+      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
       updateTorch(dt);
       return;
     }
@@ -5619,8 +5719,12 @@ function startGame() {
 
     pickUps();
     const hit = findInteract();
+    updatePassive(hit);
+    for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
     if (input.take('use') && hit) {
-      if (hit.type === 'terminal') useTerminal(hit.obj);
+      if (hit.type === 'terminal') {
+        if (!G.dev.passiveTerminal) useTerminal(hit.obj);
+      }
       else if (hit.type === 'npc') {
         const talk = (story().talk || {})[hit.obj.id];
         if (talk) talk(storyCtx(hit.obj));

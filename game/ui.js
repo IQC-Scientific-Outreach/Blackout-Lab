@@ -14,7 +14,7 @@ export function grabDom() {
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'pause-dev-slot', 'pause-keys',
   ];
   const dom = {};
   for (const id of ids) {
@@ -50,6 +50,11 @@ export function createUI(dom, handlers) {
   let screen = 'title';
   let toastLeft = 0;
   let terminal = null;
+  let passive = false; // a passive terminal (developer option): shown, but the game keeps the keys
+  // Developer options live on the title screen and move into the pause screen while it shows.
+  const devHome = { parent: dom.dev.parentElement, next: dom.dev.nextElementSibling };
+  // The pause screen repeats the title screen's list of controls.
+  dom.pauseKeys.appendChild(document.querySelector('#screen-title .keys').cloneNode(true));
 
   function focusLater(el) {
     if (el && el.focus) requestAnimationFrame(() => el.focus({ preventScroll: true }));
@@ -60,6 +65,8 @@ export function createUI(dom, handlers) {
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;
+    if (name === 'pause') dom.pauseDevSlot.appendChild(dom.dev);
+    else if (name === 'title') devHome.parent.insertBefore(dom.dev, devHome.next);
     if (name) {
       const first = dom[`screen_${name}`].querySelector('.primary:not(:disabled)') || dom[`screen_${name}`].querySelector('button:not(:disabled)');
       focusLater(first);
@@ -107,12 +114,15 @@ export function createUI(dom, handlers) {
     return op.q.join(', ');
   }
 
-  function openTerminal(term, carrying) {
+  // `asPassive`: shown just by standing at the terminal, gates picked with the number keys.
+  function openTerminal(term, carrying, asPassive) {
     terminal = term;
+    passive = !!asPassive;
     dom.dockPlay.hidden = true;
     dom.dockTerminal.hidden = false;
+    dom.termClose.hidden = passive;
     const kind = term.box ? 'Box port' : term.port ? `${term.id} · dead terminal, canister port only` : `Terminal ${term.id}`;
-    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · flashlight lowered`;
+    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · ${passive ? 'flashlight still on' : 'flashlight lowered'}`;
     dom.termOps.innerHTML = term.ops
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
@@ -121,16 +131,22 @@ export function createUI(dom, handlers) {
         const on = op.gate === 'cx' ? `from ${op.q[0]} to ${op.q[1]}` : `on ${op.q.join(' and ')}`;
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
-          `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span></button>`
+          `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span>` +
+          `${passive && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
         );
       })
       .join('');
+    if (passive) {
+      setTerminalStatus(`Press ${term.ops.length > 1 ? `1 to ${Math.min(term.ops.length, 9)}` : '1'}, or click a gate. Your flashlight stays on here.`, '');
+      return;
+    }
     setTerminalStatus('Pick a gate. Nothing is observed while you are at the terminal.', '');
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
   }
 
   function closeTerminal() {
     terminal = null;
+    passive = false;
     dom.dockTerminal.hidden = true;
     dom.dockPlay.hidden = false;
     focusLater(dom.game);
@@ -146,7 +162,7 @@ export function createUI(dom, handlers) {
     const active = document.activeElement;
     if (busy) focusedOp = active && active.dataset ? active.dataset.op : undefined;
     for (const b of dom.termOps.querySelectorAll('button')) b.disabled = busy || b.dataset.locked === '1';
-    if (!busy && terminal) {
+    if (!busy && terminal && !passive) {
       const again = focusedOp !== undefined ? dom.termOps.querySelector(`button[data-op="${focusedOp}"]:not(:disabled)`) : null;
       const now = document.activeElement;
       if (again) again.focus({ preventScroll: true });
@@ -175,7 +191,8 @@ export function createUI(dom, handlers) {
 
   // -- wiring ---------------------------------------------------------------
 
-  const instruments = Array.from(dom.about.parentElement.children).filter((el) => el !== dom.about);
+  // Every instrument module, wherever it is now (the circuit may sit under the game).
+  const instruments = () => Array.from(document.querySelectorAll('.lab .module')).filter((el) => el !== dom.about);
   // A project link shows its own address as text. Until an address is filled in
   // (index.html), the line says so instead of offering a link that goes nowhere.
   for (const link of dom.about.querySelectorAll('a')) {
@@ -208,10 +225,17 @@ export function createUI(dom, handlers) {
   dom.termOps.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-op]');
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
+    if (passive && ev.detail > 0) dom.game.focus({ preventScroll: true }); // a click hands the keys back to the game
   });
   dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
   // Developer options: each control is one entry of the game's `dev` settings.
-  const devSwitches = { keyTorch: dom.devKeyTorch, touchCollapse: dom.devTouchCollapse, circuitRight: dom.devCircuitRight };
+  const devSwitches = {
+    keyTorch: dom.devKeyTorch,
+    touchCollapse: dom.devTouchCollapse,
+    instantResponse: dom.devInstant,
+    passiveTerminal: dom.devPassiveTerminal,
+    circuitRight: dom.devCircuitRight,
+  };
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
   for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
@@ -291,7 +315,7 @@ export function createUI(dom, handlers) {
     },
     // The title screen swaps the instruments in the rack for a short "about" panel.
     setAbout(on) {
-      for (const el of instruments) el.hidden = on;
+      for (const el of instruments()) el.hidden = on;
       dom.about.hidden = !on;
     },
     setSound(on) {

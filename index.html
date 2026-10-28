@@ -58,6 +58,12 @@
                 <label class="dev-opt" title="Landing on a superposed platform measures it: you land if it collapses where you touched it.">
                   <input type="checkbox" role="switch" id="dev-touch-collapse"> <b>Touch-collapse</b>
                   <span class="dev-hint">landing on a superposition measures it</span></label>
+                <label class="dev-opt" title="Platforms move as soon as a gate is applied, while you are still at the terminal.">
+                  <input type="checkbox" role="switch" id="dev-instant"> <b>Instant response</b>
+                  <span class="dev-hint">platforms move while you are at a terminal</span></label>
+                <label class="dev-opt" title="Standing at a terminal shows its gates. Press 1, 2, 3 and so on, or click, to apply one. No E needed.">
+                  <input type="checkbox" role="switch" id="dev-passive-terminal"> <b>Passive terminal</b>
+                  <span class="dev-hint">stand at a terminal, press 1, 2, 3 for gates</span></label>
                 <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
                   <b id="dev-panel-name">Panel position</b>
                   <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
@@ -85,15 +91,23 @@
 
           <section class="screen screen-card" id="screen-pause" aria-labelledby="pause-h" hidden>
             <h2 id="pause-h">Paused</h2>
-            <fieldset class="options">
-              <legend>Options</legend>
-              <label class="opt" for="opt-lives"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
-              <label class="opt" for="opt-floor">Skip to floor <select id="opt-floor"></select></label>
-            </fieldset>
-            <div class="title-actions">
-              <button type="button" class="primary" id="btn-resume">Resume</button>
-              <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
-              <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+            <div class="pause-cols">
+              <div class="pause-main">
+                <fieldset class="options">
+                  <legend>Options</legend>
+                  <label class="opt"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
+                  <label class="opt">Skip to floor <select id="opt-floor"></select></label>
+                </fieldset>
+                <div id="pause-dev-slot"></div>
+                <div class="title-actions">
+                  <button type="button" class="primary" id="btn-resume">Resume</button>
+                  <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
+                  <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+                </div>
+              </div>
+              <div class="pause-keys" id="pause-keys">
+                <h3 class="plate plate-small">Controls</h3>
+              </div>
             </div>
           </section>
 
@@ -187,10 +201,14 @@
             <li><span>View GitHub Repository:</span> <a href="" target="_blank" rel="noopener noreferrer"></a></li>
           </ul>
         </section>
+        <section class="module goal-module" aria-labelledby="floor-tag">
+          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
+          <p class="goal" id="goal"></p>
+        </section>
         <section class="module" aria-labelledby="mod-circuit-h">
           <div class="module-head">
             <h2 class="plate" id="mod-circuit-h">Circuit</h2>
-            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="false">Expand</button>
+            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="true">Collapse</button>
           </div>
           <div class="circuit" id="circuit">
             <div class="circuit-fixed" id="circuit-labels"></div>
@@ -205,6 +223,7 @@
             <button type="button" class="key-btn" id="copy-code">Copy code</button>
           </details>
         </section>
+        <section class="module is-idle" id="code-module" aria-label="Qiskit code"></section>
 
         <section class="module" aria-labelledby="mod-probs-h">
           <h2 class="plate" id="mod-probs-h">Probabilities</h2>
@@ -216,8 +235,6 @@
 
         <section class="module" aria-labelledby="mod-notes-h">
           <h2 class="plate" id="mod-notes-h">Lab notes</h2>
-          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
-          <p class="goal" id="goal"></p>
           <p class="concept" id="concept"></p>
           <ol class="hints" id="hints"></ol>
           <button type="button" class="key-btn" id="hint-button">Show a hint (H)</button>

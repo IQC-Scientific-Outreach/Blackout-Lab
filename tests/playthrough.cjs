@@ -273,20 +273,31 @@ async function main() {
   });
   await page.waitForTimeout(120);
   await shot('01-superposition');
-  // The circuit can be expanded: it moves under the game and is drawn whole, with nothing to scroll.
+  // The circuit starts expanded: under the game, drawn whole, with its Qiskit code left in the rack.
+  // Collapse puts it (and the code) back in the rack.
   const circuitBox = () =>
     page.evaluate(() => {
       const mod = document.getElementById('circuit').closest('.module');
       const gates = document.getElementById('circuit-gates');
-      return { under: !!mod.closest('.left'), fits: gates.scrollWidth <= gates.clientWidth + 1, label: document.getElementById('circuit-expand').textContent };
+      const code = document.getElementById('code').closest('details');
+      return {
+        under: !!mod.closest('.left'),
+        fits: gates.scrollWidth <= gates.clientWidth + 1,
+        label: document.getElementById('circuit-expand').textContent,
+        codeInRack: !!code.closest('.rack') && !!code.offsetParent,
+        goalFirst: document.querySelector('.rack-inner > .module:not([hidden])').contains(document.getElementById('goal')),
+      };
     });
-  await page.click('#circuit-expand');
   let box = await circuitBox();
-  if (!box.under || !box.fits || box.label !== 'Collapse') throw new Error(`expanded circuit: ${JSON.stringify(box)}`);
+  if (!box.under || !box.fits || box.label !== 'Collapse' || !box.codeInRack || !box.goalFirst) throw new Error(`expanded circuit by default: ${JSON.stringify(box)}`);
   await shot('01b-circuit-expanded');
   await page.click('#circuit-expand');
   box = await circuitBox();
-  if (box.under || box.label !== 'Expand') throw new Error(`collapsed circuit: ${JSON.stringify(box)}`);
+  if (box.under || box.label !== 'Expand' || !box.codeInRack) throw new Error(`collapsed circuit: ${JSON.stringify(box)}`);
+  await page.click('#circuit-expand');
+  box = await circuitBox();
+  if (!box.under || box.label !== 'Collapse') throw new Error(`expanded again: ${JSON.stringify(box)}`);
+  report.push('the circuit starts expanded under the game, the Qiskit code and the goal stay in the rack, and Collapse/Expand both work');
   await step('floor 1', async () => {
     let tries = 1;
     while ((await bot.observe('A')) !== 1) {
@@ -585,7 +596,7 @@ async function main() {
     const d = g.q.definite;
     const got = ['A', 'B', 'C', 'D', 'E'].map((q) => d[g.qIndex[q]]).join('');
     if (got !== '11101') throw new Error(`A B C D E should be certain 1 1 1 0 1, got ${got}`);
-    if (!document.querySelector('#circuit-labels').textContent.includes('D')) throw new Error('platform D should be named in the rack');
+    if (!document.querySelector('#circuit').textContent.includes('D')) throw new Error('platform D should be named in the circuit');
     await bot.hop(bot.slab('C'));
     await bot.hop(bot.slab('D'));
     await bot.hop(bot.slab('E'));
@@ -799,6 +810,73 @@ async function main() {
     }
     return 'keyboard flashlight: off until F is held, then straight ahead (0, then pi facing left), mouse ignored';
   });
+
+  // The pause screen shows the controls and the developer options, which return to the title afterwards.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  const pauseHas = await page.evaluate(() => ({
+    dev: !!document.querySelector('#screen-pause #dev'),
+    keys: document.querySelectorAll('#screen-pause .keys dt').length,
+  }));
+  if (!pauseHas.dev || pauseHas.keys < 5) throw new Error(`the pause screen should show the developer options and the controls: ${JSON.stringify(pauseHas)}`);
+  await shot('16-pause-dev');
+  await page.click('#btn-resume');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play');
+  report.push(`the pause screen shows the developer options and ${pauseHas.keys} controls`);
+
+  // Passive terminal + instant response: standing at T1 shows its gates, 1 applies H, and the
+  // platform moves while the gates are showing. (Keyboard flashlight is on, so nothing is observed.)
+  await page.evaluate(() => {
+    document.getElementById('dev-passive-terminal').click();
+    document.getElementById('dev-instant').click();
+  });
+  await step('passive terminal', async () => {
+    const g = bot.G();
+    await bot.walkTo(g.room.terminals[0].x);
+    await bot.until(() => g.passive && !document.getElementById('dock-terminal').hidden, 2000, 'T1 to show passively');
+    const key = document.querySelector('#term-ops .op-key');
+    if (!key || key.textContent !== '1') throw new Error('each gate should show its number key');
+    if (g.mode !== 'play') throw new Error(`a passive terminal must not take over: mode ${g.mode}`);
+    const before = g.q.ops.length;
+    await bot.tap('Digit1');
+    await bot.until(() => g.q.ops.length === before + 1, 2000, '1 to apply H');
+    await bot.tap('Digit1');
+    await bot.until(() => g.q.ops.length === before + 2, 2000, '1 again to undo it');
+    const a = bot.platform('A');
+    if (a.state !== 0) throw new Error('H twice should leave A lowered');
+    bot.key('ArrowLeft', true);
+    await bot.until(() => !g.passive, 2000, 'walking away to hide the gates');
+    bot.key('ArrowLeft', false);
+    return 'passive terminal: standing at T1 showed its gates with number keys; 1 applied H twice (back to lowered); walking away hid them';
+  });
+  // Instant response on its own: floor 2's T1 flips A with X, and A moves while the terminal is open.
+  await page.evaluate(() => document.getElementById('dev-passive-terminal').click());
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '1');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 1);
+  await step('instant response', async () => {
+    const g = bot.G();
+    const a = bot.platform('A');
+    const term = g.room.terminals.find((t) => t.id === 'T1');
+    await bot.walkTo(term.x);
+    await bot.until(() => term.near, 2000, 'stand at T1');
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'terminal', 2000, 'T1 to open');
+    const y0 = a.y;
+    document.querySelector('#term-ops button').click();
+    await bot.until(() => a.state === 0, 2000, 'X to flip A');
+    await bot.until(() => a.y === a.y0, 2000, 'A to glide down while T1 is open');
+    if (g.mode !== 'terminal' || y0 === a.y) throw new Error('A should move while the terminal is open');
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
+    return `instant response: X at T1 moved A from y=${y0} to y=${a.y} with the terminal still open`;
+  });
+  await page.evaluate(() => document.getElementById('dev-instant').click());
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '0');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
 
   // Touch-collapse: jumping onto a superposed platform measures it. Retry until both outcomes are seen.
   await step('touch-collapse', async () => {

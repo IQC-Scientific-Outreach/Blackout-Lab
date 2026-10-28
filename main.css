@@ -118,6 +118,10 @@ kbd {
 #screen-title { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: clamp(14px, 3%, 32px); align-items: start; }
 .title-main, .title-side, .screen-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .screen-card { max-width: 560px; }
+#screen-pause { max-width: 860px; }
+.pause-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px 24px; align-items: start; }
+.pause-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pause-keys { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--qubit); }
 .screen h2 { font-family: var(--sign); font-weight: 800; font-size: clamp(24px, 4vw, 34px); line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; text-wrap: balance; }
 .screen .title-name { font-family: var(--sign); font-weight: 800; font-size: clamp(34px, 5.4vw, 60px); line-height: 0.92; letter-spacing: 0.04em; text-transform: uppercase; text-wrap: balance; }
@@ -184,7 +188,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .touch-btn.is-down { background: var(--torch); color: #1c1403; }
 
 /* ---- console strip under the window ---- */
-.dock { min-height: 98px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; }
+.dock { min-height: 56px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; }
 .dock-play { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; }
 .note { align-self: flex-start; font: 700 12px var(--mono); color: #1c1403; background: var(--torch); border-radius: 3px; padding: 3px 8px; }
 .prompt .fine { margin-inline-start: 6px; white-space: nowrap; }
@@ -209,6 +213,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .term-status { font-size: 13px; color: var(--dim); min-height: 1.45em; }
 .term-status.is-quantum { color: var(--qubit); }
 .term-status.is-bad { color: var(--bad); }
+/* Passive terminal (developer option): the key that applies each gate. */
+.op-key { grid-column: 1 / -1; justify-self: center; margin-top: 4px; min-width: 18px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; font: 700 11px var(--mono); color: var(--torch); text-align: center; }
 
 /* ---- instrument rack ---- */
 .rack { position: relative; min-width: 0; }
@@ -224,6 +230,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .circuit-svg[data-fit] { max-width: 100%; height: auto; }
 .module-head { display: flex; align-items: center; gap: 8px; }
 .module-head .plate { flex: 1; }
+.module.is-idle { display: none; }
+.goal-module { gap: 4px; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }
 .circuit-svg { display: block; font-family: var(--mono); }
@@ -318,6 +326,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 /* ---- narrow screens: the rack moves under the game ---- */
 @media (max-width: 900px) {
   .deck { grid-template-columns: minmax(0, 1fr); }
+  .pause-cols { grid-template-columns: minmax(0, 1fr); }
   .rack-inner { position: static; overflow: visible; }
   #screen-title { grid-template-columns: minmax(0, 1fr); }
   .hud { margin-inline-start: 0; }

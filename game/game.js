@@ -37,7 +37,7 @@ const NO_QUBITS = {
 
 // Developer options (title screen). Remembered in this browser only.
 const DEV_KEY = 'blackoutLab.dev';
-const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, panel: 'right', circuitRight: false };
+const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, instantResponse: false, passiveTerminal: false, panel: 'right', circuitRight: false };
 
 function loadDev() {
   try {
@@ -106,6 +106,8 @@ export function startGame() {
     hasKey: false,
     busy: false,
     terminal: null,
+    passive: null, // the terminal shown passively (developer option), if any
+    passiveCarrying: false,
     fallT: 0,
     started: false,
   };
@@ -160,6 +162,7 @@ export function startGame() {
   const LIVE_MODES = ['play', 'terminal', 'dialogue', 'cutscene'];
   function setMode(mode) {
     G.mode = mode;
+    if (mode !== 'play') closePassive();
     input.setEnabled(LIVE_MODES.includes(mode));
     ui.setPlaying(LIVE_MODES.includes(mode));
     ui.setMenuButton(mode !== 'boot' && mode !== 'title');
@@ -411,6 +414,7 @@ export function startGame() {
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
     G.torch.flickLeft = 0;
     G.terminal = null;
+    G.passive = null;
     G.busy = false;
   }
 
@@ -420,7 +424,7 @@ export function startGame() {
     const epoch = (G.epoch += 1);
     const backdrop = !!(opts && opts.backdrop);
     const carry = opts && opts.carry;
-    if (G.terminal) ui.closeTerminal();
+    if (G.terminal || G.passive) ui.closeTerminal();
     G.levelIndex = index;
     buildFloor(level);
     ui.setNote(null);
@@ -483,6 +487,7 @@ export function startGame() {
     if (index < 0) return;
     G.roomIndex = index;
     G.room = G.rooms[index];
+    closePassive();
     placePlayer(portal.arrive.x, portal.arrive.y);
     G.fx = [];
     G.floaters = [];
@@ -518,6 +523,25 @@ export function startGame() {
     setMode('play');
   }
 
+  // Developer option: standing at a terminal shows its gates, and 1 to 9 apply them,
+  // without entering the terminal (so the player can still move and look).
+  function updatePassive(hit) {
+    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !(hit.obj.port && !carrying()) ? hit.obj : null;
+    if (!hit && G.passive && !G.player.onGround) return; // a hop at the terminal keeps it open
+    if (term === G.passive && (!term || G.passiveCarrying === carrying())) return;
+    closePassive();
+    if (!term) return;
+    G.passive = term;
+    G.passiveCarrying = carrying();
+    ui.openTerminal(term, carrying(), true);
+  }
+
+  function closePassive() {
+    if (!G.passive) return;
+    G.passive = null;
+    ui.closeTerminal();
+  }
+
   async function machineMeasure(term, op) {
     const epoch = G.epoch;
     const before = G.q;
@@ -550,7 +574,7 @@ export function startGame() {
   }
 
   async function applyOp(i) {
-    const term = G.terminal;
+    const term = G.terminal || G.passive;
     if (!term || G.busy || !term.ops[i]) return;
     const op = term.ops[i];
     if (op.needsCanister && !carrying()) {
@@ -887,7 +911,8 @@ export function startGame() {
     return out;
   }
 
-  function physicsStep(dt) {
+  // Definite platforms glide to the height their state says, carrying the player.
+  function movePlatforms(dt) {
     const pl = G.player;
     for (const p of G.platforms) {
       if (p.state === null) continue;
@@ -896,6 +921,11 @@ export function startGame() {
       p.y += Math.sign(gap) * Math.min(Math.abs(gap), 300 * dt);
       if (pl.standing === p) pl.y += p.y - before;
     }
+  }
+
+  function physicsStep(dt) {
+    const pl = G.player;
+    movePlatforms(dt);
     const want = G.mode === 'play' ? (input.held.right ? 1 : 0) - (input.held.left ? 1 : 0) : 0;
     const targetV = want * PHYS.speed;
     const dv = targetV - pl.vx;
@@ -1051,7 +1081,7 @@ export function startGame() {
   function loadTerrace() {
     const s = TERRACE.scene;
     G.epoch += 1;
-    if (G.terminal) ui.closeTerminal();
+    if (G.terminal || G.passive) ui.closeTerminal();
     G.levelIndex = LEVELS.length;
     buildFloor(TERRACE);
     ui.setNote(null);
@@ -1295,6 +1325,7 @@ export function startGame() {
       G.terminal = null;
       ui.closeTerminal();
     }
+    closePassive();
     G.dialogue = null;
     G.bubbles = [];
     setMode('title');
@@ -1349,6 +1380,7 @@ export function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate to apply it.`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -1361,6 +1393,7 @@ export function startGame() {
     const act = interactPrompt(hit);
     const orAct = act ? ` ${act}` : '';
     const station = G.room.battery;
+    panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
@@ -1378,7 +1411,7 @@ export function startGame() {
       );
     }
     else if (d && d.open && (d.key || d.item)) ui.setPrompt('The exit is open. Walk through it.');
-    else ui.setPrompt(esc(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal));
+    else ui.setPrompt('Walk with <b>&larr;</b> <b>&rarr;</b>, jump with <b>Space</b>, and use terminals with <b>E</b>. The goal is at the top of the panel.');
   }
 
   function update(dt) {
@@ -1410,6 +1443,7 @@ export function startGame() {
     if (G.mode === 'terminal') {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
+      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
       updateTorch(dt);
       return;
     }
@@ -1444,8 +1478,12 @@ export function startGame() {
 
     pickUps();
     const hit = findInteract();
+    updatePassive(hit);
+    for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
     if (input.take('use') && hit) {
-      if (hit.type === 'terminal') useTerminal(hit.obj);
+      if (hit.type === 'terminal') {
+        if (!G.dev.passiveTerminal) useTerminal(hit.obj);
+      }
       else if (hit.type === 'npc') {
         const talk = (story().talk || {})[hit.obj.id];
         if (talk) talk(storyCtx(hit.obj));

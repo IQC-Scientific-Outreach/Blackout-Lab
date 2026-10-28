@@ -42,16 +42,18 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 - The title screen's side panel says where the game was made and links to its Qollab and GitHub pages (fill in the two empty `href` attributes in the `about` block of `index.html`, then rebuild the single file; until then each line reads "link not added yet").
 - Falling into the gap costs one of three lives and resets the floor. Lose all three on one floor and the climb starts again from floor 1. There is no timer. Unlimited lives are in the pause menu. "Skip to floor" on the title screen and in the pause menu jumps to any floor.
 
-The rack on the right is live: the **circuit** you have built on this floor (with a meter icon and its result for every observation), the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, and **lab notes** with the goal, a concept explanation, hints and an event log. "This floor as Qiskit code" shows the same circuit as code you can paste into a notebook. **Expand** on the circuit moves it under the game and draws all of it at once, with nothing to scroll.
+The **circuit** you have built on this floor is drawn under the game, whole, with a meter icon and its result for every observation (**Collapse** moves it into the rack on the right, where it scrolls sideways). The rack starts with the floor's **goal**, then "This floor as Qiskit code" (the same circuit as code you can paste into a notebook), the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, and **lab notes** with a concept explanation, hints and an event log.
 
 ### Developer options
 
-The title screen has a collapsible **Developer options** panel with experimental switches for trying out ideas. All are off by default, and the browser remembers them (`localStorage`).
+The title screen has a collapsible **Developer options** panel, under the credits, with experimental switches for trying out ideas. The pause screen shows the same panel, next to a reminder of the controls. All are off by default, and the browser remembers them (`localStorage`).
 
 | Option | What it does |
 | --- | --- |
 | Keyboard flashlight | The flashlight shines only while F is held, straight ahead in the direction the player faces. The mouse does not aim it at all. |
 | Touch-collapse | Landing on either outline of a superposed platform measures it, by the Born rule (50/50 after an H). The platform appears at the height it collapsed to: you land if that is the outline you touched, otherwise you drop past it. The circuit records it as a measurement ("Player landed on"). |
+| Instant response | A gate applied at a terminal moves its platform straight away, while you are still at the terminal (normally the platforms wait until you leave). |
+| Passive terminal | Standing at a terminal shows its gates, each with a number under it. Press 1, 2, 3 and so on (or click) to apply one: no E, and you can still move and use the flashlight, so it can observe between gates. |
 | Panel position | Right (the normal layout) or Bottom: the rack moves under the game, with its modules side by side. |
 | Circuit always adds to the right | Every new step in the circuit gets its own column after everything before it, instead of moving left into the first free column. |
 

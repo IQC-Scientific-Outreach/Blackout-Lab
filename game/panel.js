@@ -2,7 +2,7 @@
 // Redrawn from the engine's snapshot.
 
 import { GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from './levels.js';
-import { paintCanister } from './render.js';
+import { paintCanister, paintGate, gatePop } from './render.js';
 
 const ROW = 36;
 const TOP = 12;
@@ -284,12 +284,15 @@ export function createPanel(dom) {
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
   // Called every frame: the text changes only with the state, but the dashed bands move.
-  function setCanister(qi, t) {
+  // `gate` (show gates developer option): { part, k }, a gate popping up over the canister.
+  function setCanister(qi, t, gate) {
     const snap = lastSnap;
     const changed = qi !== shownCanister.qi || snap !== shownCanister.snap;
-    if (!changed && (qi === null || !snap || snap.definite[qi] !== null)) return;
-    shownCanister = { qi, snap };
+    const animating = !!gate || shownCanister.gate;
+    if (!changed && !animating && (qi === null || !snap || snap.definite[qi] !== null)) return;
+    shownCanister = { qi, snap, gate: !!gate };
     canisterModule.classList.toggle('is-off', qi === null || !snap);
+    canisterState.classList.toggle('is-hidden', !!gate); // the gate covers the state, then reveals the new one
     if (qi === null || !snap) return;
     const d = describe(snap, qi);
     if (changed) {
@@ -313,6 +316,7 @@ export function createPanel(dom) {
     const zoom = (rect.height * dpr * 0.8) / 22; // the sprite is 22 units tall
     ctx.setTransform(zoom, 0, 0, zoom, canisterCanvas.width / 2, canisterCanvas.height / 2 + 11 * zoom);
     paintCanister(ctx, 0, 0, state);
+    if (gate) paintGate(ctx, 0, -9.75, gate.part, gatePop(gate.k, calm.matches), 7.5); // between the two bands
   }
 
   function renderLog() {

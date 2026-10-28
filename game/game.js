@@ -43,6 +43,7 @@ const DEV_DEFAULTS = {
   instantResponse: false,
   passiveTerminal: false,
   canisterView: false,
+  showGates: false,
   panel: 'right',
   circuitRight: false,
 };
@@ -550,6 +551,24 @@ export function startGame() {
     ui.closeTerminal();
   }
 
+  // Developer option: the gate pops up over its qubits for a second. The new state
+  // is shown halfway through, while the gate is at full size, so it pops out onto
+  // the changed state. Resolves at that halfway point.
+  const GATE_SECONDS = 1;
+  function showGate(gate, qis, epoch) {
+    const tileQi = G.dev.canisterView && carrying() ? G.canister.qi : null;
+    const parts =
+      gate === 'cx'
+        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
+        : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
+    const fx = { type: 'gate', parts, tileQi, t: 0, dur: GATE_SECONDS };
+    G.fx.push(fx);
+    return new Promise((resolve) => {
+      const wait = () => (fx.t >= fx.dur / 2 || epoch !== G.epoch || !G.fx.includes(fx) ? resolve() : requestAnimationFrame(wait));
+      wait();
+    });
+  }
+
   async function machineMeasure(term, op) {
     const epoch = G.epoch;
     const before = G.q;
@@ -600,6 +619,7 @@ export function startGame() {
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
     const res = await Q.apply(op.gate, qis);
+    if (res.ok && G.dev.showGates) await showGate(op.gate, qis, epoch);
     G.busy = false;
     if (epoch !== G.epoch) return;
     ui.setTerminalBusy(false, carrying());
@@ -1456,7 +1476,10 @@ export function startGame() {
 
     if (input.take('mute')) toggleSound();
     // Developer option: the held canister, enlarged in the rack.
-    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null, G.t);
+    const heldQi = G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null;
+    const gateFx = heldQi === null ? null : G.fx.find((fx) => fx.type === 'gate' && fx.tileQi === heldQi);
+    const tileGate = gateFx && { part: gateFx.parts.find((p) => p.qi === heldQi), k: Math.min(1, gateFx.t / gateFx.dur) };
+    panel.setCanister(heldQi, G.t, tileGate && tileGate.part ? tileGate : null);
 
     if (G.mode === 'falling') {
       G.fallT -= dt;

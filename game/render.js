@@ -88,6 +88,110 @@ export function paintCanister(ctx, x, baseY, state) {
   ctx.fillRect(x - 2, baseY - 22, 4, 3);
 }
 
+// Show gates (developer option): a gate popping up over a qubit, drawn like the
+// circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
+// (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
+// over the animation: in with a spring, hold, then out. `size` is the box width.
+export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf' };
+
+export function gatePop(k, calm) {
+  if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+  let scale = 1;
+  if (k < 0.2) {
+    const u = k / 0.2 - 1; // ease out with a small overshoot
+    scale = 1 + 2.7 * u * u * u + 1.7 * u * u;
+  } else if (k > 0.8) {
+    const u = (k - 0.8) / 0.2;
+    scale = 1 - u * u;
+  }
+  return { scale: Math.max(0, scale), alpha: 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+}
+
+export function paintGate(ctx, x, y, part, pop, size) {
+  const half = size / 2;
+  const color = GATE_COLORS[part.gate] || '#dbe7f5';
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(pop.scale, pop.scale);
+  ctx.globalAlpha = pop.alpha;
+  ctx.lineWidth = size * 0.06;
+  // A soft white halo behind the gate, brightest as it appears.
+  const halo = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.15);
+  halo.addColorStop(0, `rgba(255,255,255,${0.42 * pop.glow})`);
+  halo.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(-size * 1.15, -size * 1.15, size * 2.3, size * 2.3);
+  // The white outline, stroked twice under a blur so it glows, strongest as the gate appears.
+  const glow = () => {
+    ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+    ctx.lineWidth = size * 0.07;
+    ctx.shadowBlur = size * 1.1 * pop.glow;
+    ctx.stroke();
+    ctx.shadowBlur = size * 0.45 * pop.glow;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+  if (part.role === 'box') {
+    rr(ctx, -half, -half, size, size, size * 0.19);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    rr(ctx, -half - size * 0.08, -half - size * 0.08, size * 1.16, size * 1.16, size * 0.25);
+    glow();
+    ctx.fillStyle = color;
+    ctx.font = `700 ${Math.round(size * 0.46)}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(part.symbol, 0, size * 0.03);
+  } else if (part.role === 'ctrl') {
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.17, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.27, 0, Math.PI * 2);
+    glow();
+  } else {
+    const r = size * 0.37;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0, r);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r + size * 0.09, 0, Math.PI * 2);
+    glow();
+  }
+  ctx.restore();
+}
+
+// The glowing white line joining a CNOT's control and target.
+export function paintGateLink(ctx, a, b, pop, size) {
+  ctx.save();
+  ctx.globalAlpha = pop.alpha * Math.min(1, pop.scale);
+  ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+  ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+  ctx.lineWidth = size * 0.08;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.shadowBlur = size * 0.9 * pop.glow;
+  ctx.stroke();
+  ctx.shadowBlur = size * 0.35 * pop.glow;
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
@@ -1126,6 +1230,31 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
+  // Where a gate pops up over a qubit: halfway between a platform's two heights (the
+  // middle of its state), or over the qubit's machine, lamp or carried canister.
+  // A canister held in the canister view shows its part in that tile instead.
+  function gateAnchor(G, qi) {
+    const p = G.room.platforms.find((pl) => pl.qi === qi);
+    if (p) return { x: p.x + p.w / 2, y: (p.y0 + p.y1 + PLATFORM_H) / 2 };
+    return anchorOf(G, qi);
+  }
+
+  function drawGateFx(G, fx, k) {
+    const pop = gatePop(k, calm.matches);
+    const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: part.qi === fx.tileQi }));
+    const ctrl = at.find((a) => a.part.role === 'ctrl');
+    const targ = at.find((a) => a.part.role === 'targ');
+    if (ctrl && targ && ctrl.pos && targ.pos) paintGateLink(ctx, ctrl.pos, targ.pos, pop, 26);
+    for (const a of at) {
+      if (!a.pos) continue;
+      // The canister view tile shows the canister's gate; on the player's back stays only a
+      // CNOT's dot, so the line still starts somewhere. Without the tile the canister gets it all, small.
+      if (a.tile && a.part.role !== 'ctrl') continue;
+      const small = G.canister && a.part.qi === G.canister.qi;
+      paintGate(ctx, a.pos.x, a.pos.y, a.part, pop, small ? 16 : 26);
+    }
+  }
+
   function drawFx(G) {
     for (const fx of G.fx) {
       const k = Math.min(1, fx.t / fx.dur);
@@ -1137,6 +1266,8 @@ export function createRenderer(canvas) {
         ctx.beginPath();
         ctx.arc(fx.x, fx.y, 8 + k * (fx.size || 46), 0, Math.PI * 2);
         ctx.stroke();
+      } else if (fx.type === 'gate') {
+        drawGateFx(G, fx, k);
       } else if (fx.type === 'spark') {
         const x = fx.from.x + (fx.to.x - fx.from.x) * k;
         const y = fx.from.y + (fx.to.y - fx.from.y) * k - Math.sin(k * Math.PI) * 26;

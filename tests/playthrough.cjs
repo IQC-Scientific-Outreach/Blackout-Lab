@@ -978,6 +978,36 @@ async function main() {
   });
   await shot('17-canister-view');
 
+  // Show gates: a gate pops up over its qubit for a second, and the state changes halfway through.
+  await page.evaluate(() => {
+    for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();
+  });
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '0');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
+  await step('show gates', async () => {
+    const g = bot.G();
+    await bot.walkTo(g.room.terminals[0].x);
+    await bot.until(() => g.passive, 2000, 'T1 to show passively');
+    const start = performance.now();
+    await bot.tap('Digit1');
+    await bot.until(() => g.fx.some((f) => f.type === 'gate'), 1000, 'the gate to pop up');
+    const fx = g.fx.find((f) => f.type === 'gate');
+    const early = bot.platform('A').state;
+    await bot.until(() => bot.platform('A').state === null, 2000, 'the superposition to appear');
+    const changedAt = (performance.now() - start) / 1000;
+    await bot.until(() => !g.fx.includes(fx), 2000, 'the gate to pop out');
+    const total = (performance.now() - start) / 1000;
+    if (early !== 0 || changedAt < 0.4 || total < 0.9 || total > 1.6 || fx.parts[0].role !== 'box') {
+      throw new Error(`the gate should pop for about 1 s, the state changing halfway: ${JSON.stringify({ early, changedAt, total })}`);
+    }
+    return `show gates: H popped up over A for ${total.toFixed(2)} s, the superposition appearing at ${changedAt.toFixed(2)} s`;
+  });
+  await page.evaluate(() => {
+    for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();
+  });
+
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');
   await browser.close();

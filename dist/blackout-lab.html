@@ -248,6 +248,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .canister-view canvas { grid-area: 1 / 1; width: 100%; height: 100%; }
 .canister-state { grid-area: 1 / 1; z-index: 1; padding: 2px 8px; font: 700 26px var(--mono); color: #39ff7a; text-align: center; text-shadow: 0 0 6px #000, 0 0 12px #000; }
 .canister-state.is-long { font-size: 17px; }
+.canister-state.is-hidden { visibility: hidden; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }
 .circuit-svg { display: block; font-family: var(--mono); }
@@ -412,6 +413,9 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
                 <label class="dev-opt" title="While you hold the canister, the panel shows it enlarged with its state, or what it is entangled with.">
                   <input type="checkbox" role="switch" id="dev-canister-view"> <b>Canister view</b>
                   <span class="dev-hint">show the held canister's state in the panel</span></label>
+                <label class="dev-opt" title="Each gate you apply pops up for a second over the platforms (and the canister view) it acts on.">
+                  <input type="checkbox" role="switch" id="dev-show-gates"> <b>Show gates</b>
+                  <span class="dev-hint">each gate pops up over its qubits</span></label>
                 <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
                   <b id="dev-panel-name">Panel position</b>
                   <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
@@ -2097,6 +2101,110 @@ function paintCanister(ctx, x, baseY, state) {
   ctx.fillRect(x - 2, baseY - 22, 4, 3);
 }
 
+// Show gates (developer option): a gate popping up over a qubit, drawn like the
+// circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
+// (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
+// over the animation: in with a spring, hold, then out. `size` is the box width.
+const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf' };
+
+function gatePop(k, calm) {
+  if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+  let scale = 1;
+  if (k < 0.2) {
+    const u = k / 0.2 - 1; // ease out with a small overshoot
+    scale = 1 + 2.7 * u * u * u + 1.7 * u * u;
+  } else if (k > 0.8) {
+    const u = (k - 0.8) / 0.2;
+    scale = 1 - u * u;
+  }
+  return { scale: Math.max(0, scale), alpha: 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+}
+
+function paintGate(ctx, x, y, part, pop, size) {
+  const half = size / 2;
+  const color = GATE_COLORS[part.gate] || '#dbe7f5';
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(pop.scale, pop.scale);
+  ctx.globalAlpha = pop.alpha;
+  ctx.lineWidth = size * 0.06;
+  // A soft white halo behind the gate, brightest as it appears.
+  const halo = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.15);
+  halo.addColorStop(0, `rgba(255,255,255,${0.42 * pop.glow})`);
+  halo.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(-size * 1.15, -size * 1.15, size * 2.3, size * 2.3);
+  // The white outline, stroked twice under a blur so it glows, strongest as the gate appears.
+  const glow = () => {
+    ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+    ctx.lineWidth = size * 0.07;
+    ctx.shadowBlur = size * 1.1 * pop.glow;
+    ctx.stroke();
+    ctx.shadowBlur = size * 0.45 * pop.glow;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+  if (part.role === 'box') {
+    rr(ctx, -half, -half, size, size, size * 0.19);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    rr(ctx, -half - size * 0.08, -half - size * 0.08, size * 1.16, size * 1.16, size * 0.25);
+    glow();
+    ctx.fillStyle = color;
+    ctx.font = `700 ${Math.round(size * 0.46)}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(part.symbol, 0, size * 0.03);
+  } else if (part.role === 'ctrl') {
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.17, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.27, 0, Math.PI * 2);
+    glow();
+  } else {
+    const r = size * 0.37;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0, r);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r + size * 0.09, 0, Math.PI * 2);
+    glow();
+  }
+  ctx.restore();
+}
+
+// The glowing white line joining a CNOT's control and target.
+function paintGateLink(ctx, a, b, pop, size) {
+  ctx.save();
+  ctx.globalAlpha = pop.alpha * Math.min(1, pop.scale);
+  ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+  ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+  ctx.lineWidth = size * 0.08;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.shadowBlur = size * 0.9 * pop.glow;
+  ctx.stroke();
+  ctx.shadowBlur = size * 0.35 * pop.glow;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
@@ -3135,6 +3243,31 @@ function createRenderer(canvas) {
     ctx.restore();
   }
 
+  // Where a gate pops up over a qubit: halfway between a platform's two heights (the
+  // middle of its state), or over the qubit's machine, lamp or carried canister.
+  // A canister held in the canister view shows its part in that tile instead.
+  function gateAnchor(G, qi) {
+    const p = G.room.platforms.find((pl) => pl.qi === qi);
+    if (p) return { x: p.x + p.w / 2, y: (p.y0 + p.y1 + PLATFORM_H) / 2 };
+    return anchorOf(G, qi);
+  }
+
+  function drawGateFx(G, fx, k) {
+    const pop = gatePop(k, calm.matches);
+    const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: part.qi === fx.tileQi }));
+    const ctrl = at.find((a) => a.part.role === 'ctrl');
+    const targ = at.find((a) => a.part.role === 'targ');
+    if (ctrl && targ && ctrl.pos && targ.pos) paintGateLink(ctx, ctrl.pos, targ.pos, pop, 26);
+    for (const a of at) {
+      if (!a.pos) continue;
+      // The canister view tile shows the canister's gate; on the player's back stays only a
+      // CNOT's dot, so the line still starts somewhere. Without the tile the canister gets it all, small.
+      if (a.tile && a.part.role !== 'ctrl') continue;
+      const small = G.canister && a.part.qi === G.canister.qi;
+      paintGate(ctx, a.pos.x, a.pos.y, a.part, pop, small ? 16 : 26);
+    }
+  }
+
   function drawFx(G) {
     for (const fx of G.fx) {
       const k = Math.min(1, fx.t / fx.dur);
@@ -3146,6 +3279,8 @@ function createRenderer(canvas) {
         ctx.beginPath();
         ctx.arc(fx.x, fx.y, 8 + k * (fx.size || 46), 0, Math.PI * 2);
         ctx.stroke();
+      } else if (fx.type === 'gate') {
+        drawGateFx(G, fx, k);
       } else if (fx.type === 'spark') {
         const x = fx.from.x + (fx.to.x - fx.from.x) * k;
         const y = fx.from.y + (fx.to.y - fx.from.y) * k - Math.sin(k * Math.PI) * 26;
@@ -3593,7 +3728,7 @@ function createRenderer(canvas) {
   return { draw, resize, anchorOf };
 }
 
-return { paintCanister, createRenderer };
+return { paintCanister, GATE_COLORS, gatePop, paintGate, paintGateLink, createRenderer };
 })();
 
 // ============================================================================
@@ -3601,7 +3736,7 @@ return { paintCanister, createRenderer };
 // ============================================================================
 const module_game_panel = (() => {
 const { GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } = module_game_levels;
-const { paintCanister } = module_game_render;
+const { paintCanister, paintGate, gatePop } = module_game_render;
 
 // The instrument rack on the right: circuit trace, probability meters, lab notes.
 // Redrawn from the engine's snapshot.
@@ -3888,12 +4023,15 @@ function createPanel(dom) {
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
   // Called every frame: the text changes only with the state, but the dashed bands move.
-  function setCanister(qi, t) {
+  // `gate` (show gates developer option): { part, k }, a gate popping up over the canister.
+  function setCanister(qi, t, gate) {
     const snap = lastSnap;
     const changed = qi !== shownCanister.qi || snap !== shownCanister.snap;
-    if (!changed && (qi === null || !snap || snap.definite[qi] !== null)) return;
-    shownCanister = { qi, snap };
+    const animating = !!gate || shownCanister.gate;
+    if (!changed && !animating && (qi === null || !snap || snap.definite[qi] !== null)) return;
+    shownCanister = { qi, snap, gate: !!gate };
     canisterModule.classList.toggle('is-off', qi === null || !snap);
+    canisterState.classList.toggle('is-hidden', !!gate); // the gate covers the state, then reveals the new one
     if (qi === null || !snap) return;
     const d = describe(snap, qi);
     if (changed) {
@@ -3917,6 +4055,7 @@ function createPanel(dom) {
     const zoom = (rect.height * dpr * 0.8) / 22; // the sprite is 22 units tall
     ctx.setTransform(zoom, 0, 0, zoom, canisterCanvas.width / 2, canisterCanvas.height / 2 + 11 * zoom);
     paintCanister(ctx, 0, 0, state);
+    if (gate) paintGate(ctx, 0, -9.75, gate.part, gatePop(gate.k, calm.matches), 7.5); // between the two bands
   }
 
   function renderLog() {
@@ -3977,7 +4116,7 @@ function grabDom() {
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'dev-canister-view', 'pause-dev-slot', 'pause-keys',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'dev-canister-view', 'dev-show-gates', 'pause-dev-slot', 'pause-keys',
   ];
   const dom = {};
   for (const id of ids) {
@@ -4207,6 +4346,7 @@ function createUI(dom, handlers) {
     instantResponse: dom.devInstant,
     passiveTerminal: dom.devPassiveTerminal,
     canisterView: dom.devCanisterView,
+    showGates: dom.devShowGates,
     circuitRight: dom.devCircuitRight,
   };
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
@@ -4381,6 +4521,7 @@ const DEV_DEFAULTS = {
   instantResponse: false,
   passiveTerminal: false,
   canisterView: false,
+  showGates: false,
   panel: 'right',
   circuitRight: false,
 };
@@ -4888,6 +5029,24 @@ function startGame() {
     ui.closeTerminal();
   }
 
+  // Developer option: the gate pops up over its qubits for a second. The new state
+  // is shown halfway through, while the gate is at full size, so it pops out onto
+  // the changed state. Resolves at that halfway point.
+  const GATE_SECONDS = 1;
+  function showGate(gate, qis, epoch) {
+    const tileQi = G.dev.canisterView && carrying() ? G.canister.qi : null;
+    const parts =
+      gate === 'cx'
+        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
+        : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
+    const fx = { type: 'gate', parts, tileQi, t: 0, dur: GATE_SECONDS };
+    G.fx.push(fx);
+    return new Promise((resolve) => {
+      const wait = () => (fx.t >= fx.dur / 2 || epoch !== G.epoch || !G.fx.includes(fx) ? resolve() : requestAnimationFrame(wait));
+      wait();
+    });
+  }
+
   async function machineMeasure(term, op) {
     const epoch = G.epoch;
     const before = G.q;
@@ -4938,6 +5097,7 @@ function startGame() {
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
     const res = await Q.apply(op.gate, qis);
+    if (res.ok && G.dev.showGates) await showGate(op.gate, qis, epoch);
     G.busy = false;
     if (epoch !== G.epoch) return;
     ui.setTerminalBusy(false, carrying());
@@ -5794,7 +5954,10 @@ function startGame() {
 
     if (input.take('mute')) toggleSound();
     // Developer option: the held canister, enlarged in the rack.
-    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null, G.t);
+    const heldQi = G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null;
+    const gateFx = heldQi === null ? null : G.fx.find((fx) => fx.type === 'gate' && fx.tileQi === heldQi);
+    const tileGate = gateFx && { part: gateFx.parts.find((p) => p.qi === heldQi), k: Math.min(1, gateFx.t / gateFx.dur) };
+    panel.setCanister(heldQi, G.t, tileGate && tileGate.part ? tileGate : null);
 
     if (G.mode === 'falling') {
       G.fallT -= dt;

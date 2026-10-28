@@ -237,6 +237,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .canister-view canvas { grid-area: 1 / 1; width: 100%; height: 100%; }
 .canister-state { grid-area: 1 / 1; z-index: 1; padding: 2px 8px; font: 700 26px var(--mono); color: #39ff7a; text-align: center; text-shadow: 0 0 6px #000, 0 0 12px #000; }
 .canister-state.is-long { font-size: 17px; }
+.canister-state.is-hidden { visibility: hidden; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }
 .circuit-svg { display: block; font-family: var(--mono); }

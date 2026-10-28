@@ -64,6 +64,9 @@
                 <label class="dev-opt" title="Standing at a terminal shows its gates. Press 1, 2, 3 and so on, or click, to apply one. No E needed.">
                   <input type="checkbox" role="switch" id="dev-passive-terminal"> <b>Passive terminal</b>
                   <span class="dev-hint">stand at a terminal, press 1, 2, 3 for gates</span></label>
+                <label class="dev-opt" title="While you hold the canister, the panel shows it enlarged with its state, or what it is entangled with.">
+                  <input type="checkbox" role="switch" id="dev-canister-view"> <b>Canister view</b>
+                  <span class="dev-hint">show the held canister's state in the panel</span></label>
                 <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
                   <b id="dev-panel-name">Panel position</b>
                   <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
@@ -204,6 +207,13 @@
         <section class="module goal-module" aria-labelledby="floor-tag">
           <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
           <p class="goal" id="goal"></p>
+        </section>
+        <section class="module is-off" id="canister-module" aria-labelledby="canister-h">
+          <h2 class="plate" id="canister-h">Canister</h2>
+          <div class="canister-view" id="canister-view" role="img" aria-label="The canister you are holding">
+            <canvas id="canister-canvas" aria-hidden="true"></canvas>
+            <p class="canister-state" id="canister-state" aria-hidden="true"></p>
+          </div>
         </section>
         <section class="module" aria-labelledby="mod-circuit-h">
           <div class="module-head">

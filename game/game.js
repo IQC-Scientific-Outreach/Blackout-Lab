@@ -37,7 +37,15 @@ const NO_QUBITS = {
 
 // Developer options (title screen). Remembered in this browser only.
 const DEV_KEY = 'blackoutLab.dev';
-const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, instantResponse: false, passiveTerminal: false, panel: 'right', circuitRight: false };
+const DEV_DEFAULTS = {
+  keyTorch: false,
+  touchCollapse: false,
+  instantResponse: false,
+  passiveTerminal: false,
+  canisterView: false,
+  panel: 'right',
+  circuitRight: false,
+};
 
 function loadDev() {
   try {
@@ -1447,6 +1455,8 @@ export function startGame() {
     for (const p of G.platforms) p.flash = Math.max(0, p.flash - dt * 2.2);
 
     if (input.take('mute')) toggleSound();
+    // Developer option: the held canister, enlarged in the rack.
+    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null);
 
     if (G.mode === 'falling') {
       G.fallT -= dt;

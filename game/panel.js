@@ -2,6 +2,7 @@
 // Redrawn from the engine's snapshot.
 
 import { GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from './levels.js';
+import { paintCanister } from './render.js';
 
 const ROW = 36;
 const TOP = 12;
@@ -23,6 +24,7 @@ function shares(ps) {
   return out;
 }
 const KET = { 0: '|0⟩', 1: '|1⟩', '+': '|+⟩', '-': '|−⟩' };
+const listNames = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
 // What one qubit looks like right now, in words and in a short ket.
 export function describe(snap, qi) {
@@ -268,7 +270,37 @@ export function createPanel(dom) {
   // Redraw the circuit, e.g. after the rack changes size or layout.
   function refresh() {
     lastOps = -1;
+    shownCanister = { qi: null, snap: null }; // redrawn at its new size on the next frame
     if (level && lastSnap) renderCircuit(lastSnap);
+  }
+
+  // Canister view (developer option): the held canister, enlarged on black, with
+  // its state written over it, or what it is entangled with.
+  const canisterModule = document.getElementById('canister-module');
+  const canisterCanvas = document.getElementById('canister-canvas');
+  const canisterView = document.getElementById('canister-view');
+  const canisterState = document.getElementById('canister-state');
+  let shownCanister = { qi: null, snap: null };
+
+  function setCanister(qi) {
+    const snap = lastSnap;
+    if (qi === shownCanister.qi && snap === shownCanister.snap) return;
+    shownCanister = { qi, snap };
+    canisterModule.classList.toggle('is-off', qi === null || !snap);
+    if (qi === null || !snap) return;
+    const d = describe(snap, qi);
+    const text = d.kind === 'entangled' ? `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}` : d.ket === 'ψ' ? '|ψ⟩' : d.ket;
+    canisterState.textContent = text;
+    canisterState.classList.toggle('is-long', text.length > 4);
+    canisterView.setAttribute('aria-label', `The canister you are holding: ${d.kind === 'entangled' ? text.toLowerCase() : `in state ${text}`}`);
+    const rect = canisterCanvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canisterCanvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canisterCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canisterCanvas.getContext('2d');
+    const zoom = (rect.height * dpr * 0.8) / 22; // the sprite is 22 units tall
+    ctx.setTransform(zoom, 0, 0, zoom, canisterCanvas.width / 2, canisterCanvas.height / 2 + 11 * zoom);
+    paintCanister(ctx, 0, 0);
   }
 
   function renderLog() {
@@ -282,6 +314,7 @@ export function createPanel(dom) {
   return {
     setLevel,
     setHints,
+    setCanister,
     setGoal(text) {
       if (dom.goal.textContent !== text) dom.goal.textContent = text;
     },

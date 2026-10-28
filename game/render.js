@@ -49,6 +49,18 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// The canister sprite, standing on baseY. Shared with the canister view in the rack.
+export function paintCanister(ctx, x, baseY) {
+  ctx.fillStyle = '#9fb3d6';
+  rr(ctx, x - 5, baseY - 19, 10, 19, 4);
+  ctx.fill();
+  ctx.fillStyle = '#5d7299';
+  ctx.fillRect(x - 6, baseY - 16, 12, 2.5);
+  ctx.fillRect(x - 6, baseY - 6, 12, 2.5);
+  ctx.fillStyle = '#2a3855';
+  ctx.fillRect(x - 2, baseY - 22, 4, 3);
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
@@ -435,14 +447,7 @@ export function createRenderer(canvas) {
   }
 
   function drawCanister(x, baseY) {
-    ctx.fillStyle = '#9fb3d6';
-    rr(ctx, x - 5, baseY - 19, 10, 19, 4);
-    ctx.fill();
-    ctx.fillStyle = '#5d7299';
-    ctx.fillRect(x - 6, baseY - 16, 12, 2.5);
-    ctx.fillRect(x - 6, baseY - 6, 12, 2.5);
-    ctx.fillStyle = '#2a3855';
-    ctx.fillRect(x - 2, baseY - 22, 4, 3);
+    paintCanister(ctx, x, baseY);
   }
 
   function drawPickups(G) {

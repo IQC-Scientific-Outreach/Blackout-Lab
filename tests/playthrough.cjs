@@ -951,6 +951,33 @@ async function main() {
     return `touch-collapse: landing on A's outline measured it every time (raised and landed ${seen.raised}x, lowered ${seen.lowered}x)`;
   });
 
+  // Canister view: holding the canister shows it enlarged in the rack, with its state or its partner.
+  await page.evaluate(() => document.getElementById('dev-canister-view').click());
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '2');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 2);
+  await step('canister view', async () => {
+    const g = bot.G();
+    const tile = document.getElementById('canister-module');
+    const text = () => document.getElementById('canister-state').textContent;
+    if (!tile.classList.contains('is-off')) throw new Error('the canister view should stay hidden until the canister is picked up');
+    await bot.walkTo(g.canister.x);
+    await bot.until(() => g.canister.carried && !tile.classList.contains('is-off'), 2000, 'the canister view to appear');
+    const seen = [text()];
+    await bot.terminal('T1', [1]);
+    await bot.until(() => text() === '|+⟩', 2000, 'the view to show |+⟩');
+    seen.push(text());
+    await bot.terminal('Port A', [1]);
+    await bot.until(() => text() === 'Entangled with A', 2000, 'the view to show the entanglement');
+    seen.push(text());
+    if (seen[0] !== '|0⟩') throw new Error(`a fresh canister should read |0⟩: ${seen}`);
+    const box = document.getElementById('canister-view').getBoundingClientRect();
+    if (box.height < 100 || getComputedStyle(document.getElementById('canister-view')).backgroundColor !== 'rgb(0, 0, 0)') throw new Error('the canister should be shown large, on black');
+    return `canister view: ${seen.join(', then ')}`;
+  });
+  await shot('17-canister-view');
+
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');
   await browser.close();

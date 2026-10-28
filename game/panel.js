@@ -24,6 +24,17 @@ function shares(ps) {
   return out;
 }
 const KET = { 0: '|0⟩', 1: '|1⟩', '+': '|+⟩', '-': '|−⟩' };
+// A ket written large, e.g. |0⟩: the bar and the angle bracket are drawn rather than typed,
+// so they line up whatever font the browser falls back to for ⟩ (the game's monospace
+// font has no such character). Anything that is not a ket stays plain text.
+function ketHtml(text) {
+  const m = /^\|(.+)⟩$/.exec(text);
+  if (!m) return esc(text);
+  return (
+    `<span class="ket"><span class="ket-bar"></span>${esc(m[1])}` +
+    `<svg class="ket-close" viewBox="0 0 10 24" aria-hidden="true"><polyline points="2,1 8,12 2,23"/></svg></span>`
+  );
+}
 const listNames = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
 // What one qubit looks like right now, in words and in a short ket.
@@ -338,7 +349,8 @@ export function createPanel(dom) {
       items.forEach((it, i) => {
         const text = stateText(snap, it.qi);
         const label = tileLabels[it.kind];
-        label.textContent = text;
+        label.innerHTML = ketHtml(text);
+        label.dataset.state = text; // the state as typed, |0⟩ and so on
         label.classList.toggle('is-long', text.length > 4);
         label.style.left = `${((i + 0.5) / items.length) * 100}%`;
         said.push(`the ${it.kind === 'cat' ? 'cat' : 'canister'} ${text.startsWith('Entangled') ? text.toLowerCase() : `in state ${text}`}`);

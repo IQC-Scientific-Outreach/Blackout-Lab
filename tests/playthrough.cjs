@@ -960,7 +960,7 @@ async function main() {
   await step('canister view', async () => {
     const g = bot.G();
     const tile = document.getElementById('canister-module');
-    const text = () => document.getElementById('canister-state').textContent;
+    const text = () => document.getElementById('canister-state').dataset.state;
     if (!tile.classList.contains('is-off')) throw new Error('the canister view should stay hidden until the canister is picked up');
     await bot.walkTo(g.canister.x);
     await bot.until(() => g.canister.carried && !tile.classList.contains('is-off'), 2000, 'the canister view to appear');
@@ -1009,7 +1009,7 @@ async function main() {
     g.player.x = box.x - 9;
     g.player.y = box.y - 32;
     await bot.until(() => !document.getElementById('cat-state').hidden, 2000, 'the cat in the tile');
-    const words = [document.getElementById('canister-h').textContent, document.getElementById('canister-state').textContent, document.getElementById('cat-state').textContent];
+    const words = [document.getElementById('canister-h').textContent, document.getElementById('canister-state').dataset.state, document.getElementById('cat-state').dataset.state];
     if (words.join('|') !== 'Canister and cat qubits|Entangled with CAT|Entangled with Q') throw new Error(`the tile should show both, entangled: ${words}`);
     return `cat view: "${words[0]}" with "${words[1]}" and "${words[2]}"`;
   });

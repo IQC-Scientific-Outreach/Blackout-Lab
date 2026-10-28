@@ -68,6 +68,12 @@ export function createAudio() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.3, 'triangle', 0.07));
     },
     click: () => tone(880, 0, 0.04, 'square', 0.025),
+    // A switch thrown: a sharp tick, a low thunk, and the lever settling.
+    switch: () => {
+      tone(2300, 0, 0.012, 'square', 0.035);
+      tone(150, 0.008, 0.08, 'sine', 0.1, 70);
+      tone(1600, 0.06, 0.01, 'square', 0.02);
+    },
     meow: () => {
       tone(620, 0, 0.16, 'triangle', 0.07, 980);
       tone(980, 0.15, 0.34, 'triangle', 0.07, 520);

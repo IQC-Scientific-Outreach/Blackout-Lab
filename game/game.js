@@ -551,11 +551,40 @@ export function startGame() {
     ui.closeTerminal();
   }
 
-  // Developer option: the gate pops up over its qubits for a second. The new state
-  // is shown halfway through, while the gate is at full size, so it pops out onto
-  // the changed state. Resolves at that halfway point.
+  // Developer option (show gates), in order:
+  //   1. the key is pressed: a switch sound, and a ball is thrown from the terminal to
+  //      where the gate will appear (the middle of a platform's state), and to the
+  //      canister too when a two-qubit gate involves it;
+  //   2. the ball lands: the gate pops up over its qubits, with its sound, for a second;
+  //   3. halfway through, at full size, the new state is shown, so it pops out onto it.
+  // Resolves at step 3.
+  const SPARK_SECONDS = 0.45;
   const GATE_SECONDS = 1;
-  function showGate(gate, qis, epoch) {
+  const COLOR_OF = (gate) => (gate === 'cx' ? '#ff8adf' : '#5ee6ff');
+
+  function untilFx(fx, part, epoch) {
+    return new Promise((resolve) => {
+      const wait = () => (fx.t >= fx.dur * part || epoch !== G.epoch || !G.fx.includes(fx) ? resolve() : requestAnimationFrame(wait));
+      wait();
+    });
+  }
+
+  async function throwGate(term, gate, qis, pop, epoch) {
+    audio.play('switch');
+    const from = center(screenRect(term));
+    const target = qis[qis.length - 1];
+    const aims = [target];
+    if (gate === 'cx' && G.canister && qis.includes(G.canister.qi) && G.canister.qi !== target) aims.push(G.canister.qi);
+    let lead = null;
+    for (const qi of aims) {
+      const to = renderer.gateAnchor(G, qi);
+      if (!to) continue;
+      const spark = { type: 'spark', from, to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(gate) };
+      G.fx.push(spark);
+      lead = lead || spark;
+    }
+    if (lead) await untilFx(lead, 1, epoch);
+    if (epoch !== G.epoch) return;
     const tileQi = G.dev.canisterView && carrying() ? G.canister.qi : null;
     const parts =
       gate === 'cx'
@@ -563,10 +592,8 @@ export function startGame() {
         : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
     const fx = { type: 'gate', parts, tileQi, t: 0, dur: GATE_SECONDS };
     G.fx.push(fx);
-    return new Promise((resolve) => {
-      const wait = () => (fx.t >= fx.dur / 2 || epoch !== G.epoch || !G.fx.includes(fx) ? resolve() : requestAnimationFrame(wait));
-      wait();
-    });
+    audio.play(pop);
+    await untilFx(fx, 0.5, epoch);
   }
 
   async function machineMeasure(term, op) {
@@ -619,7 +646,10 @@ export function startGame() {
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
     const res = await Q.apply(op.gate, qis);
-    if (res.ok && G.dev.showGates) await showGate(op.gate, qis, epoch);
+    const wasDefinite = before.definite[target] !== null;
+    const nowDefinite = res.ok && res.state.definite[target] !== null;
+    const pop = wasDefinite && !nowDefinite ? 'superpose' : 'gate';
+    if (res.ok && G.dev.showGates) await throwGate(term, op.gate, qis, pop, epoch);
     G.busy = false;
     if (epoch !== G.epoch) return;
     ui.setTerminalBusy(false, carrying());
@@ -632,12 +662,11 @@ export function startGame() {
     const bonus = G.level.bonus;
     if (bonus && bonus.sequences && bonus.sequences.some((s) => target === G.qIndex[s.q] && endsWith(res.state, target, s.gates))) G.bonusDone = true;
 
-    const from = center(screenRect(term));
-    const to = renderer.anchorOf(G, target);
-    if (to) G.fx.push({ type: 'spark', from, to, t: 0, dur: 0.45, color: op.gate === 'cx' ? '#ff8adf' : '#5ee6ff' });
-    const wasDefinite = before.definite[target] !== null;
-    const nowDefinite = res.state.definite[target] !== null;
-    audio.play(wasDefinite && !nowDefinite ? 'superpose' : 'gate');
+    if (!G.dev.showGates) {
+      const to = renderer.anchorOf(G, target);
+      if (to) G.fx.push({ type: 'spark', from: center(screenRect(term)), to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(op.gate) });
+      audio.play(pop);
+    }
 
     const info = GATE_INFO[op.gate];
     const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;

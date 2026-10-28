@@ -978,7 +978,8 @@ async function main() {
   });
   await shot('17-canister-view');
 
-  // Show gates: a gate pops up over its qubit for a second, and the state changes halfway through.
+  // Show gates: a ball is thrown to the middle of the state, then the gate pops up there for a
+  // second, and the state changes halfway through the pop.
   await page.evaluate(() => {
     for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();
   });
@@ -992,17 +993,25 @@ async function main() {
     await bot.until(() => g.passive, 2000, 'T1 to show passively');
     const start = performance.now();
     await bot.tap('Digit1');
-    await bot.until(() => g.fx.some((f) => f.type === 'gate'), 1000, 'the gate to pop up');
+    await bot.until(() => g.fx.some((f) => f.type === 'spark'), 500, 'the ball to be thrown');
+    const ball = g.fx.find((f) => f.type === 'spark');
+    const a = bot.platform('A');
+    const middle = { x: a.x + a.w / 2, y: (a.y0 + a.y1 + 14) / 2 };
+    if (g.fx.some((f) => f.type === 'gate') || Math.abs(ball.to.x - middle.x) > 0.5 || Math.abs(ball.to.y - middle.y) > 0.5) {
+      throw new Error(`the ball should fly first, to the middle of A's state: ${JSON.stringify({ to: ball.to, middle })}`);
+    }
+    await bot.until(() => g.fx.some((f) => f.type === 'gate'), 1500, 'the gate to pop up');
+    const poppedAt = (performance.now() - start) / 1000;
     const fx = g.fx.find((f) => f.type === 'gate');
-    const early = bot.platform('A').state;
+    const early = a.state;
     await bot.until(() => bot.platform('A').state === null, 2000, 'the superposition to appear');
     const changedAt = (performance.now() - start) / 1000;
     await bot.until(() => !g.fx.includes(fx), 2000, 'the gate to pop out');
     const total = (performance.now() - start) / 1000;
-    if (early !== 0 || changedAt < 0.4 || total < 0.9 || total > 1.6 || fx.parts[0].role !== 'box') {
-      throw new Error(`the gate should pop for about 1 s, the state changing halfway: ${JSON.stringify({ early, changedAt, total })}`);
+    if (early !== 0 || poppedAt < 0.4 || changedAt < poppedAt + 0.4 || total < poppedAt + 0.9 || total > 2.2 || fx.parts[0].role !== 'box') {
+      throw new Error(`the ball should land, then the gate pop for about 1 s with the state changing halfway: ${JSON.stringify({ early, poppedAt, changedAt, total })}`);
     }
-    return `show gates: H popped up over A for ${total.toFixed(2)} s, the superposition appearing at ${changedAt.toFixed(2)} s`;
+    return `show gates: the ball landed mid-state on A and the H popped up at ${poppedAt.toFixed(2)} s, the superposition appeared at ${changedAt.toFixed(2)} s, the H was gone at ${total.toFixed(2)} s`;
   });
   await page.evaluate(() => {
     for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();

@@ -1712,5 +1712,5 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  return { draw, resize, anchorOf };
+  return { draw, resize, anchorOf, gateAnchor };
 }

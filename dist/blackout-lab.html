@@ -5169,9 +5169,9 @@ function startGame() {
   //   1. the key is pressed: a switch sound, and a ball is thrown from the terminal to
   //      where the gate will appear (the middle of a platform's state), and to the
   //      canister too when a two-qubit gate involves it;
-  //   2. the ball lands: the gate pops up over its qubits, with its sound, for a second;
-  //   3. halfway through, at full size, the new state is shown, so it pops out onto it.
-  // Resolves at step 3.
+  //   2. the ball lands: the gate pops up over its qubits, with its sound, and the new
+  //      state is shown at once; the gate stays its full second, then pops out.
+  // Resolves at step 2, as the gate appears.
   const SPARK_SECONDS = 0.45;
   const GATE_SECONDS = 1;
   const COLOR_OF = (gate) => (gate === 'cx' ? '#ff8adf' : '#5ee6ff');
@@ -5207,7 +5207,6 @@ function startGame() {
     const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
     G.fx.push(fx);
     audio.play(pop);
-    await untilFx(fx, 0.5, epoch);
   }
 
   async function machineMeasure(term, op) {

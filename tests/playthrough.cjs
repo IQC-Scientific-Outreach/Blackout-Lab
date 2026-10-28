@@ -1015,7 +1015,7 @@ async function main() {
   });
 
   // Show gates: a ball is thrown to the middle of the state, then the gate pops up there for a
-  // second, and the state changes halfway through the pop.
+  // second, and the state changes as soon as it appears.
   await page.evaluate(() => {
     for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();
   });
@@ -1036,16 +1036,16 @@ async function main() {
     if (g.fx.some((f) => f.type === 'gate') || Math.abs(ball.to.x - middle.x) > 0.5 || Math.abs(ball.to.y - middle.y) > 0.5) {
       throw new Error(`the ball should fly first, to the middle of A's state: ${JSON.stringify({ to: ball.to, middle })}`);
     }
+    const early = a.state; // while the ball is in the air, nothing has changed yet
     await bot.until(() => g.fx.some((f) => f.type === 'gate'), 1500, 'the gate to pop up');
     const poppedAt = (performance.now() - start) / 1000;
     const fx = g.fx.find((f) => f.type === 'gate');
-    const early = a.state;
     await bot.until(() => bot.platform('A').state === null, 2000, 'the superposition to appear');
     const changedAt = (performance.now() - start) / 1000;
     await bot.until(() => !g.fx.includes(fx), 2000, 'the gate to pop out');
     const total = (performance.now() - start) / 1000;
-    if (early !== 0 || poppedAt < 0.4 || changedAt < poppedAt + 0.4 || total < poppedAt + 0.9 || total > 2.2 || fx.parts[0].role !== 'box') {
-      throw new Error(`the ball should land, then the gate pop for about 1 s with the state changing halfway: ${JSON.stringify({ early, poppedAt, changedAt, total })}`);
+    if (early !== 0 || poppedAt < 0.4 || Math.abs(changedAt - poppedAt) > 0.15 || total < poppedAt + 0.9 || total > 2.2 || fx.parts[0].role !== 'box') {
+      throw new Error(`the ball should land, then the gate pop for about 1 s with the state changing as it appears: ${JSON.stringify({ early, poppedAt, changedAt, total })}`);
     }
     return `show gates: the ball landed mid-state on A and the H popped up at ${poppedAt.toFixed(2)} s, the superposition appeared at ${changedAt.toFixed(2)} s, the H was gone at ${total.toFixed(2)} s`;
   });

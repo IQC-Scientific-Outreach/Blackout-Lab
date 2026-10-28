@@ -234,9 +234,12 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 /* Canister view (developer option): the held canister, enlarged, with its state over it. */
 .module.is-off { display: none; }
 .canister-view { position: relative; height: 170px; border-radius: 6px; background: #000; display: grid; place-items: center; overflow: hidden; }
-.canister-view canvas { grid-area: 1 / 1; width: 100%; height: 100%; }
-.canister-state { grid-area: 1 / 1; z-index: 1; padding: 2px 8px; font: 700 26px var(--mono); color: #39ff7a; text-align: center; text-shadow: 0 0 6px #000, 0 0 12px #000; }
+.canister-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; } /* sized by the box, never by its own pixels */
+.canister-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; margin: 0; padding: 2px 6px; font: 700 26px var(--mono); color: #39ff7a; text-align: center; white-space: nowrap; text-shadow: 0 0 6px #000, 0 0 12px #000; }
 .canister-state.is-long { font-size: 17px; }
+.canister-view.is-pair .canister-state { font-size: 20px; }
+.canister-view.is-pair .canister-state.is-long { font-size: 12px; }
+.lock-view { height: 150px; }
 .canister-state.is-hidden { visibility: hidden; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }

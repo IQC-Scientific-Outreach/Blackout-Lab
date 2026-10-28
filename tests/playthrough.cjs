@@ -978,6 +978,42 @@ async function main() {
   });
   await shot('17-canister-view');
 
+  // Canister view, continued: at Port D (its CNOT reaches the lock lamp D) the lock shows magnified.
+  await step('lock view', async () => {
+    const g = bot.G();
+    const lock = document.getElementById('lock-module');
+    if (!lock.classList.contains('is-off')) throw new Error('the lock view should stay hidden away from lock terminals');
+    const port = g.room.terminals.find((t) => t.id === 'Port D');
+    g.player.x = port.x - 9;
+    g.player.y = port.y - 32;
+    await bot.until(() => !lock.classList.contains('is-off'), 2000, 'the lock view at Port D');
+    const c = document.getElementById('lock-canvas');
+    const px = c.getContext('2d').getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data;
+    g.player.x = 40;
+    g.player.y = 450 - 32;
+    await bot.until(() => lock.classList.contains('is-off'), 2000, 'the lock view to hide again');
+    return `lock view: shown magnified at Port D (centre pixel rgb ${px[0]},${px[1]},${px[2]}), hidden elsewhere`;
+  });
+
+  // Floor 5: at the Professor's box the tile shows the canister and the cat, entangled.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '4');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 4);
+  await step('cat view', async () => {
+    const g = bot.G();
+    g.player.x = g.canister.x - 9;
+    g.player.y = g.canister.y - 32;
+    await bot.until(() => g.canister.carried, 2000, 'the canister');
+    const box = g.room.terminals.find((t) => t.box);
+    g.player.x = box.x - 9;
+    g.player.y = box.y - 32;
+    await bot.until(() => !document.getElementById('cat-state').hidden, 2000, 'the cat in the tile');
+    const words = [document.getElementById('canister-h').textContent, document.getElementById('canister-state').textContent, document.getElementById('cat-state').textContent];
+    if (words.join('|') !== 'Canister and cat qubits|Entangled with CAT|Entangled with Q') throw new Error(`the tile should show both, entangled: ${words}`);
+    return `cat view: "${words[0]}" with "${words[1]}" and "${words[2]}"`;
+  });
+
   // Show gates: a ball is thrown to the middle of the state, then the gate pops up there for a
   // second, and the state changes halfway through the pop.
   await page.evaluate(() => {

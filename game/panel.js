@@ -2,7 +2,7 @@
 // Redrawn from the engine's snapshot.
 
 import { GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from './levels.js';
-import { paintCanister, paintGate, gatePop } from './render.js';
+import { paintCanister, paintCat, paintGate, paintGateLink, gatePop } from './render.js';
 
 const ROW = 36;
 const TOP = 12;
@@ -270,53 +270,128 @@ export function createPanel(dom) {
   // Redraw the circuit, e.g. after the rack changes size or layout.
   function refresh() {
     lastOps = -1;
-    shownCanister = { qi: null, snap: null }; // redrawn at its new size on the next frame
     if (level && lastSnap) renderCircuit(lastSnap);
   }
 
-  // Canister view (developer option): the held canister, enlarged on black, with
-  // its state written over it, or what it is entangled with.
+  // Canister view (developer option): the qubits in hand, enlarged on black: the canister
+  // you carry, and at the Professor's box (floor 5) the cat as well, canister on the left.
+  // Each shows its state over its middle, or what it is entangled with, and gates (show
+  // gates) pop up over them, a CNOT between the two joined by its line.
   const canisterModule = document.getElementById('canister-module');
+  const canisterHeading = document.getElementById('canister-h');
   const canisterCanvas = document.getElementById('canister-canvas');
   const canisterView = document.getElementById('canister-view');
-  const canisterState = document.getElementById('canister-state');
-  let shownCanister = { qi: null, snap: null };
+  const tileLabels = { canister: document.getElementById('canister-state'), cat: document.getElementById('cat-state') };
+  const lockModule = document.getElementById('lock-module');
+  const lockCanvas = document.getElementById('lock-canvas');
+  let shownTile = { key: '', snap: null };
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
-  // Called every frame: the text changes only with the state, but the dashed bands move.
-  // `gate` (show gates developer option): { part, k }, a gate popping up over the canister.
-  function setCanister(qi, t, gate) {
-    const snap = lastSnap;
-    const changed = qi !== shownCanister.qi || snap !== shownCanister.snap;
-    const animating = !!gate || shownCanister.gate;
-    if (!changed && !animating && (qi === null || !snap || snap.definite[qi] !== null)) return;
-    shownCanister = { qi, snap, gate: !!gate };
-    canisterModule.classList.toggle('is-off', qi === null || !snap);
-    canisterState.classList.toggle('is-hidden', !!gate); // the gate covers the state, then reveals the new one
-    if (qi === null || !snap) return;
+  function stateText(snap, qi) {
     const d = describe(snap, qi);
-    if (changed) {
-      const text = d.kind === 'entangled' ? `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}` : d.ket === 'ψ' ? '|ψ⟩' : d.ket;
-      canisterState.textContent = text;
-      canisterState.classList.toggle('is-long', text.length > 4);
-      canisterView.setAttribute('aria-label', `The canister you are holding: ${d.kind === 'entangled' ? text.toLowerCase() : `in state ${text}`}`);
-    }
-    const state = d.kind === 'definite' ? { value: d.p1 } : { p1: d.p1, t: calm.matches ? 0 : t };
-    const rect = canisterCanvas.getBoundingClientRect();
+    if (d.kind === 'entangled') return `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}`;
+    return d.ket === 'ψ' ? '|ψ⟩' : d.ket;
+  }
+
+  // A canvas drawn at its on-screen size, cleared, with its size in device pixels.
+  function fitCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.max(1, Math.round(rect.width * dpr));
     const h = Math.max(1, Math.round(rect.height * dpr));
-    if (canisterCanvas.width !== w || canisterCanvas.height !== h) {
-      canisterCanvas.width = w;
-      canisterCanvas.height = h;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
     }
-    const ctx = canisterCanvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const zoom = (rect.height * dpr * 0.8) / 22; // the sprite is 22 units tall
-    ctx.setTransform(zoom, 0, 0, zoom, canisterCanvas.width / 2, canisterCanvas.height / 2 + 11 * zoom);
-    paintCanister(ctx, 0, 0, state);
-    if (gate) paintGate(ctx, 0, -9.75, gate.part, gatePop(gate.k, calm.matches), 7.5); // between the two bands
+    return { ctx, w, h };
+  }
+
+  // items: [{ qi, kind: 'canister' | 'cat' }], left to right. gate: { parts, k } or null.
+  // Called every frame while shown: the dashed bands and the gates move.
+  function setTile(items, t, gate) {
+    const snap = lastSnap;
+    const on = items.length > 0 && !!snap;
+    canisterModule.classList.toggle('is-off', !on);
+    if (!on) {
+      shownTile = { key: '', snap: null };
+      return;
+    }
+    const key = items.map((it) => `${it.kind}${it.qi}`).join(' ');
+    if (key !== shownTile.key || snap !== shownTile.snap) {
+      shownTile = { key, snap };
+      const kinds = items.map((it) => it.kind);
+      canisterHeading.textContent = kinds.length === 2 ? 'Canister and cat qubits' : kinds[0] === 'cat' ? 'Cat qubit' : 'Canister qubit';
+      canisterView.classList.toggle('is-pair', items.length === 2);
+      for (const [kind, label] of Object.entries(tileLabels)) label.hidden = !kinds.includes(kind);
+      const said = [];
+      items.forEach((it, i) => {
+        const text = stateText(snap, it.qi);
+        const label = tileLabels[it.kind];
+        label.textContent = text;
+        label.classList.toggle('is-long', text.length > 4);
+        label.style.left = `${((i + 0.5) / items.length) * 100}%`;
+        said.push(`the ${it.kind === 'cat' ? 'cat' : 'canister'} ${text.startsWith('Entangled') ? text.toLowerCase() : `in state ${text}`}`);
+      });
+      canisterView.setAttribute('aria-label', `In hand: ${said.join('; ')}`);
+    }
+    for (const it of items) tileLabels[it.kind].classList.toggle('is-hidden', !!(gate && gate.parts.some((p) => p.qi === it.qi)));
+
+    const { ctx, w, h } = fitCanvas(canisterCanvas);
+    const slot = w / items.length;
+    const zoom = Math.min((h * 0.8) / 22, (slot * 0.75) / 22); // both sprites are about 22 units across
+    const base = h / 2 + 10.5 * zoom;
+    const middles = {};
+    items.forEach((it, i) => {
+      const cx = (i + 0.5) * slot;
+      const d = describe(snap, it.qi);
+      ctx.setTransform(zoom, 0, 0, zoom, cx, base);
+      if (it.kind === 'canister') {
+        paintCanister(ctx, 0, 0, d.kind === 'definite' ? { value: d.p1 } : { p1: d.p1, t: calm.matches ? 0 : t });
+        middles[it.qi] = { x: cx, y: base - 9.75 * zoom }; // between the two bands
+      } else {
+        // 0 = the atom intact, the cat alive; 1 = decayed, dead. Uncertain: both, see-through.
+        const alive = d.kind === 'definite' ? 1 - d.p1 : 0.25 + 0.6 * (1 - d.p1);
+        const dead = d.kind === 'definite' ? d.p1 : 0.25 + 0.6 * d.p1;
+        if (alive > 0) {
+          ctx.globalAlpha = alive;
+          paintCat(ctx, 2, 0, false);
+        }
+        if (dead > 0) {
+          ctx.globalAlpha = dead;
+          paintCat(ctx, 2, 0, true);
+        }
+        ctx.globalAlpha = 1;
+        middles[it.qi] = { x: cx, y: base - 9.5 * zoom };
+      }
+    });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!gate) return;
+    const pop = gatePop(gate.k, calm.matches);
+    const size = 7.5 * zoom;
+    const parts = gate.parts.filter((p) => middles[p.qi]);
+    const ctrl = parts.find((p) => p.role === 'ctrl');
+    const targ = parts.find((p) => p.role === 'targ');
+    if (ctrl && targ) paintGateLink(ctx, middles[ctrl.qi], middles[targ.qi], pop, size);
+    for (const part of parts) paintGate(ctx, middles[part.qi].x, middles[part.qi].y, part, pop, size);
+  }
+
+  // Lock view (developer option): the exit's lock, magnified from the game picture.
+  // `source` is the game canvas and `crop` the lock's part of it, or null to hide.
+  function setLockView(source, crop, words) {
+    lockModule.classList.toggle('is-off', !crop);
+    if (!crop) return;
+    const { ctx, w, h } = fitCanvas(lockCanvas);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    const fit = Math.min(w / crop.w, h / crop.h);
+    const dw = crop.w * fit;
+    const dh = crop.h * fit;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(source, crop.x, crop.y, crop.w, crop.h, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    if (words && lockCanvas.getAttribute('aria-label') !== words) lockCanvas.setAttribute('aria-label', words);
   }
 
   function renderLog() {
@@ -330,7 +405,7 @@ export function createPanel(dom) {
   return {
     setLevel,
     setHints,
-    setCanister,
+    setTile,
     setGoal(text) {
       if (dom.goal.textContent !== text) dom.goal.textContent = text;
     },
@@ -339,6 +414,7 @@ export function createPanel(dom) {
       refresh();
     },
     refresh,
+    setLockView,
     render(snap) {
       if (!level || !snap) return;
       lastSnap = snap;

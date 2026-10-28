@@ -585,12 +585,12 @@ export function startGame() {
     }
     if (lead) await untilFx(lead, 1, epoch);
     if (epoch !== G.epoch) return;
-    const tileQi = G.dev.canisterView && carrying() ? G.canister.qi : null;
+    const tileQis = tileItems().map((it) => it.qi);
     const parts =
       gate === 'cx'
         ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
         : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
-    const fx = { type: 'gate', parts, tileQi, t: 0, dur: GATE_SECONDS };
+    const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
     G.fx.push(fx);
     audio.play(pop);
     await untilFx(fx, 0.5, epoch);
@@ -1504,11 +1504,6 @@ export function startGame() {
     for (const p of G.platforms) p.flash = Math.max(0, p.flash - dt * 2.2);
 
     if (input.take('mute')) toggleSound();
-    // Developer option: the held canister, enlarged in the rack.
-    const heldQi = G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null;
-    const gateFx = heldQi === null ? null : G.fx.find((fx) => fx.type === 'gate' && fx.tileQi === heldQi);
-    const tileGate = gateFx && { part: gateFx.parts.find((p) => p.qi === heldQi), k: Math.min(1, gateFx.t / gateFx.dur) };
-    panel.setCanister(heldQi, G.t, tileGate && tileGate.part ? tileGate : null);
 
     if (G.mode === 'falling') {
       G.fallT -= dt;
@@ -1601,6 +1596,40 @@ export function startGame() {
     ev.preventDefault();
   });
 
+  // -- canister and lock views (developer option) -------------------------------
+
+  // The terminal the player is using or standing at, if any.
+  function terminalAtHand() {
+    if (!G.room || (G.mode !== 'play' && G.mode !== 'terminal')) return null;
+    return G.terminal || G.room.terminals.find((t) => t.near) || null;
+  }
+
+  // What the canister view shows, left to right: the carried canister, and at the
+  // Professor's box the cat (the atom's qubit) beside it.
+  function tileItems() {
+    if (!G.dev.canisterView || !G.q || !G.level || G.level.outdoor) return [];
+    const items = [];
+    if (carrying()) items.push({ qi: G.canister.qi, kind: 'canister' });
+    const term = terminalAtHand();
+    const cat = G.level.qubits.findIndex((q) => q.role === 'box');
+    if (term && term.box && cat >= 0) items.push({ qi: cat, kind: 'cat' });
+    return items;
+  }
+
+  // Each frame, after the game is drawn: the tile, and the magnified lock when the
+  // terminal at hand acts on one of the lock's lamps.
+  function updateViews() {
+    const items = tileItems();
+    const qis = items.map((it) => it.qi);
+    const fx = items.length ? G.fx.find((f) => f.type === 'gate' && f.parts.some((p) => qis.includes(p.qi))) : null;
+    panel.setTile(items, G.t, fx ? { parts: fx.parts, k: Math.min(1, fx.t / fx.dur) } : null);
+    const term = G.dev.canisterView && G.q && !G.level.outdoor ? terminalAtHand() : null;
+    const d = G.room && G.room.door;
+    const lamps = d && d.lockQi ? d.lockQi : [];
+    const touches = !!term && lamps.length > 0 && term.ops.some((op) => (op.qi || []).some((q) => lamps.includes(q)));
+    panel.setLockView(dom.game, touches ? renderer.lockCrop(G) : null, touches ? `The exit lock, magnified: key ${d.key.split('').join(' ')}, lamps ${lamps.map((q) => G.q.labels[q]).join(', ')}` : null);
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
@@ -1608,6 +1637,7 @@ export function startGame() {
     try {
       update(dt);
       renderer.draw(G);
+      updateViews();
       ui.tick(dt);
     } catch (err) {
       console.log(`Blackout Lab frame error: ${err && err.stack ? err.stack : err}`);

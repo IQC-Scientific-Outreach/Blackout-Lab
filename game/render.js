@@ -192,6 +192,70 @@ export function paintGateLink(ctx, a, b, pop, size) {
   ctx.restore();
 }
 
+const CAT = { fur: '#f0a04b', stripe: '#b9631c', chest: '#fbe3c0', eye: '#1d3b16' };
+
+// The cat, sitting on y. `dead` (the canister view's cat): upside down, eyes crossed out.
+export function paintCat(ctx, x, y, dead) {
+  ctx.save();
+  if (dead) {
+    // Upside down, legs in the air, around the middle of the body.
+    ctx.translate(x, y - 9);
+    ctx.rotate(Math.PI);
+    ctx.translate(-x, -(y - 9));
+  }
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = CAT.fur;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); // tail
+  ctx.moveTo(x - 6, y - 4);
+  ctx.quadraticCurveTo(x - 13, y - 6, x - 11, y - 14);
+  ctx.stroke();
+  ctx.fillStyle = CAT.fur;
+  ctx.beginPath();
+  ctx.ellipse(x, y - 5, 7, 6, 0, 0, Math.PI * 2); // body
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 5, y - 12, 4.5, 0, Math.PI * 2); // head
+  ctx.fill();
+  ctx.beginPath(); // ears
+  ctx.moveTo(x + 1.5, y - 14);
+  ctx.lineTo(x + 2.5, y - 19);
+  ctx.lineTo(x + 5, y - 15.5);
+  ctx.moveTo(x + 5.5, y - 15.5);
+  ctx.lineTo(x + 8, y - 19);
+  ctx.lineTo(x + 9, y - 14);
+  ctx.fill();
+  ctx.fillStyle = CAT.chest;
+  ctx.beginPath();
+  ctx.ellipse(x + 4, y - 5, 2.6, 3.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = CAT.stripe;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); // tabby stripes
+  for (const dx of [-4, -1.5]) {
+    ctx.moveTo(x + dx, y - 10);
+    ctx.lineTo(x + dx - 0.5, y - 6.5);
+  }
+  ctx.stroke();
+  if (dead) {
+    ctx.strokeStyle = CAT.eye; // eyes crossed out
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (const ex of [4, 7]) {
+      ctx.moveTo(x + ex - 1.1, y - 13.4);
+      ctx.lineTo(x + ex + 1.1, y - 11.2);
+      ctx.moveTo(x + ex + 1.1, y - 13.4);
+      ctx.lineTo(x + ex - 1.1, y - 11.2);
+    }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = CAT.eye;
+    ctx.fillRect(x + 3.2, y - 13.2, 1.6, 1.8);
+    ctx.fillRect(x + 6.2, y - 13.2, 1.6, 1.8);
+  }
+  ctx.restore();
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
@@ -442,48 +506,9 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  const CAT = { fur: '#f0a04b', stripe: '#b9631c', chest: '#fbe3c0', eye: '#1d3b16' };
 
   function drawCat(x, y) {
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = CAT.fur;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath(); // tail
-    ctx.moveTo(x - 6, y - 4);
-    ctx.quadraticCurveTo(x - 13, y - 6, x - 11, y - 14);
-    ctx.stroke();
-    ctx.fillStyle = CAT.fur;
-    ctx.beginPath();
-    ctx.ellipse(x, y - 5, 7, 6, 0, 0, Math.PI * 2); // body
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + 5, y - 12, 4.5, 0, Math.PI * 2); // head
-    ctx.fill();
-    ctx.beginPath(); // ears
-    ctx.moveTo(x + 1.5, y - 14);
-    ctx.lineTo(x + 2.5, y - 19);
-    ctx.lineTo(x + 5, y - 15.5);
-    ctx.moveTo(x + 5.5, y - 15.5);
-    ctx.lineTo(x + 8, y - 19);
-    ctx.lineTo(x + 9, y - 14);
-    ctx.fill();
-    ctx.fillStyle = CAT.chest;
-    ctx.beginPath();
-    ctx.ellipse(x + 4, y - 5, 2.6, 3.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = CAT.stripe;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath(); // tabby stripes
-    for (const dx of [-4, -1.5]) {
-      ctx.moveTo(x + dx, y - 10);
-      ctx.lineTo(x + dx - 0.5, y - 6.5);
-    }
-    ctx.stroke();
-    ctx.fillStyle = CAT.eye;
-    ctx.fillRect(x + 3.2, y - 13.2, 1.6, 1.8);
-    ctx.fillRect(x + 6.2, y - 13.2, 1.6, 1.8);
-    ctx.restore();
+    paintCat(ctx, x, y);
   }
 
   function drawCatRun(x, y, stride, tilt) {
@@ -1241,13 +1266,15 @@ export function createRenderer(canvas) {
 
   function drawGateFx(G, fx, k) {
     const pop = gatePop(k, calm.matches);
-    const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: part.qi === fx.tileQi }));
+    const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: fx.tileQis.includes(part.qi) }));
+    // A gate wholly on qubits in the canister view tile is drawn only there.
+    if (at.every((a) => a.tile)) return;
     const ctrl = at.find((a) => a.part.role === 'ctrl');
     const targ = at.find((a) => a.part.role === 'targ');
     if (ctrl && targ && ctrl.pos && targ.pos) paintGateLink(ctx, ctrl.pos, targ.pos, pop, 26);
     for (const a of at) {
       if (!a.pos) continue;
-      // The canister view tile shows the canister's gate; on the player's back stays only a
+      // The canister view tile shows a qubit's gate; on the player's back stays only a
       // CNOT's dot, so the line still starts somewhere. Without the tile the canister gets it all, small.
       if (a.tile && a.part.role !== 'ctrl') continue;
       const small = G.canister && a.part.qi === G.canister.qi;
@@ -1712,5 +1739,16 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  return { draw, resize, anchorOf, gateAnchor };
+  // The exit's lock panel, its sign and the door, in this canvas's pixels (the lock view
+  // developer option magnifies this part of the picture). Null if this room has no lock.
+  function lockCrop(G) {
+    const d = G.room && G.room.door;
+    if (!d || !d.lock || !d.lock.length) return null;
+    const l = lockRect(d);
+    const x0 = l.x - 10;
+    const y0 = d.y - 104;
+    return { x: x0 * scale, y: y0 * scale, w: (d.x + 32 - x0) * scale, h: (d.y + 8 - y0) * scale };
+  }
+
+  return { draw, resize, anchorOf, gateAnchor, lockCrop };
 }

@@ -3983,10 +3983,14 @@ function createUI(dom, handlers) {
     return op.q.join(', ');
   }
 
-  // `asPassive`: shown just by standing at the terminal, gates picked with the number keys.
-  function openTerminal(term, carrying, asPassive) {
+  // Options (passive terminal developer option):
+  //   passive  shown just by standing at the terminal; the game keeps the keys
+  //   numbers  each gate shows the number key that applies it
+  function openTerminal(term, carrying, { passive: asPassive = false, numbers = asPassive } = {}) {
     terminal = term;
-    passive = !!asPassive;
+    passive = asPassive;
+    const keys = Math.min(term.ops.length, 9);
+    const range = keys > 1 ? `1 to ${keys}` : '1';
     dom.dockPlay.hidden = true;
     dom.dockTerminal.hidden = false;
     dom.termClose.hidden = passive;
@@ -4001,15 +4005,20 @@ function createUI(dom, handlers) {
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
           `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span>` +
-          `${passive && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
+          `${numbers && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
         );
       })
       .join('');
     if (passive) {
-      setTerminalStatus(`Press ${term.ops.length > 1 ? `1 to ${Math.min(term.ops.length, 9)}` : '1'}, or click a gate. Your flashlight stays on here.`, '');
+      setTerminalStatus(`Press ${range}, or click a gate. Your flashlight stays on here. E or Enter steps in to pick with the arrow keys.`, '');
       return;
     }
-    setTerminalStatus('Pick a gate. Nothing is observed while you are at the terminal.', '');
+    setTerminalStatus(
+      numbers
+        ? `Pick a gate: arrow keys then Enter or Space, or press ${range}. Nothing is observed while you are at the terminal.`
+        : 'Pick a gate. Nothing is observed while you are at the terminal.',
+      ''
+    );
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
   }
 
@@ -4745,7 +4754,7 @@ function startGame() {
     }
     G.terminal = term;
     setMode('terminal');
-    ui.openTerminal(term, carrying());
+    ui.openTerminal(term, carrying(), { numbers: G.dev.passiveTerminal });
     audio.play('click');
     ui.announce(`${term.id} open. ${term.ops.length} gate${term.ops.length === 1 ? '' : 's'} available.`);
   }
@@ -4767,7 +4776,7 @@ function startGame() {
     if (!term) return;
     G.passive = term;
     G.passiveCarrying = carrying();
-    ui.openTerminal(term, carrying(), true);
+    ui.openTerminal(term, carrying(), { passive: true });
   }
 
   function closePassive() {
@@ -5631,7 +5640,7 @@ function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
-    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate to apply it.`;
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate, or <b>E</b> to step in.`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -5694,6 +5703,7 @@ function startGame() {
     if (G.mode === 'terminal') {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
+      for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
       if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
       updateTorch(dt);
       return;
@@ -5733,7 +5743,8 @@ function startGame() {
     for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
     if (input.take('use') && hit) {
       if (hit.type === 'terminal') {
-        if (!G.dev.passiveTerminal) useTerminal(hit.obj);
+        closePassive(); // with the passive terminal option, E steps in: arrow keys or numbers pick a gate
+        useTerminal(hit.obj);
       }
       else if (hit.type === 'npc') {
         const talk = (story().talk || {})[hit.obj.id];

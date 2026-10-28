@@ -114,10 +114,14 @@ export function createUI(dom, handlers) {
     return op.q.join(', ');
   }
 
-  // `asPassive`: shown just by standing at the terminal, gates picked with the number keys.
-  function openTerminal(term, carrying, asPassive) {
+  // Options (passive terminal developer option):
+  //   passive  shown just by standing at the terminal; the game keeps the keys
+  //   numbers  each gate shows the number key that applies it
+  function openTerminal(term, carrying, { passive: asPassive = false, numbers = asPassive } = {}) {
     terminal = term;
-    passive = !!asPassive;
+    passive = asPassive;
+    const keys = Math.min(term.ops.length, 9);
+    const range = keys > 1 ? `1 to ${keys}` : '1';
     dom.dockPlay.hidden = true;
     dom.dockTerminal.hidden = false;
     dom.termClose.hidden = passive;
@@ -132,15 +136,20 @@ export function createUI(dom, handlers) {
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
           `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span>` +
-          `${passive && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
+          `${numbers && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
         );
       })
       .join('');
     if (passive) {
-      setTerminalStatus(`Press ${term.ops.length > 1 ? `1 to ${Math.min(term.ops.length, 9)}` : '1'}, or click a gate. Your flashlight stays on here.`, '');
+      setTerminalStatus(`Press ${range}, or click a gate. Your flashlight stays on here. E or Enter steps in to pick with the arrow keys.`, '');
       return;
     }
-    setTerminalStatus('Pick a gate. Nothing is observed while you are at the terminal.', '');
+    setTerminalStatus(
+      numbers
+        ? `Pick a gate: arrow keys then Enter or Space, or press ${range}. Nothing is observed while you are at the terminal.`
+        : 'Pick a gate. Nothing is observed while you are at the terminal.',
+      ''
+    );
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
   }
 

@@ -844,10 +844,23 @@ async function main() {
     await bot.until(() => g.q.ops.length === before + 2, 2000, '1 again to undo it');
     const a = bot.platform('A');
     if (a.state !== 0) throw new Error('H twice should leave A lowered');
+    // E steps in: the gate buttons take the keys (arrows, then Enter or Space), and the numbers still work.
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'terminal', 2000, 'E to step into T1');
+    await bot.frame();
+    const focused = document.activeElement;
+    if (!focused.matches('.op-btn') || !focused.querySelector('.op-key')) throw new Error('stepping in should focus a numbered gate button');
+    focused.click(); // what Enter or Space does on the focused button
+    await bot.until(() => g.q.ops.length === before + 3, 2000, 'the focused gate');
+    await bot.tap('Digit1');
+    await bot.until(() => g.q.ops.length === before + 4, 2000, '1 inside the terminal');
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'play' && g.passive, 2000, 'E to step out, gates still showing');
+    if (a.state !== 0) throw new Error('four H gates should leave A lowered');
     bot.key('ArrowLeft', true);
     await bot.until(() => !g.passive, 2000, 'walking away to hide the gates');
     bot.key('ArrowLeft', false);
-    return 'passive terminal: standing at T1 showed its gates with number keys; 1 applied H twice (back to lowered); walking away hid them';
+    return 'passive terminal: standing at T1 showed its numbered gates and 1 applied H; E stepped in (focused button and 1 both applied H) and E stepped out; walking away hid them';
   });
   // Passive terminal also opens an exit by itself once every lamp is certain and matches the key.
   // (The lamp readings are set directly here; floor 3's real play is covered above.)

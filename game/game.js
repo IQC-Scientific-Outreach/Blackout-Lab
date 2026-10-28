@@ -511,7 +511,7 @@ export function startGame() {
     }
     G.terminal = term;
     setMode('terminal');
-    ui.openTerminal(term, carrying());
+    ui.openTerminal(term, carrying(), { numbers: G.dev.passiveTerminal });
     audio.play('click');
     ui.announce(`${term.id} open. ${term.ops.length} gate${term.ops.length === 1 ? '' : 's'} available.`);
   }
@@ -533,7 +533,7 @@ export function startGame() {
     if (!term) return;
     G.passive = term;
     G.passiveCarrying = carrying();
-    ui.openTerminal(term, carrying(), true);
+    ui.openTerminal(term, carrying(), { passive: true });
   }
 
   function closePassive() {
@@ -1397,7 +1397,7 @@ export function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
-    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate to apply it.`;
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate, or <b>E</b> to step in.`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -1460,6 +1460,7 @@ export function startGame() {
     if (G.mode === 'terminal') {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
+      for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
       if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
       updateTorch(dt);
       return;
@@ -1499,7 +1500,8 @@ export function startGame() {
     for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
     if (input.take('use') && hit) {
       if (hit.type === 'terminal') {
-        if (!G.dev.passiveTerminal) useTerminal(hit.obj);
+        closePassive(); // with the passive terminal option, E steps in: arrow keys or numbers pick a gate
+        useTerminal(hit.obj);
       }
       else if (hit.type === 'npc') {
         const talk = (story().talk || {})[hit.obj.id];

@@ -5,12 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
+<!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-BSmvwxTuzqZLnX1Yn2mx3ttvciBypro92YSyZKdklXA='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
 <style>
 /* ==========================================================================
    main.css
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Big+Shoulders+Display:wght@700;800&family=JetBrains+Mono:wght@500;700&display=swap');
-
 /* Layout: game window on the left, instrument rack on the right, console strip under the window. */
 :root {
   color-scheme: dark;
@@ -2152,14 +2155,13 @@ function paintGate(ctx, x, y, part, pop, size) {
   halo.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = halo;
   ctx.fillRect(-size * 1.15, -size * 1.15, size * 2.3, size * 2.3);
-  // The white outline, stroked twice under a blur so it glows, strongest as the gate appears.
+  // The white outline under a light blur, strongest as the gate appears. (The halo above
+  // carries most of the glow: blurs are costly, so there is only one, and a small one.)
   const glow = () => {
     ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
     ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
     ctx.lineWidth = size * 0.07;
-    ctx.shadowBlur = size * 1.1 * pop.glow;
-    ctx.stroke();
-    ctx.shadowBlur = size * 0.45 * pop.glow;
+    ctx.shadowBlur = size * 0.5 * pop.glow;
     ctx.stroke();
     ctx.shadowBlur = 0;
   };
@@ -2216,9 +2218,7 @@ function paintGateLink(ctx, a, b, pop, size) {
   ctx.beginPath();
   ctx.moveTo(a.x, a.y);
   ctx.lineTo(b.x, b.y);
-  ctx.shadowBlur = size * 0.9 * pop.glow;
-  ctx.stroke();
-  ctx.shadowBlur = size * 0.35 * pop.glow;
+  ctx.shadowBlur = size * 0.5 * pop.glow;
   ctx.stroke();
   ctx.restore();
 }
@@ -2293,6 +2293,9 @@ function createRenderer(canvas) {
   const mctx = mask.getContext('2d');
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let scale = 1;
+  // The darkness is drawn small and stretched over the picture: it is all soft edges,
+  // so the stretch blurs it for free, and it is a fraction of the pixels to fill and copy.
+  let maskScale = 0.5;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -2301,11 +2304,12 @@ function createRenderer(canvas) {
     scale = Math.max(0.5, Math.min(2, (cssW / WORLD.w) * dpr));
     const w = Math.round(WORLD.w * scale);
     const h = Math.round(WORLD.h * scale);
+    maskScale = Math.min(scale, 0.5);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
-      mask.width = w;
-      mask.height = h;
+      mask.width = Math.round(WORLD.w * maskScale);
+      mask.height = Math.round(WORLD.h * maskScale);
     }
   }
 
@@ -2871,7 +2875,7 @@ function createRenderer(canvas) {
 
   function drawDarkness(G) {
     const room = G.room;
-    mctx.setTransform(scale, 0, 0, scale, 0, 0);
+    mctx.setTransform(maskScale, 0, 0, maskScale, 0, 0);
     mctx.globalCompositeOperation = 'source-over';
     mctx.clearRect(0, 0, WORLD.w, WORLD.h);
     mctx.fillStyle = C.dark;
@@ -2906,15 +2910,14 @@ function createRenderer(canvas) {
       g.addColorStop(0.9, 'rgba(0,0,0,0.45)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       mctx.fillStyle = g;
-      if ('filter' in mctx) mctx.filter = `blur(${Math.round(4 * scale)}px)`;
-      beamPath(mctx, hand, G.torch.angle, TORCH.range);
+      beamPath(mctx, hand, G.torch.angle, TORCH.range); // its edge is softened by the stretch below
       mctx.fill();
-      if ('filter' in mctx) mctx.filter = 'none';
     }
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(mask, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
     if (G.torch.active) {
@@ -4069,6 +4072,7 @@ function createPanel(dom) {
   // Redraw the circuit, e.g. after the rack changes size or layout.
   function refresh() {
     lastOps = -1;
+    shownTile = { key: '', snap: null }; // the tile redraws at its new size
     if (level && lastSnap) renderCircuit(lastSnap);
   }
 
@@ -4084,6 +4088,7 @@ function createPanel(dom) {
   const lockModule = document.getElementById('lock-module');
   const lockCanvas = document.getElementById('lock-canvas');
   let shownTile = { key: '', snap: null };
+  if (window.ResizeObserver) new ResizeObserver(() => (shownTile = { key: '', snap: null })).observe(canisterView); // redraw at the new size
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
   function stateText(snap, qi) {
@@ -4109,7 +4114,8 @@ function createPanel(dom) {
   }
 
   // items: [{ qi, kind: 'canister' | 'cat' }], left to right. gate: { parts, k } or null.
-  // Called every frame while shown: the dashed bands and the gates move.
+  // Called every frame while shown, but only redrawn when something in it moves: a new
+  // state, a gate popping up (and the frame after it), or an uncertain canister's dashes.
   function setTile(items, t, gate) {
     const snap = lastSnap;
     const on = items.length > 0 && !!snap;
@@ -4119,8 +4125,13 @@ function createPanel(dom) {
       return;
     }
     const key = items.map((it) => `${it.kind}${it.qi}`).join(' ');
-    if (key !== shownTile.key || snap !== shownTile.snap) {
-      shownTile = { key, snap };
+    const changed = key !== shownTile.key || snap !== shownTile.snap;
+    const moving = items.some((it) => it.kind === 'canister' && snap.definite[it.qi] === null) && !calm.matches;
+    const wasGate = shownTile.gate;
+    shownTile.gate = !!gate;
+    if (!changed && !gate && !wasGate && !moving) return;
+    if (changed) {
+      shownTile = { key, snap, gate: !!gate };
       const kinds = items.map((it) => it.kind);
       canisterHeading.textContent = kinds.length === 2 ? 'Canister and cat qubits' : kinds[0] === 'cat' ? 'Cat qubit' : 'Canister qubit';
       canisterView.classList.toggle('is-pair', items.length === 2);
@@ -4298,8 +4309,20 @@ function createUI(dom, handlers) {
     if (el && el.focus) requestAnimationFrame(() => el.focus({ preventScroll: true }));
   }
 
+  // While a menu screen shows (any but the title, whose About links stay in reach), the rest
+  // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
+  // The live region that announces events is left alone.
+  function setModal(on) {
+    for (let node = dom.overlay; node && node !== dom.lab; node = node.parentElement) {
+      for (const other of node.parentElement.children) {
+        if (other !== node && !other.hasAttribute('aria-live')) other.inert = on;
+      }
+    }
+  }
+
   function showScreen(name) {
     screen = name;
+    setModal(!!name && name !== 'title');
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;

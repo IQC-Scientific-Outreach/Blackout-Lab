@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
+<!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
 <link rel="stylesheet" href="main.css">
 <script type="module" src="main.js"></script>
 </head>

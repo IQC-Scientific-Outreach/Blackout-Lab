@@ -146,6 +146,10 @@ node tests/playthrough.cjs https://<you>.github.io/<repo>/   # a published copy
 - Only H, X, Z and CNOT. No rotations, no measurement in other bases.
 - Ideal physics only: there is no noise. (An earlier Qiskit version, kept in a separate repository, measured a real backend's noise and fed it into the game.)
 
+## Security and privacy
+
+The game is a static page: no server, no accounts, no analytics, and nothing the player does leaves the browser. The only things it fetches from elsewhere are its fonts, from Google Fonts (which sees the player's IP address, as with any Google Fonts page; without a connection the page falls back to system fonts). A content security policy in `index.html` lets only the page's own scripts run (the single-file build allows its one inline script by hash) and blocks every other request. The developer options are kept in the browser's `localStorage` and are checked field by field when read back.
+
 ## Disclosures
 
 - **Libraries:** none at runtime. The "This floor as Qiskit code" listing is meant to be run with [Qiskit](https://github.com/Qiskit/qiskit) (Apache 2.0), which the game itself does not need. Fonts, when the network allows them, are Atkinson Hyperlegible, Big Shoulders Display and JetBrains Mono from Google Fonts (SIL Open Font Licence); the page falls back to system fonts.

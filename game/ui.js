@@ -60,8 +60,20 @@ export function createUI(dom, handlers) {
     if (el && el.focus) requestAnimationFrame(() => el.focus({ preventScroll: true }));
   }
 
+  // While a menu screen shows (any but the title, whose About links stay in reach), the rest
+  // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
+  // The live region that announces events is left alone.
+  function setModal(on) {
+    for (let node = dom.overlay; node && node !== dom.lab; node = node.parentElement) {
+      for (const other of node.parentElement.children) {
+        if (other !== node && !other.hasAttribute('aria-live')) other.inert = on;
+      }
+    }
+  }
+
   function showScreen(name) {
     screen = name;
+    setModal(!!name && name !== 'title');
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;

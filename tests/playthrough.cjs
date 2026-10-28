@@ -25,7 +25,7 @@ function serve() {
   const server = http.createServer((req, res) => {
     const name = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     const file = path.join(ROOT, name.endsWith('/') ? `${name}index.html` : name);
-    if (!file.startsWith(ROOT) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+    if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       res.writeHead(404);
       res.end();
       return;

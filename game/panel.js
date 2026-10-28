@@ -270,6 +270,7 @@ export function createPanel(dom) {
   // Redraw the circuit, e.g. after the rack changes size or layout.
   function refresh() {
     lastOps = -1;
+    shownTile = { key: '', snap: null }; // the tile redraws at its new size
     if (level && lastSnap) renderCircuit(lastSnap);
   }
 
@@ -285,6 +286,7 @@ export function createPanel(dom) {
   const lockModule = document.getElementById('lock-module');
   const lockCanvas = document.getElementById('lock-canvas');
   let shownTile = { key: '', snap: null };
+  if (window.ResizeObserver) new ResizeObserver(() => (shownTile = { key: '', snap: null })).observe(canisterView); // redraw at the new size
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
   function stateText(snap, qi) {
@@ -310,7 +312,8 @@ export function createPanel(dom) {
   }
 
   // items: [{ qi, kind: 'canister' | 'cat' }], left to right. gate: { parts, k } or null.
-  // Called every frame while shown: the dashed bands and the gates move.
+  // Called every frame while shown, but only redrawn when something in it moves: a new
+  // state, a gate popping up (and the frame after it), or an uncertain canister's dashes.
   function setTile(items, t, gate) {
     const snap = lastSnap;
     const on = items.length > 0 && !!snap;
@@ -320,8 +323,13 @@ export function createPanel(dom) {
       return;
     }
     const key = items.map((it) => `${it.kind}${it.qi}`).join(' ');
-    if (key !== shownTile.key || snap !== shownTile.snap) {
-      shownTile = { key, snap };
+    const changed = key !== shownTile.key || snap !== shownTile.snap;
+    const moving = items.some((it) => it.kind === 'canister' && snap.definite[it.qi] === null) && !calm.matches;
+    const wasGate = shownTile.gate;
+    shownTile.gate = !!gate;
+    if (!changed && !gate && !wasGate && !moving) return;
+    if (changed) {
+      shownTile = { key, snap, gate: !!gate };
       const kinds = items.map((it) => it.kind);
       canisterHeading.textContent = kinds.length === 2 ? 'Canister and cat qubits' : kinds[0] === 'cat' ? 'Cat qubit' : 'Canister qubit';
       canisterView.classList.toggle('is-pair', items.length === 2);

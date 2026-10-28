@@ -121,14 +121,13 @@ export function paintGate(ctx, x, y, part, pop, size) {
   halo.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = halo;
   ctx.fillRect(-size * 1.15, -size * 1.15, size * 2.3, size * 2.3);
-  // The white outline, stroked twice under a blur so it glows, strongest as the gate appears.
+  // The white outline under a light blur, strongest as the gate appears. (The halo above
+  // carries most of the glow: blurs are costly, so there is only one, and a small one.)
   const glow = () => {
     ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
     ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
     ctx.lineWidth = size * 0.07;
-    ctx.shadowBlur = size * 1.1 * pop.glow;
-    ctx.stroke();
-    ctx.shadowBlur = size * 0.45 * pop.glow;
+    ctx.shadowBlur = size * 0.5 * pop.glow;
     ctx.stroke();
     ctx.shadowBlur = 0;
   };
@@ -185,9 +184,7 @@ export function paintGateLink(ctx, a, b, pop, size) {
   ctx.beginPath();
   ctx.moveTo(a.x, a.y);
   ctx.lineTo(b.x, b.y);
-  ctx.shadowBlur = size * 0.9 * pop.glow;
-  ctx.stroke();
-  ctx.shadowBlur = size * 0.35 * pop.glow;
+  ctx.shadowBlur = size * 0.5 * pop.glow;
   ctx.stroke();
   ctx.restore();
 }
@@ -262,6 +259,9 @@ export function createRenderer(canvas) {
   const mctx = mask.getContext('2d');
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let scale = 1;
+  // The darkness is drawn small and stretched over the picture: it is all soft edges,
+  // so the stretch blurs it for free, and it is a fraction of the pixels to fill and copy.
+  let maskScale = 0.5;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -270,11 +270,12 @@ export function createRenderer(canvas) {
     scale = Math.max(0.5, Math.min(2, (cssW / WORLD.w) * dpr));
     const w = Math.round(WORLD.w * scale);
     const h = Math.round(WORLD.h * scale);
+    maskScale = Math.min(scale, 0.5);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
-      mask.width = w;
-      mask.height = h;
+      mask.width = Math.round(WORLD.w * maskScale);
+      mask.height = Math.round(WORLD.h * maskScale);
     }
   }
 
@@ -840,7 +841,7 @@ export function createRenderer(canvas) {
 
   function drawDarkness(G) {
     const room = G.room;
-    mctx.setTransform(scale, 0, 0, scale, 0, 0);
+    mctx.setTransform(maskScale, 0, 0, maskScale, 0, 0);
     mctx.globalCompositeOperation = 'source-over';
     mctx.clearRect(0, 0, WORLD.w, WORLD.h);
     mctx.fillStyle = C.dark;
@@ -875,15 +876,14 @@ export function createRenderer(canvas) {
       g.addColorStop(0.9, 'rgba(0,0,0,0.45)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       mctx.fillStyle = g;
-      if ('filter' in mctx) mctx.filter = `blur(${Math.round(4 * scale)}px)`;
-      beamPath(mctx, hand, G.torch.angle, TORCH.range);
+      beamPath(mctx, hand, G.torch.angle, TORCH.range); // its edge is softened by the stretch below
       mctx.fill();
-      if ('filter' in mctx) mctx.filter = 'none';
     }
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(mask, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
     if (G.torch.active) {

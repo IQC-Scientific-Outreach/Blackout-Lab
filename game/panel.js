@@ -352,7 +352,6 @@ export function createPanel(dom) {
         label.innerHTML = ketHtml(text);
         label.dataset.state = text; // the state as typed, |0⟩ and so on
         label.classList.toggle('is-long', text.length > 4);
-        label.style.left = `${((i + 0.5) / items.length) * 100}%`;
         said.push(`the ${it.kind === 'cat' ? 'cat' : 'canister'} ${text.startsWith('Entangled') ? text.toLowerCase() : `in state ${text}`}`);
       });
       canisterView.setAttribute('aria-label', `In hand: ${said.join('; ')}`);
@@ -388,6 +387,12 @@ export function createPanel(dom) {
       }
     });
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Each label sits on the very middle its sprite was drawn around (canvas pixels to CSS pixels).
+    const toCss = canisterCanvas.clientHeight / h || 1;
+    for (const it of items) {
+      tileLabels[it.kind].style.left = `${middles[it.qi].x * toCss}px`;
+      tileLabels[it.kind].style.top = `${middles[it.qi].y * toCss}px`;
+    }
     if (!gate) return;
     const pop = gatePop(gate.k, calm.matches);
     const size = 7.5 * zoom;

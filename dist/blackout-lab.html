@@ -162,17 +162,17 @@ kbd {
 .opt input { width: 17px; height: 17px; accent-color: var(--torch); }
 .opt select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
 
-/* Developer options on the title screen: experimental switches. */
+/* Developer options on the title screen: experimental switches, one line each. */
 .dev { border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
 .dev summary { cursor: pointer; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
-.dev[open] { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
+.dev[open] { display: flex; flex-direction: column; gap: 7px; padding-bottom: 9px; }
 .dev[open] summary { margin-bottom: 2px; }
-.dev-opt { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
-.dev-opt .fine { display: block; }
-.dev-choice { border: 0; padding: 0; margin: 0; flex-wrap: wrap; align-items: center; cursor: default; }
-.dev-choice legend { float: left; margin-right: 6px; padding: 0; }
-.dev-choice label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
-.dev-choice input { accent-color: var(--torch); width: 15px; height: 15px; margin: 0; }
+.dev-opt { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.dev-opt b { font-weight: 700; }
+.dev-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-size: 12px; }
+.dev-opt[role="radiogroup"] { gap: 14px; padding-left: 42px; cursor: default; } /* lines up with the names beside the switches */
+.dev-opt[role="radiogroup"] label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.dev-opt input[type="radio"] { accent-color: var(--torch); width: 14px; height: 14px; margin: 0; }
 input[role="switch"] {
   appearance: none; flex: none; position: relative; width: 34px; height: 18px; margin: 1px 0 0;
   border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;
@@ -381,6 +381,22 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
               <div class="boot" id="boot">
                 <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
+              <details class="dev" id="dev">
+                <summary>Developer options</summary>
+                <label class="dev-opt" title="The flashlight shines only while F is held, straight ahead. The mouse does not aim it.">
+                  <input type="checkbox" role="switch" id="dev-key-torch"> <b>Keyboard flashlight</b>
+                  <span class="dev-hint">hold F to shine straight ahead</span></label>
+                <label class="dev-opt" title="Landing on a superposed platform measures it: you land if it collapses where you touched it.">
+                  <input type="checkbox" role="switch" id="dev-touch-collapse"> <b>Touch-collapse</b>
+                  <span class="dev-hint">landing on a superposition measures it</span></label>
+                <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
+                  <b id="dev-panel-name">Panel position</b>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-bottom" value="bottom"> Bottom</label>
+                </div>
+                <label class="dev-opt" title="Every new step in the circuit gets its own column, after everything before it.">
+                  <input type="checkbox" role="switch" id="dev-circuit-right"> <b>Circuit always adds to the right</b></label>
+              </details>
             </div>
             <div class="title-side">
               <h2>Controls</h2>
@@ -395,24 +411,6 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
               </dl>
               <p class="fine">Fall into the gap and you lose a life and the floor resets. Lose all three on one
                 floor and you start again from floor 1. There is no timer. Unlimited lives are in the pause menu.</p>
-              <details class="dev" id="dev">
-                <summary>Developer options</summary>
-                <p class="fine">Experimental features, for testing. This browser remembers them.</p>
-                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-key-torch">
-                  <span><b>Keyboard flashlight</b> <span class="fine">Hold F to shine straight ahead. The mouse does
-                  not aim it.</span></span></label>
-                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-touch-collapse">
-                  <span><b>Touch-collapse</b> <span class="fine">Landing on a superposed platform measures it: you
-                  land if it collapses where you touched it, and fall if not.</span></span></label>
-                <fieldset class="dev-opt dev-choice">
-                  <legend><b>Panel position</b></legend>
-                  <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
-                  <label><input type="radio" name="dev-panel" id="dev-panel-bottom" value="bottom"> Bottom</label>
-                </fieldset>
-                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-circuit-right">
-                  <span><b>Circuit always adds to the right</b> <span class="fine">Every new step gets its own column,
-                  after everything before it.</span></span></label>
-              </details>
             </div>
           </section>
 

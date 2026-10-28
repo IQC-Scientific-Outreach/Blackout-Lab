@@ -151,17 +151,17 @@ kbd {
 .opt input { width: 17px; height: 17px; accent-color: var(--torch); }
 .opt select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
 
-/* Developer options on the title screen: experimental switches. */
+/* Developer options on the title screen: experimental switches, one line each. */
 .dev { border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
 .dev summary { cursor: pointer; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
-.dev[open] { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
+.dev[open] { display: flex; flex-direction: column; gap: 7px; padding-bottom: 9px; }
 .dev[open] summary { margin-bottom: 2px; }
-.dev-opt { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
-.dev-opt .fine { display: block; }
-.dev-choice { border: 0; padding: 0; margin: 0; flex-wrap: wrap; align-items: center; cursor: default; }
-.dev-choice legend { float: left; margin-right: 6px; padding: 0; }
-.dev-choice label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
-.dev-choice input { accent-color: var(--torch); width: 15px; height: 15px; margin: 0; }
+.dev-opt { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.dev-opt b { font-weight: 700; }
+.dev-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-size: 12px; }
+.dev-opt[role="radiogroup"] { gap: 14px; padding-left: 42px; cursor: default; } /* lines up with the names beside the switches */
+.dev-opt[role="radiogroup"] label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.dev-opt input[type="radio"] { accent-color: var(--torch); width: 14px; height: 14px; margin: 0; }
 input[role="switch"] {
   appearance: none; flex: none; position: relative; width: 34px; height: 18px; margin: 1px 0 0;
   border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;

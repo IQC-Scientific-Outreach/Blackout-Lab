@@ -22,6 +22,7 @@
       <button type="button" class="key-btn" id="btn-restart" disabled>Restart floor <kbd>R</kbd></button>
       <button type="button" class="key-btn" id="btn-pause" disabled>Pause <kbd>P</kbd></button>
       <button type="button" class="key-btn" id="btn-sound" aria-pressed="true">Sound <kbd>M</kbd></button>
+      <button type="button" class="key-btn" id="btn-menu" disabled>Main menu</button>
     </div>
   </header>
 
@@ -47,8 +48,7 @@
               </div>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
-                <p class="boot-line">The physics is ideal quantum mechanics, worked out exactly in your browser: no
-                  install, no quantum computer, no noise.</p>
+                <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
             </div>
             <div class="title-side">
@@ -64,6 +64,24 @@
               </dl>
               <p class="fine">Fall into the gap and you lose a life and the floor resets. Lose all three on one
                 floor and you start again from floor 1. There is no timer. Unlimited lives are in the pause menu.</p>
+              <details class="dev" id="dev">
+                <summary>Developer options</summary>
+                <p class="fine">Experimental features, for testing. This browser remembers them.</p>
+                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-key-torch">
+                  <span><b>Keyboard flashlight</b> <span class="fine">Hold F to shine straight ahead. The mouse does
+                  not aim it.</span></span></label>
+                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-touch-collapse">
+                  <span><b>Touch-collapse</b> <span class="fine">Landing on a superposed platform measures it: you
+                  land if it collapses where you touched it, and fall if not.</span></span></label>
+                <fieldset class="dev-opt dev-choice">
+                  <legend><b>Panel position</b></legend>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-bottom" value="bottom"> Bottom</label>
+                </fieldset>
+                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-circuit-right">
+                  <span><b>Circuit always adds to the right</b> <span class="fine">Every new step gets its own column,
+                  after everything before it.</span></span></label>
+              </details>
             </div>
           </section>
 

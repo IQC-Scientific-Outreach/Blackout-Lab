@@ -35,7 +35,10 @@ export function describe(snap, qi) {
   return { kind: 'superposed', ket, p1: snap.p1[qi] };
 }
 
-function layoutColumns(ops, n) {
+// Each op goes in the leftmost column free on the wires it spans. With
+// `sequential`, every op gets its own column instead, in the order it happened.
+export function layoutColumns(ops, n, sequential) {
+  if (sequential) return { cols: ops.map((_, i) => i), count: ops.length };
   const next = new Array(n).fill(0);
   const cols = [];
   for (const op of ops) {
@@ -74,7 +77,7 @@ function opSvg(op, x, yOf) {
   return gateBox(x, y, op.gate.toUpperCase(), `g-${op.gate}${auto}`);
 }
 
-const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on' };
+const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on', touch: 'Player landed on' };
 
 function opWords(op, labels) {
   const names = op.qubits.map((q) => labels[q]);
@@ -92,6 +95,7 @@ export function createPanel(dom) {
   let lastOps = -1;
   let lastSnap = null;
   let expanded = false;
+  let sequential = false;
   const log = [];
   const circuitModule = dom.circuitGates.closest('.module');
   const home = { parent: circuitModule.parentElement, next: circuitModule.nextElementSibling };
@@ -145,7 +149,7 @@ export function createPanel(dom) {
 
   function renderCircuit(snap) {
     const n = snap.labels.length;
-    const { cols, count } = layoutColumns(snap.ops, n);
+    const { cols, count } = layoutColumns(snap.ops, n, sequential);
     const room = expanded
       ? Math.floor(((dom.circuitGates.parentElement.clientWidth || 0) - LABEL_W - READ_W) / COL)
       : Math.ceil((dom.circuitGates.clientWidth || 0) / COL);
@@ -261,6 +265,12 @@ export function createPanel(dom) {
     if (ev.detail > 0) dom.game.focus({ preventScroll: true }); // a mouse click hands the keys back to the game
   });
 
+  // Redraw the circuit, e.g. after the rack changes size or layout.
+  function refresh() {
+    lastOps = -1;
+    if (level && lastSnap) renderCircuit(lastSnap);
+  }
+
   function renderLog() {
     dom.log.innerHTML = log.length
       ? log.map((e) => `<li class="log-${e.kind}">${esc(e.text)}</li>`).join('')
@@ -270,6 +280,11 @@ export function createPanel(dom) {
   return {
     setLevel,
     setHints,
+    setSequential(on) {
+      sequential = !!on;
+      refresh();
+    },
+    refresh,
     render(snap) {
       if (!level || !snap) return;
       lastSnap = snap;

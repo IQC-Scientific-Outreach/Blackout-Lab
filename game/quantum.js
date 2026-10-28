@@ -35,6 +35,7 @@ const MEASURED_BY = {
   lock: 'the door lock read',
   machine: 'the machine measured',
   box: 'opening the box showed',
+  touch: 'the player landed on',
 };
 
 function combinations(items, size) {
@@ -176,7 +177,8 @@ export class Lab {
   //
   // A qubit that is already definite is left alone (nothing is recorded) unless
   // `force` is set, which locks and machines use so that their read-out shows up
-  // on the circuit. `by` records what did the measuring: torch, lock, machine or box.
+  // on the circuit. `by` records what did the measuring: torch, lock, machine, box or
+  // touch (landing on a platform, a developer option).
   measure(q, force = false, by = 'torch') {
     [q] = this._check([q]);
     const p1 = this.pOne(q);

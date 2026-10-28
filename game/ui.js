@@ -9,12 +9,12 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right',
   ];
   const dom = {};
   for (const id of ids) {
@@ -202,6 +202,7 @@ export function createUI(dom, handlers) {
   });
   click(dom.btnErrorRetry, handlers.errorRetry);
   click(dom.btnSound, handlers.sound);
+  click(dom.btnMenu, handlers.menu);
   click(dom.hintButton, handlers.hint);
   click(dom.termClose, handlers.closeTerminal);
   dom.termOps.addEventListener('click', (ev) => {
@@ -209,6 +210,11 @@ export function createUI(dom, handlers) {
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
   });
   dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
+  // Developer options: each control is one entry of the game's `dev` settings.
+  const devSwitches = { keyTorch: dom.devKeyTorch, touchCollapse: dom.devTouchCollapse, circuitRight: dom.devCircuitRight };
+  const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
+  for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
+  for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   dom.btnFloors.addEventListener('click', () => {
     const open = dom.titleFloors.hidden;
     dom.titleFloors.hidden = !open;
@@ -274,6 +280,14 @@ export function createUI(dom, handlers) {
     setPlaying(playing) {
       dom.btnPause.disabled = !playing;
       dom.btnRestart.disabled = !playing;
+    },
+    setMenuButton(enabled) {
+      dom.btnMenu.disabled = !enabled;
+    },
+    setDev(dev) {
+      for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
+      for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
+      dom.lab.classList.toggle('panel-bottom', dev.panel === 'bottom');
     },
     // The title screen swaps the instruments in the rack for a short "about" panel.
     setAbout(on) {

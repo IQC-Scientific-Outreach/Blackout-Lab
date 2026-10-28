@@ -720,6 +720,112 @@ async function main() {
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0 && window.blackoutLab.state.lives === 3);
   report.push('out of lives on floor 3 restarted the climb from floor 1 with three lives');
 
+  // The Main menu button, top right, goes back to the title from anywhere in a floor.
+  if (!(await page.isDisabled('#btn-menu'))) {
+    await page.click('#btn-menu');
+  } else throw new Error('Main menu should be enabled during play');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'title' && !document.getElementById('screen-title').hidden);
+  if (!(await page.isDisabled('#btn-menu'))) throw new Error('Main menu should be disabled on the title screen');
+  report.push('the Main menu button returns to the title and is disabled there');
+
+  // Developer options: off by default, switched on the title screen, remembered.
+  const dev = () => page.evaluate(() => ({ ...window.blackoutLab.state.dev }));
+  let d = await dev();
+  if (d.keyTorch || d.touchCollapse || d.circuitRight || d.panel !== 'right') throw new Error(`developer options should start off: ${JSON.stringify(d)}`);
+  await page.click('#dev summary');
+  await page.click('#dev-panel-bottom');
+  await page.waitForTimeout(200);
+  const layout = await page.evaluate(() => ({
+    rackTop: document.querySelector('.rack').getBoundingClientRect().top,
+    gameBottom: document.getElementById('viewport').getBoundingClientRect().bottom,
+    wide: document.querySelector('.rack').getBoundingClientRect().width > window.innerWidth * 0.8,
+  }));
+  if (layout.rackTop < layout.gameBottom || !layout.wide) throw new Error(`Panel: Bottom should put the rack under the game, full width: ${JSON.stringify(layout)}`);
+  await shot('15-panel-bottom');
+  await page.click('#dev-panel-right');
+  await page.click('#dev-circuit-right');
+  await page.click('#dev-key-torch');
+  await page.click('#dev-touch-collapse');
+  d = await dev();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('blackoutLab.dev') || 'null'));
+  if (!d.keyTorch || !d.touchCollapse || !d.circuitRight || d.panel !== 'right' || JSON.stringify(saved) !== JSON.stringify(d)) {
+    throw new Error(`developer switches did not take or were not saved: ${JSON.stringify(d)} vs ${JSON.stringify(saved)}`);
+  }
+  report.push('Panel: Bottom moved the rack under the game; the developer switches turn on and are remembered');
+
+  // Circuit always adds to the right: on floor 6, X on B goes after the floor's own two gates.
+  if (await page.isHidden('#title-floors')) await page.click('#btn-floors');
+  await page.click('#title-floors button[data-floor="5"]');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 5);
+  await step('circuit always adds to the right', async () => {
+    await bot.terminal('T1', [3]);
+    const xOf = (label) => [...document.querySelectorAll('#circuit-gates .gate text')].filter((t) => t.textContent === label).map((t) => Number(t.getAttribute('x')));
+    const seq = { h: xOf('H')[0], x: xOf('X')[0] };
+    document.getElementById('dev-circuit-right').click();
+    await bot.frame();
+    const packed = { h: xOf('H')[0], x: xOf('X')[0] };
+    document.getElementById('dev-circuit-right').click();
+    await bot.frame();
+    if (!(seq.x > seq.h) || packed.x !== packed.h) throw new Error(`X should sit after the floor's gates only when the option is on: on ${JSON.stringify(seq)}, off ${JSON.stringify(packed)}`);
+    return `circuit always adds to the right: X on B drawn at x=${seq.x} after H at x=${seq.h} (x=${packed.x} with the option off)`;
+  });
+
+  // Keyboard flashlight on floor 1: the mouse does nothing, F held shines straight ahead.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '0');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
+  await step('keyboard flashlight', async () => {
+    const g = bot.G();
+    bot.aim(500, 100);
+    await bot.frame();
+    await bot.frame();
+    if (g.torch.active || g.torch.useMouse) throw new Error('with the keyboard flashlight the beam is off until F is held, and the mouse is ignored');
+    bot.key('KeyF', true);
+    await bot.frame();
+    await bot.frame();
+    const right = { active: g.torch.active, angle: g.torch.angle };
+    bot.aim(10, 500);
+    await bot.frame();
+    const stillRight = g.torch.angle;
+    await bot.tap('ArrowLeft');
+    await bot.frame();
+    const left = g.torch.angle;
+    bot.key('KeyF', false);
+    await bot.frame();
+    await bot.frame();
+    if (!right.active || right.angle !== 0 || stillRight !== 0 || Math.abs(left - Math.PI) > 1e-9 || g.torch.active) {
+      throw new Error(`F held should shine straight ahead whatever the mouse does: ${JSON.stringify({ right, stillRight, left, after: g.torch.active })}`);
+    }
+    return 'keyboard flashlight: off until F is held, then straight ahead (0, then pi facing left), mouse ignored';
+  });
+
+  // Touch-collapse: jumping onto a superposed platform measures it. Retry until both outcomes are seen.
+  await step('touch-collapse', async () => {
+    const seen = {};
+    for (let round = 0; round < 12 && !(seen.raised && seen.lowered); round += 1) {
+      const g = bot.G();
+      await bot.until(() => g.mode === 'play', 4000, 'play');
+      await bot.terminal('T1', [1]);
+      const a = bot.platform('A');
+      if (a.state !== null) throw new Error('A should be in superposition');
+      bot.key('ArrowRight', true);
+      await bot.until(() => g.player.x + 18 >= 148, 3000, 'reach the edge');
+      await bot.tap('Space');
+      await bot.until(() => a.state !== null || g.mode !== 'play', 3000, 'touching A');
+      bot.key('ArrowRight', false);
+      const op = g.q.ops[g.q.ops.length - 1];
+      if (a.state === null || op.kind !== 'measure' || op.by !== 'touch') throw new Error(`landing on A should measure it: ${JSON.stringify(op)}`);
+      await bot.until(() => g.player.onGround || g.mode !== 'play', 3000, 'landing');
+      if (a.state === 1 && g.player.standing !== a) throw new Error('A collapsed raised, under the player: they should be standing on it');
+      seen[a.state ? 'raised' : 'lowered'] = (seen[a.state ? 'raised' : 'lowered'] || 0) + 1;
+      document.getElementById('btn-restart').click();
+      await bot.until(() => g.mode === 'play' && bot.platform('A').state === 0, 4000, 'restart');
+    }
+    if (!seen.raised || !seen.lowered) throw new Error(`expected both outcomes over 12 tries: ${JSON.stringify(seen)}`);
+    return `touch-collapse: landing on A's outline measured it every time (raised and landed ${seen.raised}x, lowered ${seen.lowered}x)`;
+  });
+
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');
   await browser.close();

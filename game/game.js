@@ -35,6 +35,29 @@ const NO_QUBITS = {
   stats: { gates: 0, measurements: 0, depth: 0 },
 };
 
+// Developer options (title screen). Remembered in this browser only.
+const DEV_KEY = 'blackoutLab.dev';
+const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, panel: 'right', circuitRight: false };
+
+function loadDev() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEV_KEY) || '{}');
+    const dev = { ...DEV_DEFAULTS };
+    for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
+    return dev;
+  } catch (err) {
+    return { ...DEV_DEFAULTS };
+  }
+}
+
+function saveDev(dev) {
+  try {
+    localStorage.setItem(DEV_KEY, JSON.stringify(dev));
+  } catch (err) {
+    // private windows and blocked storage: the options last until the page closes
+  }
+}
+
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
@@ -71,6 +94,7 @@ export function startGame() {
     shake: 0,
     lives: LIVES_PER_FLOOR,
     infinite: false,
+    dev: loadDev(),
     stats: null,
     results: [],
     hints: 0,
@@ -112,6 +136,8 @@ export function startGame() {
     closeTerminal: () => closeTerminal(),
     applyOp: (i) => applyOp(i),
     option: (name, value) => setOption(name, value),
+    dev: (name, value) => setDev(name, value),
+    menu: () => toTitle(),
     touchHold: (action, down) => input.setHeld(action, down),
     touchTap: (action) => {
       input.setHeld(action, true);
@@ -136,6 +162,7 @@ export function startGame() {
     G.mode = mode;
     input.setEnabled(LIVE_MODES.includes(mode));
     ui.setPlaying(LIVE_MODES.includes(mode));
+    ui.setMenuButton(mode !== 'boot' && mode !== 'title');
     input.clearPresses();
   }
 
@@ -589,6 +616,7 @@ export function startGame() {
       let text = `${e.label} was measured: it collapsed to ${value}.`;
       if (e.by === 'torch') text = `Flashlight on ${e.label}: it collapsed to ${value}.`;
       if (e.by === 'lock') text = `The lock observed ${e.label}: it collapsed to ${value}.`;
+      if (e.by === 'touch') text = `You landed on ${e.label} without looking: it collapsed to ${value}.`;
       const partners = [];
       for (let q = 0; q < snap.definite.length; q += 1) {
         if (!seen.has(q) && before.definite[q] === null && snap.definite[q] !== null) {
@@ -627,11 +655,16 @@ export function startGame() {
     const pl = G.player;
     const t = G.torch;
     const dead = t.battery === 'dead';
+    const keyTorch = G.dev.keyTorch; // developer option: hold F, straight ahead, no mouse
     if (input.pointer.moved) {
-      t.useMouse = true;
+      t.useMouse = !keyTorch;
       input.pointer.moved = false;
     }
-    if (G.mode === 'play') {
+    if (G.mode === 'play' && keyTorch) {
+      t.useMouse = false;
+      if (input.take('torch') && dead && story().onDeadTorch) story().onDeadTorch(storyCtx(null));
+      t.angle = pl.facing > 0 ? 0 : Math.PI;
+    } else if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
         t.useMouse = false;
@@ -672,7 +705,7 @@ export function startGame() {
       }
     }
     t.lowered = G.mode !== 'play';
-    t.active = t.on && !t.lowered && !dead && !blink;
+    t.active = (keyTorch ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
 
     if (G.mode !== 'play' || !G.q) return;
     const hand = handOf(pl);
@@ -911,6 +944,9 @@ export function startGame() {
         }
       }
     }
+    if (pl.vy >= 0 && !pl.onGround && G.dev.touchCollapse && G.mode === 'play') {
+      touchCollapse(feetBefore, pl.y + PLAYER.h);
+    }
     if (pl.vy >= 0 && !pl.onGround) {
       const feet = pl.y + PLAYER.h;
       for (const s of slabs()) {
@@ -924,6 +960,24 @@ export function startGame() {
       }
     }
     if (pl.onGround && !wasOnGround) audio.play('land');
+  }
+
+  // Developer option: coming down onto either outline of a superposed platform
+  // measures it. It materialises at the height it collapsed to, so the player
+  // lands only if that is the outline they touched (or one still below them).
+  function touchCollapse(feetBefore, feet) {
+    const pl = G.player;
+    for (const p of G.room.platforms) {
+      if (p.state !== null || p.pending) continue;
+      const touched = [slotRect(p, 1), slotRect(p, 0)].some((r) => pl.x + PLAYER.w > r.x && pl.x < r.x + r.w && feetBefore <= r.y + 2 && feet >= r.y);
+      if (!touched) continue;
+      const before = G.q;
+      const res = Q.measure([p.qi], false, 'touch');
+      if (!res.ok) return;
+      applySnapshot(res.state);
+      reportCollapse(before, res.state, res.measured);
+      return;
+    }
   }
 
   function loseLife() {
@@ -1237,6 +1291,12 @@ export function startGame() {
   async function toTitle() {
     const fromRoof = !!(G.level && G.level.outdoor);
     G.epoch += 1;
+    if (G.terminal) {
+      G.terminal = null;
+      ui.closeTerminal();
+    }
+    G.dialogue = null;
+    G.bubbles = [];
     setMode('title');
     ui.showScreen('title');
     ui.setAbout(true);
@@ -1258,6 +1318,18 @@ export function startGame() {
     G.hints += 1;
     panel.setHints(G.hints);
     ui.announce(`Hint ${G.hints}: ${G.level.hints[G.hints - 1]}`);
+  }
+
+  function applyDev() {
+    ui.setDev(G.dev);
+    panel.setSequential(G.dev.circuitRight);
+    requestAnimationFrame(() => panel.refresh()); // the rack may have changed size
+  }
+
+  function setDev(name, value) {
+    G.dev[name] = value;
+    saveDev(G.dev);
+    applyDev();
   }
 
   function setOption(name, value) {
@@ -1435,6 +1507,7 @@ export function startGame() {
     ui.showScreen('title');
     ui.setAbout(true);
     ui.showTouch(!!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+    applyDev();
     requestAnimationFrame(frame);
 
     await loadLevel(0, { backdrop: true });

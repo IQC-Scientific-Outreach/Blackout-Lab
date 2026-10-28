@@ -31,6 +31,7 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | ← → then Enter | Pick a gate while a terminal is open (E to leave) |
 | H | Show a hint |
 | R / P / M | Restart floor / pause and options / sound |
+| Main menu (top right) | Back to the title screen from anywhere |
 
 - Every moving platform is a qubit. State `0` parks it lowered, state `1` parks it raised.
 - A platform in superposition is drawn as dotted outlines at both heights and cannot be stood on.
@@ -42,6 +43,19 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 - Falling into the gap costs one of three lives and resets the floor. Lose all three on one floor and the climb starts again from floor 1. There is no timer. Unlimited lives are in the pause menu. "Skip to floor" on the title screen and in the pause menu jumps to any floor.
 
 The rack on the right is live: the **circuit** you have built on this floor (with a meter icon and its result for every observation), the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, and **lab notes** with the goal, a concept explanation, hints and an event log. "This floor as Qiskit code" shows the same circuit as code you can paste into a notebook. **Expand** on the circuit moves it under the game and draws all of it at once, with nothing to scroll.
+
+### Developer options
+
+The title screen has a collapsible **Developer options** panel with experimental switches for trying out ideas. All are off by default, and the browser remembers them (`localStorage`).
+
+| Option | What it does |
+| --- | --- |
+| Keyboard flashlight | The flashlight shines only while F is held, straight ahead in the direction the player faces. The mouse does not aim it at all. |
+| Touch-collapse | Landing on either outline of a superposed platform measures it, by the Born rule (50/50 after an H). The platform appears at the height it collapsed to: you land if that is the outline you touched, otherwise you drop past it. The circuit records it as a measurement ("Player landed on"). |
+| Panel position | Right (the normal layout) or Bottom: the rack moves under the game, with its modules side by side. |
+| Circuit always adds to the right | Every new step in the circuit gets its own column after everything before it, instead of moving left into the first free column. |
+
+To add an option: put its default in `DEV_DEFAULTS` in `game/game.js`, add a switch to the `dev` block in `index.html`, and list it in `devSwitches` in `game/ui.js`.
 
 ## The seven floors
 

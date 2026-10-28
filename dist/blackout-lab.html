@@ -162,6 +162,28 @@ kbd {
 .opt input { width: 17px; height: 17px; accent-color: var(--torch); }
 .opt select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
 
+/* Developer options on the title screen: experimental switches. */
+.dev { border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
+.dev summary { cursor: pointer; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+.dev[open] { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
+.dev[open] summary { margin-bottom: 2px; }
+.dev-opt { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer; }
+.dev-opt .fine { display: block; }
+.dev-choice { border: 0; padding: 0; margin: 0; flex-wrap: wrap; align-items: center; cursor: default; }
+.dev-choice legend { float: left; margin-right: 6px; padding: 0; }
+.dev-choice label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.dev-choice input { accent-color: var(--torch); width: 15px; height: 15px; margin: 0; }
+input[role="switch"] {
+  appearance: none; flex: none; position: relative; width: 34px; height: 18px; margin: 1px 0 0;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;
+}
+input[role="switch"]::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--dim);
+  transition: transform 0.15s;
+}
+input[role="switch"]:checked { background: var(--torch); border-color: var(--torch); }
+input[role="switch"]:checked::after { transform: translateX(16px); background: var(--night); }
+
 /* ---- touch controls ---- */
 .touch { display: flex; justify-content: space-between; gap: 8px; }
 .touch-group { display: flex; gap: 8px; }
@@ -299,6 +321,11 @@ kbd {
 
 .credit { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: 12px; color: var(--dim); }
 
+/* ---- developer option: the rack under the game, its modules side by side ---- */
+.lab.panel-bottom .deck { grid-template-columns: minmax(0, 1fr); }
+.lab.panel-bottom .rack-inner { position: static; overflow: visible; flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+.lab.panel-bottom .rack-inner > .module { flex: 1 1 300px; }
+
 /* ---- narrow screens: the rack moves under the game ---- */
 @media (max-width: 900px) {
   .deck { grid-template-columns: minmax(0, 1fr); }
@@ -308,7 +335,7 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .seg { transition: none; }
+  .seg, input[role="switch"]::after { transition: none; }
 }
 </style>
 </head>
@@ -326,6 +353,7 @@ kbd {
       <button type="button" class="key-btn" id="btn-restart" disabled>Restart floor <kbd>R</kbd></button>
       <button type="button" class="key-btn" id="btn-pause" disabled>Pause <kbd>P</kbd></button>
       <button type="button" class="key-btn" id="btn-sound" aria-pressed="true">Sound <kbd>M</kbd></button>
+      <button type="button" class="key-btn" id="btn-menu" disabled>Main menu</button>
     </div>
   </header>
 
@@ -351,8 +379,7 @@ kbd {
               </div>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
-                <p class="boot-line">The physics is ideal quantum mechanics, worked out exactly in your browser: no
-                  install, no quantum computer, no noise.</p>
+                <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
             </div>
             <div class="title-side">
@@ -368,6 +395,24 @@ kbd {
               </dl>
               <p class="fine">Fall into the gap and you lose a life and the floor resets. Lose all three on one
                 floor and you start again from floor 1. There is no timer. Unlimited lives are in the pause menu.</p>
+              <details class="dev" id="dev">
+                <summary>Developer options</summary>
+                <p class="fine">Experimental features, for testing. This browser remembers them.</p>
+                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-key-torch">
+                  <span><b>Keyboard flashlight</b> <span class="fine">Hold F to shine straight ahead. The mouse does
+                  not aim it.</span></span></label>
+                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-touch-collapse">
+                  <span><b>Touch-collapse</b> <span class="fine">Landing on a superposed platform measures it: you
+                  land if it collapses where you touched it, and fall if not.</span></span></label>
+                <fieldset class="dev-opt dev-choice">
+                  <legend><b>Panel position</b></legend>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-bottom" value="bottom"> Bottom</label>
+                </fieldset>
+                <label class="dev-opt"><input type="checkbox" role="switch" id="dev-circuit-right">
+                  <span><b>Circuit always adds to the right</b> <span class="fine">Every new step gets its own column,
+                  after everything before it.</span></span></label>
+              </details>
             </div>
           </section>
 
@@ -1319,6 +1364,7 @@ const MEASURED_BY = {
   lock: 'the door lock read',
   machine: 'the machine measured',
   box: 'opening the box showed',
+  touch: 'the player landed on',
 };
 
 function combinations(items, size) {
@@ -1460,7 +1506,8 @@ class Lab {
   //
   // A qubit that is already definite is left alone (nothing is recorded) unless
   // `force` is set, which locks and machines use so that their read-out shows up
-  // on the circuit. `by` records what did the measuring: torch, lock, machine or box.
+  // on the circuit. `by` records what did the measuring: torch, lock, machine, box or
+  // touch (landing on a platform, a developer option).
   measure(q, force = false, by = 'torch') {
     [q] = this._check([q]);
     const p1 = this.pOne(q);
@@ -3515,7 +3562,10 @@ function describe(snap, qi) {
   return { kind: 'superposed', ket, p1: snap.p1[qi] };
 }
 
-function layoutColumns(ops, n) {
+// Each op goes in the leftmost column free on the wires it spans. With
+// `sequential`, every op gets its own column instead, in the order it happened.
+function layoutColumns(ops, n, sequential) {
+  if (sequential) return { cols: ops.map((_, i) => i), count: ops.length };
   const next = new Array(n).fill(0);
   const cols = [];
   for (const op of ops) {
@@ -3554,7 +3604,7 @@ function opSvg(op, x, yOf) {
   return gateBox(x, y, op.gate.toUpperCase(), `g-${op.gate}${auto}`);
 }
 
-const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on' };
+const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on', touch: 'Player landed on' };
 
 function opWords(op, labels) {
   const names = op.qubits.map((q) => labels[q]);
@@ -3572,6 +3622,7 @@ function createPanel(dom) {
   let lastOps = -1;
   let lastSnap = null;
   let expanded = false;
+  let sequential = false;
   const log = [];
   const circuitModule = dom.circuitGates.closest('.module');
   const home = { parent: circuitModule.parentElement, next: circuitModule.nextElementSibling };
@@ -3625,7 +3676,7 @@ function createPanel(dom) {
 
   function renderCircuit(snap) {
     const n = snap.labels.length;
-    const { cols, count } = layoutColumns(snap.ops, n);
+    const { cols, count } = layoutColumns(snap.ops, n, sequential);
     const room = expanded
       ? Math.floor(((dom.circuitGates.parentElement.clientWidth || 0) - LABEL_W - READ_W) / COL)
       : Math.ceil((dom.circuitGates.clientWidth || 0) / COL);
@@ -3741,6 +3792,12 @@ function createPanel(dom) {
     if (ev.detail > 0) dom.game.focus({ preventScroll: true }); // a mouse click hands the keys back to the game
   });
 
+  // Redraw the circuit, e.g. after the rack changes size or layout.
+  function refresh() {
+    lastOps = -1;
+    if (level && lastSnap) renderCircuit(lastSnap);
+  }
+
   function renderLog() {
     dom.log.innerHTML = log.length
       ? log.map((e) => `<li class="log-${e.kind}">${esc(e.text)}</li>`).join('')
@@ -3750,6 +3807,11 @@ function createPanel(dom) {
   return {
     setLevel,
     setHints,
+    setSequential(on) {
+      sequential = !!on;
+      refresh();
+    },
+    refresh,
     render(snap) {
       if (!level || !snap) return;
       lastSnap = snap;
@@ -3764,7 +3826,7 @@ function createPanel(dom) {
   };
 }
 
-return { describe, createPanel };
+return { describe, layoutColumns, createPanel };
 })();
 
 // ============================================================================
@@ -3783,12 +3845,12 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right',
   ];
   const dom = {};
   for (const id of ids) {
@@ -3976,6 +4038,7 @@ function createUI(dom, handlers) {
   });
   click(dom.btnErrorRetry, handlers.errorRetry);
   click(dom.btnSound, handlers.sound);
+  click(dom.btnMenu, handlers.menu);
   click(dom.hintButton, handlers.hint);
   click(dom.termClose, handlers.closeTerminal);
   dom.termOps.addEventListener('click', (ev) => {
@@ -3983,6 +4046,11 @@ function createUI(dom, handlers) {
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
   });
   dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
+  // Developer options: each control is one entry of the game's `dev` settings.
+  const devSwitches = { keyTorch: dom.devKeyTorch, touchCollapse: dom.devTouchCollapse, circuitRight: dom.devCircuitRight };
+  const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
+  for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
+  for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   dom.btnFloors.addEventListener('click', () => {
     const open = dom.titleFloors.hidden;
     dom.titleFloors.hidden = !open;
@@ -4048,6 +4116,14 @@ function createUI(dom, handlers) {
     setPlaying(playing) {
       dom.btnPause.disabled = !playing;
       dom.btnRestart.disabled = !playing;
+    },
+    setMenuButton(enabled) {
+      dom.btnMenu.disabled = !enabled;
+    },
+    setDev(dev) {
+      for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
+      for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
+      dom.lab.classList.toggle('panel-bottom', dev.panel === 'bottom');
     },
     // The title screen swaps the instruments in the rack for a short "about" panel.
     setAbout(on) {
@@ -4136,6 +4212,29 @@ const NO_QUBITS = {
   stats: { gates: 0, measurements: 0, depth: 0 },
 };
 
+// Developer options (title screen). Remembered in this browser only.
+const DEV_KEY = 'blackoutLab.dev';
+const DEV_DEFAULTS = { keyTorch: false, touchCollapse: false, panel: 'right', circuitRight: false };
+
+function loadDev() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEV_KEY) || '{}');
+    const dev = { ...DEV_DEFAULTS };
+    for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
+    return dev;
+  } catch (err) {
+    return { ...DEV_DEFAULTS };
+  }
+}
+
+function saveDev(dev) {
+  try {
+    localStorage.setItem(DEV_KEY, JSON.stringify(dev));
+  } catch (err) {
+    // private windows and blocked storage: the options last until the page closes
+  }
+}
+
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
@@ -4172,6 +4271,7 @@ function startGame() {
     shake: 0,
     lives: LIVES_PER_FLOOR,
     infinite: false,
+    dev: loadDev(),
     stats: null,
     results: [],
     hints: 0,
@@ -4213,6 +4313,8 @@ function startGame() {
     closeTerminal: () => closeTerminal(),
     applyOp: (i) => applyOp(i),
     option: (name, value) => setOption(name, value),
+    dev: (name, value) => setDev(name, value),
+    menu: () => toTitle(),
     touchHold: (action, down) => input.setHeld(action, down),
     touchTap: (action) => {
       input.setHeld(action, true);
@@ -4237,6 +4339,7 @@ function startGame() {
     G.mode = mode;
     input.setEnabled(LIVE_MODES.includes(mode));
     ui.setPlaying(LIVE_MODES.includes(mode));
+    ui.setMenuButton(mode !== 'boot' && mode !== 'title');
     input.clearPresses();
   }
 
@@ -4690,6 +4793,7 @@ function startGame() {
       let text = `${e.label} was measured: it collapsed to ${value}.`;
       if (e.by === 'torch') text = `Flashlight on ${e.label}: it collapsed to ${value}.`;
       if (e.by === 'lock') text = `The lock observed ${e.label}: it collapsed to ${value}.`;
+      if (e.by === 'touch') text = `You landed on ${e.label} without looking: it collapsed to ${value}.`;
       const partners = [];
       for (let q = 0; q < snap.definite.length; q += 1) {
         if (!seen.has(q) && before.definite[q] === null && snap.definite[q] !== null) {
@@ -4728,11 +4832,16 @@ function startGame() {
     const pl = G.player;
     const t = G.torch;
     const dead = t.battery === 'dead';
+    const keyTorch = G.dev.keyTorch; // developer option: hold F, straight ahead, no mouse
     if (input.pointer.moved) {
-      t.useMouse = true;
+      t.useMouse = !keyTorch;
       input.pointer.moved = false;
     }
-    if (G.mode === 'play') {
+    if (G.mode === 'play' && keyTorch) {
+      t.useMouse = false;
+      if (input.take('torch') && dead && story().onDeadTorch) story().onDeadTorch(storyCtx(null));
+      t.angle = pl.facing > 0 ? 0 : Math.PI;
+    } else if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
         t.useMouse = false;
@@ -4773,7 +4882,7 @@ function startGame() {
       }
     }
     t.lowered = G.mode !== 'play';
-    t.active = t.on && !t.lowered && !dead && !blink;
+    t.active = (keyTorch ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
 
     if (G.mode !== 'play' || !G.q) return;
     const hand = handOf(pl);
@@ -5012,6 +5121,9 @@ function startGame() {
         }
       }
     }
+    if (pl.vy >= 0 && !pl.onGround && G.dev.touchCollapse && G.mode === 'play') {
+      touchCollapse(feetBefore, pl.y + PLAYER.h);
+    }
     if (pl.vy >= 0 && !pl.onGround) {
       const feet = pl.y + PLAYER.h;
       for (const s of slabs()) {
@@ -5025,6 +5137,24 @@ function startGame() {
       }
     }
     if (pl.onGround && !wasOnGround) audio.play('land');
+  }
+
+  // Developer option: coming down onto either outline of a superposed platform
+  // measures it. It materialises at the height it collapsed to, so the player
+  // lands only if that is the outline they touched (or one still below them).
+  function touchCollapse(feetBefore, feet) {
+    const pl = G.player;
+    for (const p of G.room.platforms) {
+      if (p.state !== null || p.pending) continue;
+      const touched = [slotRect(p, 1), slotRect(p, 0)].some((r) => pl.x + PLAYER.w > r.x && pl.x < r.x + r.w && feetBefore <= r.y + 2 && feet >= r.y);
+      if (!touched) continue;
+      const before = G.q;
+      const res = Q.measure([p.qi], false, 'touch');
+      if (!res.ok) return;
+      applySnapshot(res.state);
+      reportCollapse(before, res.state, res.measured);
+      return;
+    }
   }
 
   function loseLife() {
@@ -5338,6 +5468,12 @@ function startGame() {
   async function toTitle() {
     const fromRoof = !!(G.level && G.level.outdoor);
     G.epoch += 1;
+    if (G.terminal) {
+      G.terminal = null;
+      ui.closeTerminal();
+    }
+    G.dialogue = null;
+    G.bubbles = [];
     setMode('title');
     ui.showScreen('title');
     ui.setAbout(true);
@@ -5359,6 +5495,18 @@ function startGame() {
     G.hints += 1;
     panel.setHints(G.hints);
     ui.announce(`Hint ${G.hints}: ${G.level.hints[G.hints - 1]}`);
+  }
+
+  function applyDev() {
+    ui.setDev(G.dev);
+    panel.setSequential(G.dev.circuitRight);
+    requestAnimationFrame(() => panel.refresh()); // the rack may have changed size
+  }
+
+  function setDev(name, value) {
+    G.dev[name] = value;
+    saveDev(G.dev);
+    applyDev();
   }
 
   function setOption(name, value) {
@@ -5536,6 +5684,7 @@ function startGame() {
     ui.showScreen('title');
     ui.setAbout(true);
     ui.showTouch(!!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+    applyDev();
     requestAnimationFrame(frame);
 
     await loadLevel(0, { backdrop: true });

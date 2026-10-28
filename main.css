@@ -230,7 +230,6 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .circuit-svg[data-fit] { max-width: 100%; height: auto; }
 .module-head { display: flex; align-items: center; gap: 8px; }
 .module-head .plate { flex: 1; }
-.module.is-idle { display: none; }
 .goal-module { gap: 4px; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }

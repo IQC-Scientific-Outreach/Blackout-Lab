@@ -99,8 +99,6 @@ export function createPanel(dom) {
   const log = [];
   const circuitModule = dom.circuitGates.closest('.module');
   const home = { parent: circuitModule.parentElement, next: circuitModule.nextElementSibling };
-  const codeBox = dom.code.closest('details');
-  const codeModule = document.getElementById('code-module');
 
   const look = (q) => (lamps.has(q.id) ? 'door' : q.role);
 
@@ -251,18 +249,11 @@ export function createPanel(dom) {
       .join('');
   }
 
-  // Expanded (the default), the circuit moves under the game, where it has the full
-  // width; its Qiskit code listing stays in the rack, in a module of its own.
+  // Expanded (the default), the circuit moves under the game, where it has the full width.
   function setExpanded(on) {
     expanded = on;
-    if (on) {
-      dom.dockPlay.closest('.left').appendChild(circuitModule);
-      codeModule.appendChild(codeBox);
-    } else {
-      home.parent.insertBefore(circuitModule, home.next);
-      circuitModule.appendChild(codeBox);
-    }
-    codeModule.classList.toggle('is-idle', !on);
+    if (on) dom.dockPlay.closest('.left').appendChild(circuitModule);
+    else home.parent.insertBefore(circuitModule, home.next);
     circuitModule.classList.toggle('is-expanded', on);
     dom.circuitExpand.textContent = on ? 'Collapse' : 'Expand';
     dom.circuitExpand.setAttribute('aria-expanded', on ? 'true' : 'false');

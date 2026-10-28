@@ -1296,14 +1296,18 @@ export function createRenderer(canvas) {
       } else if (fx.type === 'gate') {
         drawGateFx(G, fx, k);
       } else if (fx.type === 'spark') {
-        const x = fx.from.x + (fx.to.x - fx.from.x) * k;
-        const y = fx.from.y + (fx.to.y - fx.from.y) * k - Math.sin(k * Math.PI) * 26;
+        // The ball rides the drawn arc itself: the same quadratic curve, at k along it.
+        const cx = (fx.from.x + fx.to.x) / 2;
+        const cy = Math.min(fx.from.y, fx.to.y) - 52;
+        const u = 1 - k;
+        const x = u * u * fx.from.x + 2 * u * k * cx + k * k * fx.to.x;
+        const y = u * u * fx.from.y + 2 * u * k * cy + k * k * fx.to.y;
         ctx.globalAlpha = 0.35 * (1 - k);
         ctx.strokeStyle = fx.color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(fx.from.x, fx.from.y);
-        ctx.quadraticCurveTo((fx.from.x + fx.to.x) / 2, Math.min(fx.from.y, fx.to.y) - 52, fx.to.x, fx.to.y);
+        ctx.quadraticCurveTo(cx, cy, fx.to.x, fx.to.y);
         ctx.stroke();
         ctx.globalAlpha = 1;
         ctx.fillStyle = fx.color;

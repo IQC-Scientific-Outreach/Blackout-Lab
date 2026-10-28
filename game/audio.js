@@ -68,11 +68,13 @@ export function createAudio() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.3, 'triangle', 0.07));
     },
     click: () => tone(880, 0, 0.04, 'square', 0.025),
-    // A switch thrown: a sharp tick, a low thunk, and the lever settling.
+    // A heavy switch thrown, "chun-chunk": two low metallic thuds, the second deeper and longer.
     switch: () => {
-      tone(2300, 0, 0.012, 'square', 0.035);
-      tone(150, 0.008, 0.08, 'sine', 0.1, 70);
-      tone(1600, 0.06, 0.01, 'square', 0.02);
+      tone(320, 0, 0.018, 'square', 0.03, 180); // the lever's bite
+      tone(130, 0.004, 0.07, 'sawtooth', 0.06, 85); // chun
+      tone(260, 0.115, 0.016, 'square', 0.03, 140);
+      tone(92, 0.12, 0.13, 'sawtooth', 0.075, 52); // chunk
+      tone(58, 0.125, 0.15, 'sine', 0.09, 40); // its weight
     },
     meow: () => {
       tone(620, 0, 0.16, 'triangle', 0.07, 980);

@@ -808,11 +808,28 @@ export function startGame() {
     d.pending = false;
   }
 
+  // With the passive terminal developer option, an exit opens by itself as soon as
+  // every lamp is certain and matches the key: reading certain lamps changes
+  // nothing, so no measurement is needed. A lock that runs its own gates before
+  // reading (floor 6) still has to be tried, since those gates are part of the test.
+  function autoOpen(d) {
+    if (!d.key || d.unlocked || d.pending || d.check || !G.q) return;
+    const bits = d.lockQi.map((q) => (G.q.definite[q] === null ? '?' : G.q.definite[q])).join('');
+    if (bits !== d.key) return;
+    d.unlocked = true;
+    d.open = true;
+    d.lastRead = bits;
+    audio.play('unlock');
+    addRing(center(lockRect(d)), '#7dffa8', 60);
+    say(`The lamps show ${bits.split('').join(' ')}, which matches the key: the exit opens by itself.`, 'good', true);
+  }
+
   function updateDoor(dt) {
     const d = G.room.door;
     if (!d) return;
     const pl = G.player;
     if (d.deniedT > 0) d.deniedT -= dt;
+    if (G.dev.passiveTerminal) autoOpen(d);
     if (d.key && !d.unlocked && !d.byHand) {
       const lit = G.torch.active && rectLit(handOf(pl), G.torch.angle, lockRect(d));
       if (!lit) {

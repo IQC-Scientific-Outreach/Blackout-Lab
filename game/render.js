@@ -844,7 +844,9 @@ export function createRenderer(canvas) {
       for (let i = 0; i < 6; i += 1) ctx.fillRect(term.x - 10 + i * 3.6, term.y - 30, 2, 1.5);
     }
     const catOut = !!(term.box && G.flags.opened);
-    if (term.near && G.mode === 'play' && (!term.port || carrying || catOut)) {
+    // A passive terminal (developer option) needs no E: its gates show by themselves. Petting the cat still does.
+    const passive = G.dev.passiveTerminal && !catOut;
+    if (term.near && G.mode === 'play' && !passive && (!term.port || carrying || catOut)) {
       const bob = Math.sin(G.t * 5) * 2;
       tag('E', term.x + (catOut ? 3 : 0), s.y - (catOut ? 28 : 14) + bob, C.torch);
     }

@@ -849,6 +849,40 @@ async function main() {
     bot.key('ArrowLeft', false);
     return 'passive terminal: standing at T1 showed its gates with number keys; 1 applied H twice (back to lowered); walking away hid them';
   });
+  // Passive terminal also opens an exit by itself once every lamp is certain and matches the key.
+  // (The lamp readings are set directly here; floor 3's real play is covered above.)
+  const autoOpen = async (floor, lamps) => {
+    await page.keyboard.press('KeyP');
+    await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+    await page.selectOption('#opt-floor', String(floor));
+    await page.waitForFunction((f) => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === f, floor);
+    return page.evaluate(async (lamps) => {
+      const g = window.blackoutLab.state;
+      const d = g.door;
+      const frames = async (n) => { for (let i = 0; i < n; i += 1) await new Promise((r) => requestAnimationFrame(r)); };
+      const set = (bits) => {
+        const definite = g.q.definite.slice();
+        d.lockQi.forEach((q, i) => { definite[q] = bits[i] === '?' ? null : Number(bits[i]); });
+        g.q = { ...g.q, definite };
+      };
+      set(lamps.wrong);
+      await frames(10);
+      const shutOnWrong = !d.open;
+      set(lamps.right);
+      await frames(10);
+      return { shutOnWrong, open: d.open, key: d.key };
+    }, lamps);
+  };
+  let auto = await autoOpen(2, { wrong: '?', right: '1' });
+  if (!auto.shutOnWrong || !auto.open) throw new Error(`floor 3's exit should open by itself on the right key only: ${JSON.stringify(auto)}`);
+  const floor6 = await autoOpen(5, { wrong: '01', right: '00' });
+  if (floor6.open) throw new Error('floor 6 runs its own gates before reading, so its exit must still be tried by hand');
+  report.push(`passive terminal: floor 3's exit opened by itself once its lamp was certainly ${auto.key}, not while uncertain; floor 6's self-checking lock did not`);
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '0');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
+
   // Instant response on its own: floor 2's T1 flips A with X, and A moves while the terminal is open.
   await page.evaluate(() => document.getElementById('dev-passive-terminal').click());
   await page.keyboard.press('KeyP');

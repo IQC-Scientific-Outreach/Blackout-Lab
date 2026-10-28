@@ -27,7 +27,7 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | Space or W | Jump |
 | Mouse, or I / K | Aim the flashlight |
 | F | Flashlight on / off |
-| E | Use a terminal or port, talk, go through a room door, try a lock, pet the cat |
+| E or Enter | Use a terminal or port, talk, go through a room door, try a lock, pet the cat |
 | ← → then Enter | Pick a gate while a terminal is open (E to leave) |
 | H | Show a hint |
 | R / P / M | Restart floor / pause and options / sound |
@@ -53,7 +53,7 @@ The title screen has a collapsible **Developer options** panel, under the credit
 | Keyboard flashlight | The flashlight shines only while F is held, straight ahead in the direction the player faces. The mouse does not aim it at all. |
 | Touch-collapse | Landing on either outline of a superposed platform measures it, by the Born rule (50/50 after an H). The platform appears at the height it collapsed to: you land if that is the outline you touched, otherwise you drop past it. The circuit records it as a measurement ("Player landed on"). |
 | Instant response | A gate applied at a terminal moves its platform straight away, while you are still at the terminal (normally the platforms wait until you leave). |
-| Passive terminal | Standing at a terminal shows its gates, each with a number under it. Press 1, 2, 3 and so on (or click) to apply one: no E, and you can still move and use the flashlight, so it can observe between gates. |
+| Passive terminal | Standing at a terminal shows its gates, each with a number under it. Press 1, 2, 3 and so on (or click) to apply one: no E (and no E marker over the terminal), and you can still move and use the flashlight, so it can observe between gates. Exits also open by themselves as soon as every lamp is certain and matches the key, except floor 6's, whose lock runs its own gates before reading. |
 | Panel position | Right (the normal layout) or Bottom: the rack moves under the game, with its modules side by side. |
 | Circuit always adds to the right | Every new step in the circuit gets its own column after everything before it, instead of moving left into the first free column. |
 

@@ -50,13 +50,40 @@ function rr(ctx, x, y, w, h, r) {
 }
 
 // The canister sprite, standing on baseY. Shared with the canister view in the rack.
-export function paintCanister(ctx, x, baseY) {
+//
+// `state` (canister view only) lights its two bands the way platforms show a qubit:
+//   { value: 0 | 1 }   definite: the bottom band (0) or the top band (1) glows bright blue
+//   { p1, t }          superposed or entangled: both bands get a moving dashed outline,
+//                      each as strong as the chance of its value, like a platform's outlines
+export function paintCanister(ctx, x, baseY, state) {
+  const bands = [
+    { value: 1, y: baseY - 16 },
+    { value: 0, y: baseY - 6 },
+  ];
   ctx.fillStyle = '#9fb3d6';
   rr(ctx, x - 5, baseY - 19, 10, 19, 4);
   ctx.fill();
-  ctx.fillStyle = '#5d7299';
-  ctx.fillRect(x - 6, baseY - 16, 12, 2.5);
-  ctx.fillRect(x - 6, baseY - 6, 12, 2.5);
+  for (const band of bands) {
+    const lit = state && state.value === band.value;
+    ctx.save();
+    if (lit) {
+      ctx.shadowColor = '#3ea6ff';
+      ctx.shadowBlur = 6;
+    }
+    ctx.fillStyle = lit ? '#3ea6ff' : '#5d7299';
+    ctx.fillRect(x - 6, band.y, 12, 2.5);
+    ctx.restore();
+    if (state && state.p1 !== undefined) {
+      ctx.save();
+      ctx.globalAlpha = 0.3 + 0.7 * (band.value ? state.p1 : 1 - state.p1);
+      ctx.strokeStyle = '#5ee6ff';
+      ctx.lineWidth = 0.55;
+      ctx.setLineDash([1.4, 1]);
+      ctx.lineDashOffset = -(state.t || 0) * 3;
+      ctx.strokeRect(x - 6.6, band.y - 0.6, 13.2, 3.7);
+      ctx.restore();
+    }
+  }
   ctx.fillStyle = '#2a3855';
   ctx.fillRect(x - 2, baseY - 22, 4, 3);
 }

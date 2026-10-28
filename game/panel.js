@@ -281,26 +281,38 @@ export function createPanel(dom) {
   const canisterView = document.getElementById('canister-view');
   const canisterState = document.getElementById('canister-state');
   let shownCanister = { qi: null, snap: null };
+  const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
-  function setCanister(qi) {
+  // Called every frame: the text changes only with the state, but the dashed bands move.
+  function setCanister(qi, t) {
     const snap = lastSnap;
-    if (qi === shownCanister.qi && snap === shownCanister.snap) return;
+    const changed = qi !== shownCanister.qi || snap !== shownCanister.snap;
+    if (!changed && (qi === null || !snap || snap.definite[qi] !== null)) return;
     shownCanister = { qi, snap };
     canisterModule.classList.toggle('is-off', qi === null || !snap);
     if (qi === null || !snap) return;
     const d = describe(snap, qi);
-    const text = d.kind === 'entangled' ? `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}` : d.ket === 'ψ' ? '|ψ⟩' : d.ket;
-    canisterState.textContent = text;
-    canisterState.classList.toggle('is-long', text.length > 4);
-    canisterView.setAttribute('aria-label', `The canister you are holding: ${d.kind === 'entangled' ? text.toLowerCase() : `in state ${text}`}`);
+    if (changed) {
+      const text = d.kind === 'entangled' ? `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}` : d.ket === 'ψ' ? '|ψ⟩' : d.ket;
+      canisterState.textContent = text;
+      canisterState.classList.toggle('is-long', text.length > 4);
+      canisterView.setAttribute('aria-label', `The canister you are holding: ${d.kind === 'entangled' ? text.toLowerCase() : `in state ${text}`}`);
+    }
+    const state = d.kind === 'definite' ? { value: d.p1 } : { p1: d.p1, t: calm.matches ? 0 : t };
     const rect = canisterCanvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canisterCanvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canisterCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+    if (canisterCanvas.width !== w || canisterCanvas.height !== h) {
+      canisterCanvas.width = w;
+      canisterCanvas.height = h;
+    }
     const ctx = canisterCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
     const zoom = (rect.height * dpr * 0.8) / 22; // the sprite is 22 units tall
     ctx.setTransform(zoom, 0, 0, zoom, canisterCanvas.width / 2, canisterCanvas.height / 2 + 11 * zoom);
-    paintCanister(ctx, 0, 0);
+    paintCanister(ctx, 0, 0, state);
   }
 
   function renderLog() {

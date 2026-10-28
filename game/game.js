@@ -1456,7 +1456,7 @@ export function startGame() {
 
     if (input.take('mute')) toggleSound();
     // Developer option: the held canister, enlarged in the rack.
-    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null);
+    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null, G.t);
 
     if (G.mode === 'falling') {
       G.fallT -= dt;

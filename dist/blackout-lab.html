@@ -2059,13 +2059,40 @@ function rr(ctx, x, y, w, h, r) {
 }
 
 // The canister sprite, standing on baseY. Shared with the canister view in the rack.
-function paintCanister(ctx, x, baseY) {
+//
+// `state` (canister view only) lights its two bands the way platforms show a qubit:
+//   { value: 0 | 1 }   definite: the bottom band (0) or the top band (1) glows bright blue
+//   { p1, t }          superposed or entangled: both bands get a moving dashed outline,
+//                      each as strong as the chance of its value, like a platform's outlines
+function paintCanister(ctx, x, baseY, state) {
+  const bands = [
+    { value: 1, y: baseY - 16 },
+    { value: 0, y: baseY - 6 },
+  ];
   ctx.fillStyle = '#9fb3d6';
   rr(ctx, x - 5, baseY - 19, 10, 19, 4);
   ctx.fill();
-  ctx.fillStyle = '#5d7299';
-  ctx.fillRect(x - 6, baseY - 16, 12, 2.5);
-  ctx.fillRect(x - 6, baseY - 6, 12, 2.5);
+  for (const band of bands) {
+    const lit = state && state.value === band.value;
+    ctx.save();
+    if (lit) {
+      ctx.shadowColor = '#3ea6ff';
+      ctx.shadowBlur = 6;
+    }
+    ctx.fillStyle = lit ? '#3ea6ff' : '#5d7299';
+    ctx.fillRect(x - 6, band.y, 12, 2.5);
+    ctx.restore();
+    if (state && state.p1 !== undefined) {
+      ctx.save();
+      ctx.globalAlpha = 0.3 + 0.7 * (band.value ? state.p1 : 1 - state.p1);
+      ctx.strokeStyle = '#5ee6ff';
+      ctx.lineWidth = 0.55;
+      ctx.setLineDash([1.4, 1]);
+      ctx.lineDashOffset = -(state.t || 0) * 3;
+      ctx.strokeRect(x - 6.6, band.y - 0.6, 13.2, 3.7);
+      ctx.restore();
+    }
+  }
   ctx.fillStyle = '#2a3855';
   ctx.fillRect(x - 2, baseY - 22, 4, 3);
 }
@@ -3858,26 +3885,38 @@ function createPanel(dom) {
   const canisterView = document.getElementById('canister-view');
   const canisterState = document.getElementById('canister-state');
   let shownCanister = { qi: null, snap: null };
+  const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
-  function setCanister(qi) {
+  // Called every frame: the text changes only with the state, but the dashed bands move.
+  function setCanister(qi, t) {
     const snap = lastSnap;
-    if (qi === shownCanister.qi && snap === shownCanister.snap) return;
+    const changed = qi !== shownCanister.qi || snap !== shownCanister.snap;
+    if (!changed && (qi === null || !snap || snap.definite[qi] !== null)) return;
     shownCanister = { qi, snap };
     canisterModule.classList.toggle('is-off', qi === null || !snap);
     if (qi === null || !snap) return;
     const d = describe(snap, qi);
-    const text = d.kind === 'entangled' ? `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}` : d.ket === 'ψ' ? '|ψ⟩' : d.ket;
-    canisterState.textContent = text;
-    canisterState.classList.toggle('is-long', text.length > 4);
-    canisterView.setAttribute('aria-label', `The canister you are holding: ${d.kind === 'entangled' ? text.toLowerCase() : `in state ${text}`}`);
+    if (changed) {
+      const text = d.kind === 'entangled' ? `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}` : d.ket === 'ψ' ? '|ψ⟩' : d.ket;
+      canisterState.textContent = text;
+      canisterState.classList.toggle('is-long', text.length > 4);
+      canisterView.setAttribute('aria-label', `The canister you are holding: ${d.kind === 'entangled' ? text.toLowerCase() : `in state ${text}`}`);
+    }
+    const state = d.kind === 'definite' ? { value: d.p1 } : { p1: d.p1, t: calm.matches ? 0 : t };
     const rect = canisterCanvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canisterCanvas.width = Math.max(1, Math.round(rect.width * dpr));
-    canisterCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+    if (canisterCanvas.width !== w || canisterCanvas.height !== h) {
+      canisterCanvas.width = w;
+      canisterCanvas.height = h;
+    }
     const ctx = canisterCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
     const zoom = (rect.height * dpr * 0.8) / 22; // the sprite is 22 units tall
     ctx.setTransform(zoom, 0, 0, zoom, canisterCanvas.width / 2, canisterCanvas.height / 2 + 11 * zoom);
-    paintCanister(ctx, 0, 0);
+    paintCanister(ctx, 0, 0, state);
   }
 
   function renderLog() {
@@ -5755,7 +5794,7 @@ function startGame() {
 
     if (input.take('mute')) toggleSound();
     // Developer option: the held canister, enlarged in the rack.
-    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null);
+    panel.setCanister(G.dev.canisterView && carrying() && G.q && !(G.level && G.level.outdoor) ? G.canister.qi : null, G.t);
 
     if (G.mode === 'falling') {
       G.fallT -= dt;

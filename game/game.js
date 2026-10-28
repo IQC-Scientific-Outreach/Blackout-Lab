@@ -1,7 +1,7 @@
 // Blackout Lab: game state, platformer physics and the rules that connect the
 // flashlight, the terminals, the canister and the doors to the quantum engine.
 //
-// The quantum state itself lives in Python (engine/quantum.py). This file only
+// The quantum state itself lives in the engine (quantum.js). This file only
 // ever asks the engine to apply a gate, measure, or reset, and then moves the
 // platforms to wherever the returned snapshot says they are.
 
@@ -16,8 +16,6 @@ import { createPanel, describe } from './panel.js';
 import { createUI, grabDom } from './ui.js';
 
 const PHYS = { speed: 190, accel: 2200, gravity: 1900, jump: 620, coyote: 0.09, buffer: 0.11, maxFall: 900, step: 1 / 120 };
-const SELF_TEST_SHOTS = 200;
-const SKIP_AFTER = 12;
 const MIN_REMARK = 2.5;
 const LONG_TOAST = 5.2;
 const CRANK_X = TERRACE.scene.generator.x - 53;
@@ -34,7 +32,7 @@ const NO_QUBITS = {
   joint: [],
   ops: [],
   code: '# No qubits on the terrace.',
-  stats: { gates: 0, measurements: 0, noise: 0, depth: 0 },
+  stats: { gates: 0, measurements: 0, depth: 0 },
 };
 
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
@@ -42,10 +40,9 @@ const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -
 const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]);
 const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
-export function startGame({ bridge, backend, backendName: givenName }) {
-  let backendName = givenName;
+export function startGame() {
   const dom = grabDom();
-  const Q = createQuantum(bridge);
+  const Q = createQuantum();
   const audio = createAudio();
   const renderer = createRenderer(dom.game);
   const panel = createPanel(dom);
@@ -74,12 +71,9 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     shake: 0,
     lives: LIVES_PER_FLOOR,
     infinite: false,
-    noiseOn: true,
-    report: null,
     stats: null,
     results: [],
     hints: 0,
-    engine: 'Qiskit',
     flags: {},
     floorTime: 0, // seconds of play on this attempt
     bonusDone: false,
@@ -89,14 +83,11 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     busy: false,
     terminal: null,
     fallT: 0,
-    bootWait: -1,
-    calibrating: false,
     started: false,
   };
 
   const ui = createUI(dom, {
     start: () => startRun(),
-    skip: () => startRun(),
     pause: () => pause(),
     resume: () => resume(),
     restart: () => restartFloor(),
@@ -110,7 +101,6 @@ export function startGame({ bridge, backend, backendName: givenName }) {
       audio.unlock();
       G.started = true;
       G.results = [];
-      ui.showSkip(false);
       loadLevel(index);
     },
     jump: (index) => {
@@ -176,12 +166,6 @@ export function startGame({ bridge, backend, backendName: givenName }) {
       infinite: G.infinite,
       torch: G.level && G.level.outdoor ? 'ok' : G.torch.battery,
     });
-  }
-
-  function backendChip() {
-    if (!G.report) return `${backendName} · ideal physics`;
-    if (G.report.ideal) return `${G.report.backend} · no noise measured`;
-    return `${G.report.backend} · CNOT error ${(G.report.p2 * 100).toFixed(1)}%${G.noiseOn ? '' : ' (off)'}`;
   }
 
   function addRing(pt, color, size) {
@@ -422,7 +406,7 @@ export function startGame({ bridge, backend, backendName: givenName }) {
       return false;
     }
     const falls = carry && G.stats ? G.stats.falls : 0;
-    G.stats = { gates: 0, looks: 0, unlucky: 0, denied: 0, falls, noise: 0 };
+    G.stats = { gates: 0, looks: 0, unlucky: 0, denied: 0, falls };
     if (!carry) {
       G.lives = LIVES_PER_FLOOR;
       G.hints = 0;
@@ -534,7 +518,7 @@ export function startGame({ bridge, backend, backendName: givenName }) {
   }
 
   function endsWith(snap, qi, gates) {
-    const last = snap.ops.filter((op) => op.kind !== 'noise' && op.qubits.includes(qi)).slice(-gates.length);
+    const last = snap.ops.filter((op) => op.qubits.includes(qi)).slice(-gates.length);
     return last.length === gates.length && snap.definite[qi] !== null && last.every((op, i) => op.kind === 'gate' && op.gate === gates[i]);
   }
 
@@ -585,16 +569,6 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     }
     say(text, nowDefinite ? 'info' : 'quantum');
     ui.setTerminalStatus(text, nowDefinite ? '' : 'quantum');
-
-    if (res.glitch) {
-      G.stats.noise += 1;
-      const g = res.glitch;
-      const note = `Hardware noise: a stray ${g.pauli.toUpperCase()} error hit ${g.label}. Real quantum computers do this; it is not your mistake. ${stateSentence(res.state, g.qubit)}`;
-      say(note, 'bad', true);
-      ui.setTerminalStatus(note, 'bad');
-      addRing(renderer.anchorOf(G, g.qubit), '#ff8585', 40);
-      audio.play('glitch');
-    }
   }
 
   // -- measurement: flashlight and locks ---------------------------------------
@@ -688,12 +662,13 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     if (t.battery === 'low' && G.mode === 'play') {
       t.flickT -= dt;
       if (t.flickT <= 0) {
-        t.flickLeft = 0.5;
+        t.flickLeft = 0.8;
         t.flickT = 2.6 + Math.random() * 3;
       }
       if (t.flickLeft > 0) {
         t.flickLeft -= dt;
-        blink = Math.sin(t.flickLeft * 55) > -0.1;
+        // About 2.4 blinks a second: under the 3 flashes a second that can trigger seizures (WCAG 2.3.1).
+        blink = Math.sin(t.flickLeft * 15) > -0.1;
       }
     }
     t.lowered = G.mode !== 'play';
@@ -999,7 +974,6 @@ export function startGame({ bridge, backend, backendName: givenName }) {
       const secs = Math.round(G.floorTime);
       parts.push(`time ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`);
     }
-    if (s.noise) parts.push(`${s.noise} noise error${s.noise === 1 ? '' : 's'}`);
     ui.showComplete({
       name: level.name,
       index: G.levelIndex,
@@ -1028,7 +1002,7 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     buildFloor(TERRACE);
     ui.setNote(null);
     ui.setAbout(false);
-    G.stats = { gates: 0, looks: 0, unlucky: 0, denied: 0, falls: 0, noise: 0 };
+    G.stats = { gates: 0, looks: 0, unlucky: 0, denied: 0, falls: 0 };
     G.lives = LIVES_PER_FLOOR;
     G.hints = 0;
     const walker = (id, name, delay) => ({ id, kind: id, name, x: s.door.x, target: s.line[id], delay, out: false, moving: false, anim: 0 });
@@ -1228,7 +1202,7 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     ui.showWin({
       stars: sum('stars'),
       of: done.length ? possible : 0,
-      stats: `${run}Physics: ${G.engine}. Self-test backend: ${G.report ? G.report.backend : 'not run'}.`,
+      stats: `${run}Physics: exact state-vector simulation, in your browser.`,
     });
     ui.announce('Thank you for playing.');
   }
@@ -1237,7 +1211,6 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     audio.unlock();
     G.started = true;
     G.results = [];
-    ui.showSkip(false);
     loadLevel(0);
   }
 
@@ -1251,7 +1224,7 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     if (G.mode !== 'play' && G.mode !== 'cutscene') return;
     G.pausedFrom = G.mode;
     setMode('paused');
-    ui.setOptions({ lives: G.infinite, noise: G.noiseOn, floor: G.levelIndex });
+    ui.setOptions({ lives: G.infinite, floor: G.levelIndex });
     ui.showScreen('pause');
   }
 
@@ -1287,14 +1260,10 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     ui.announce(`Hint ${G.hints}: ${G.level.hints[G.hints - 1]}`);
   }
 
-  async function setOption(name, value) {
+  function setOption(name, value) {
     if (name === 'lives') {
       G.infinite = value;
       updateHud();
-    } else if (name === 'noise') {
-      G.noiseOn = value;
-      await Q.setNoise(value);
-      ui.setHud({ backendText: backendChip() });
     }
   }
 
@@ -1355,10 +1324,6 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     G.shake = Math.max(0, G.shake - dt * 3);
     for (const p of G.platforms) p.flash = Math.max(0, p.flash - dt * 2.2);
 
-    if (G.mode === 'boot' && G.calibrating) {
-      G.bootWait += dt;
-      if (G.bootWait > SKIP_AFTER) ui.showSkip(true);
-    }
     if (input.take('mute')) toggleSound();
 
     if (G.mode === 'falling') {
@@ -1465,63 +1430,20 @@ export function startGame({ bridge, backend, backendName: givenName }) {
     window.addEventListener('resize', () => renderer.resize());
   }
 
-  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
-
   async function boot() {
     watchSize();
     ui.showScreen('title');
     ui.setAbout(true);
     ui.showTouch(!!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
-    ui.setHud({ backendText: `${backendName} · self-test pending` });
     requestAnimationFrame(frame);
 
-    const info = await Q.info();
-    if (!info.ok) {
-      ui.setBoot(`The quantum engine did not load. ${info.error} Press Stop, then Run, to try again.`, 'error');
-      return;
-    }
-    dom.engineName.textContent = info.engine;
-    G.engine = info.engine;
     await loadLevel(0, { backdrop: true });
     if (G.mode === 'error') return;
     G.torch.active = true;
     G.torch.angle = -0.22;
-
-    if (info.preview) {
-      backendName = 'no backend';
-      ui.setBoot('Preview build: the physics here is a small JavaScript simulator, so there is no backend to self-test. On Qollab the game runs on Qiskit and tests the machine you pick.');
-      ui.setHud({ backendText: 'preview · ideal physics' });
-      setMode('title');
-      ui.setPrompt('The lab is ready. Enter the building when you are.');
-      ui.enableStart('Enter the building');
-      return;
-    }
-
-    ui.setBoot(`${info.engine} is ready. Running the lab self-test on ${backendName}: one job, ${SELF_TEST_SHOTS} shots.`);
-    G.calibrating = true;
-    G.bootWait = 0;
-    await nextFrame();
-    await nextFrame();
-    const res = await Q.calibrate(backend, SELF_TEST_SHOTS);
-    G.calibrating = false;
-    ui.showSkip(false);
-    if (res.ok) {
-      G.report = res.report;
-      ui.setSelfTest(res.report);
-      const verdict = res.report.ideal
-        ? 'Every check passed on every shot, so gates in the game are exact.'
-        : 'This machine is noisy: now and then a gate in the game will misfire at the measured rate.';
-      ui.setBoot(`Self-test done on ${res.report.backend}. ${verdict}`);
-      if (G.started && !res.report.ideal) say(`The self-test arrived from ${res.report.backend}: gates can now misfire.`, 'info', true);
-    } else {
-      ui.setBoot(`The self-test could not run on ${backendName} (${res.error}). The game continues with ideal physics.`);
-    }
-    ui.setHud({ backendText: backendChip() });
-    if (!G.started) {
-      setMode('title');
-      ui.setPrompt('The lab is ready. Enter the building when you are.');
-      ui.enableStart('Enter the building');
-    }
+    setMode('title');
+    ui.setPrompt('The lab is ready. Enter the building when you are.');
+    ui.enableStart('Enter the building');
   }
 
   return { boot, state: G };

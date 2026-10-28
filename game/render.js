@@ -53,6 +53,7 @@ export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
   const mctx = mask.getContext('2d');
+  const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let scale = 1;
 
   function resize() {
@@ -1515,7 +1516,7 @@ export function createRenderer(canvas) {
       return;
     }
     const room = G.room;
-    const shake = G.shake;
+    const shake = calm.matches ? 0 : G.shake;
     ctx.save();
     if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 8, (Math.random() - 0.5) * shake * 8);
 

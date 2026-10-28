@@ -1,0 +1,12 @@
+{
+  "name": "blackout-lab",
+  "private": true,
+  "description": "A 2D platformer where the level is a quantum circuit. Runs entirely in the browser.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test && node tools/build.mjs --check",
+    "playthrough": "node tests/playthrough.cjs"
+  }
+}

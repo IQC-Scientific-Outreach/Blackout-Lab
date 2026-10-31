@@ -154,7 +154,7 @@ function installBot() {
       if (!button || button.disabled) throw new Error(`gate ${n} at ${id} is not available`);
       const before = G().q.ops.length;
       button.click();
-      await until(() => G().q.ops.length > before && !G().busy, 5000, `gate ${n} at ${id}`);
+      await until(() => G().q.ops.length > before && !G().busy, 12000, `gate ${n} at ${id}`); // a swap counts down, then travels
     }
     await tap('Escape'); // Esc must not leave a terminal: only E does
     await frame();

@@ -20,7 +20,7 @@ for (const [where0, level] of ALL) {
     const gateOps = (ops, where) => {
       for (const op of ops || []) {
         assert.ok(op.gate in GATE_INFO, `${where}: unknown gate ${op.gate}`);
-        if (op.gate === 'cx' || op.gate === 'cz') assert.equal(op.q.length, 2, `${where}: ${op.gate} needs two qubits`);
+        if (['cx', 'cz', 'swap'].includes(op.gate)) assert.equal(op.q.length, 2, `${where}: ${op.gate} needs two qubits`);
         else if (op.gate !== 'measure') assert.equal(op.q.length, 1, `${where}: ${op.gate} acts on one qubit`);
         op.q.forEach((id) => known(id, where));
       }
@@ -38,18 +38,14 @@ for (const [where0, level] of ALL) {
         assert.ok([0, 1].includes(p.need), where(`platform ${p.q}: need must be 0 or 1`));
         if (p.axis === 'x') assert.ok([p.x0, p.x1, p.y].every(Number.isFinite), where(`sideways platform ${p.q} needs x0, x1 and y`));
         else assert.ok([p.x, p.y0, p.y1].every(Number.isFinite), where(`platform ${p.q} needs x, y0 and y1`));
-        if (p.shuttle) {
-          const far = (room.terminals || []).find((t) => t.id === p.shuttle.arrive);
-          assert.ok(far && far.auto, where(`shuttle ${p.q} arrives at ${p.shuttle.arrive}, which must be an auto terminal`));
-          assert.ok(p.shuttle.speed > 0 && Number.isFinite(p.shuttle.to), where(`shuttle ${p.q} needs a speed and a destination`));
-        }
       }
       for (const light of room.lights || []) {
         assert.ok(light.kind in LIGHT_KINDS, where(`unknown light kind ${light.kind}`));
         assert.ok([light.x, light.y, light.angle, light.spread, light.range].every(Number.isFinite), where('a light needs x, y, angle, spread and range'));
       }
       for (const c of room.cavities || []) {
-        assert.ok([c.x, c.w, c.y, c.rate].every(Number.isFinite) && ['up', 'down'].includes(c.dir), where('a cavity needs x, w, y, rate and dir up or down'));
+        assert.ok([c.x, c.w, c.y, c.to, c.rate].every(Number.isFinite) && ['up', 'down'].includes(c.dir), where('a cavity needs x, w, y, to, rate and dir up or down'));
+        assert.equal(c.dir === 'up', c.to < c.y, where('a cavity runs from its emitting cap (y) towards its far cap (to)'));
       }
       for (const t of room.terminals || []) {
         gateOps(t.ops, where(`terminal ${t.id}`));

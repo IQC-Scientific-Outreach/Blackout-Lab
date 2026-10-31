@@ -234,9 +234,9 @@ async function main() {
     if (shotDir) await page.screenshot({ path: `${shotDir}/${name}.png` });
   };
   const report = [];
-  const step = async (label, fn) => {
+  const step = async (label, fn, arg) => {
     try {
-      const out = await page.evaluate(fn);
+      const out = await page.evaluate(fn, arg);
       if (out) report.push(out);
     } catch (err) {
       await shot(`FAILED-${label.replace(/\W+/g, '-')}`);
@@ -738,72 +738,57 @@ async function main() {
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', { label: 'Bonus 1. Quantum Communication' });
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel');
-  await step('bonus level 1', async () => {
+  // The ride at the end of bonus levels 1 and 2 needs time to jump on: the swap delay
+  // developer option gives the bot 2.5 s (the default is 1 s).
+  await page.evaluate(() => {
+    const range = document.getElementById('dev-swap-delay');
+    range.value = '2.5';
+    range.dispatchEvent(new Event('input'));
+  });
+  const channel = async (level) => {
     const g = bot.G();
-    const Q = bot.platform('Q');
     const S = bot.platform('S');
     if (g.torch.on) throw new Error('the flashlight should start switched off here');
-    if (document.getElementById('hud-floor').textContent !== 'Bonus level 1') throw new Error('the status bar should say Bonus level 1');
-    const home = () => bot.until(() => Q.trip === null && !Q.pending, 15000, 'Q to come home');
-    // Unshielded: the backup light measures Q on its way, before the far terminal's Z.
-    await bot.terminal('T1', [2]);
-    await bot.until(() => Q.trip === 'out', 2000, 'Q to set off');
-    await home();
+    // Unshielded: H, then SWAP sends the superposition across, and the light sees it on the way.
+    await bot.terminal('T1', [1, 2]);
     const first = g.q.ops.map((op) => `${op.gate}${op.by ? `:${op.by}` : ''}`).join(' ');
-    if (first !== 'h measure:light z') throw new Error(`unshielded, the light should measure Q before the Z: ${first}`);
-    // Shielded: X slides S under the light, then H, the trip's Z, and H again make an X.
-    // (Unshielded, the light may have left Q raised by luck; carry on until the X is built.)
-    await bot.terminal('T1', [3]);
-    await bot.until(() => S.state === 1 && S.x === S.x1, 3000, 'the shield to slide in');
-    let trips = 0;
-    while (!(Q.state === 1 && g.bonusDone) && trips < 8) {
-      const before = g.q.ops.length;
-      await bot.terminal('T1', [2]);
-      await home();
-      trips += 1;
-      if (g.q.ops.slice(before).some((op) => op.by === 'light')) throw new Error('the shielded light still measured Q');
+    const seen = level === 2 ? 'reset:emergency' : 'measure:light';
+    if (!first.startsWith('h swap') || !first.includes(seen)) throw new Error(`unshielded, the light should catch the crossing: ${first}`);
+    document.getElementById('btn-restart').click();
+    await bot.until(() => g.mode === 'play' && g.q.ops.length === 0, 4000, 'the restart');
+    // Shielded: X, H, SWAP, Z (on R, now holding Q's state), SWAP, H: Q is a certain 1.
+    await bot.terminal('T1', [4, 1, 2, 3, 2, 1]);
+    const Q = bot.platform('Q');
+    if (Q.state !== 1 || !g.bonusDone || g.q.ops.some((op) => op.kind === 'measure' || op.kind === 'reset')) {
+      throw new Error(`H, SWAP, Z, SWAP, H should make Q a certain 1, unseen: ${g.q.ops.map((op) => op.gate).join(' ')}, Q=${Q.state}`);
     }
-    if (Q.state !== 1 || !g.bonusDone) throw new Error('H, Z, H should bring Q home raised');
+    // The last SWAP: during the delay (arrows showing), jump onto the raised platform and ride it.
+    const t1 = g.room.terminals[0];
+    await bot.walkTo(t1.x);
+    await bot.until(() => t1.near, 2000, 'stand at T1');
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'terminal', 2000, 'T1 to open');
+    document.querySelector('#term-ops button[data-op="1"]').click();
+    await bot.frame();
+    if (!g.swap || [...document.querySelectorAll('#term-ops button')].some((b) => !b.disabled)) throw new Error('during a swap every gate should be greyed out');
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
+    const ride = bot.platform('Q');
     await bot.hop(bot.slab('Q'));
-    await bot.hop(bot.solid(1));
+    if (g.player.standing !== ride || g.swap.travel) throw new Error('the player should be aboard before the swap sets off');
+    await bot.until(() => !g.swap, 8000, 'the swap to finish');
+    if (g.player.standing !== ride || ride.q !== 'R' || ride.state !== 1) throw new Error(`the raised platform should have carried the player to R's place: ${ride.q} ${ride.state}`);
+    await bot.hop(bot.solid(2));
     await bot.exit();
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (document.getElementById('complete-eyebrow').textContent !== 'Bonus level 1 cleared' || document.getElementById('btn-next').textContent !== 'Next bonus level') {
-      throw new Error('a bonus level should end with its own cleared screen');
-    }
-    return `bonus level 1: unshielded the light measured Q (${first}); shielded, ${trips} trips brought Q home raised; stars ${stars.join(', ')}`;
-  });
+    return `bonus level ${level}: unshielded the light caught the crossing (${first}); shielded, X H SWAP Z SWAP H made Q a certain 1, and the last SWAP carried the player across; stars ${stars.join(', ')}`;
+  };
+  await step('bonus level 1', channel, 1);
   await shot('15b-bonus-cleared');
+  if ((await page.textContent('#btn-next')) !== 'Next bonus level') throw new Error('bonus level 1 should lead on to the next bonus level');
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel-emergency');
-
-  // Bonus level 2: the same channel, with an emergency light that damps Q to 0.
-  await step('bonus level 2', async () => {
-    const g = bot.G();
-    const Q = bot.platform('Q');
-    const S = bot.platform('S');
-    if (S.state !== 1 || S.x !== S.x1) throw new Error('the shield should start parked, out of the light');
-    const home = () => bot.until(() => Q.trip === null && !Q.pending, 15000, 'Q to come home');
-    await bot.terminal('T1', [2]);
-    await home();
-    const first = g.q.ops.map((op) => `${op.gate}${op.by ? `:${op.by}` : ''}`).join(' ');
-    if (first !== 'h reset:emergency z' || Q.state !== 0) throw new Error(`unshielded, the emergency light should damp Q to 0: ${first}, Q=${Q.state}`);
-    await bot.terminal('T1', [3]);
-    await bot.until(() => S.state === 0 && S.x === S.x0, 3000, 'the shield to slide in');
-    let trips = 0;
-    while (!(Q.state === 1 && g.bonusDone) && trips < 6) {
-      const before = g.q.ops.length;
-      await bot.terminal('T1', [2]);
-      await home();
-      trips += 1;
-      if (g.q.ops.slice(before).some((op) => op.by === 'emergency')) throw new Error('the shielded emergency light still reached Q');
-    }
-    if (Q.state !== 1 || S.state !== 0) throw new Error('Q should come home raised, with the shield still in place');
-    await bot.hop(bot.slab('Q'));
-    await bot.hop(bot.solid(1));
-    await bot.exit();
-    return `bonus level 2: unshielded the emergency light damped Q (${first}); the shield (blocking at 0) stayed put, and ${trips} trips brought Q home raised`;
-  });
+  await step('bonus level 2', channel, 2);
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'decoherence');
 

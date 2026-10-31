@@ -24,7 +24,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, ry: 1, cx: 2, cz: 2 }; // i: identity, which does nothing; ry takes an angle
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, ry: 1, cx: 2, cz: 2, swap: 2 }; // i: identity, which does nothing; ry takes an angle
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -104,6 +104,19 @@ export class Lab {
         const j = i | bit;
         [re[i], re[j]] = [c * re[i] - s * re[j], s * re[i] + c * re[j]];
         [im[i], im[j]] = [c * im[i] - s * im[j], s * im[i] + c * im[j]];
+      }
+      return;
+    }
+    if (name === 'swap') {
+      // Exchange the two qubits' states: swap the amplitudes where their bits differ.
+      const a = 1 << qubits[0];
+      const b = 1 << qubits[1];
+      for (let i = 0; i < size; i += 1) {
+        if (i & a && !(i & b)) {
+          const j = (i & ~a) | b;
+          [re[i], re[j]] = [re[j], re[i]];
+          [im[i], im[j]] = [im[j], im[i]];
+        }
       }
       return;
     }

@@ -81,6 +81,11 @@ function opSvg(op, x, yOf) {
   if (op.kind === 'reset') return gateBox(x, y, KET[0], 'g-reset');
   if (op.gate === 'ry') return gateBox(x, y, 'RY', op.kind === 'drive' ? 'g-ry g-drive' : 'g-ry');
   const auto = op.kind === 'auto' ? ' g-auto' : '';
+  if (op.gate === 'swap') {
+    const ya = yOf(op.qubits[0]);
+    const cross = (cy) => `<line x1="${x - 6}" y1="${cy - 6}" x2="${x + 6}" y2="${cy + 6}"/><line x1="${x + 6}" y1="${cy - 6}" x2="${x - 6}" y2="${cy + 6}"/>`;
+    return `<g class="gate g-swap${auto}"><line x1="${x}" y1="${ya}" x2="${x}" y2="${y}"/>${cross(ya)}${cross(y)}</g>`;
+  }
   if (op.gate === 'cz') {
     const ya = yOf(op.qubits[0]);
     return `<g class="gate g-cx g-cz${auto}"><line x1="${x}" y1="${ya}" x2="${x}" y2="${y}"/><circle class="ctrl" cx="${x}" cy="${ya}" r="4.5"/><circle class="ctrl" cx="${x}" cy="${y}" r="4.5"/></g>`;
@@ -105,6 +110,7 @@ function opWords(op, labels) {
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
   if (op.gate === 'cz') return `${who}CZ on ${names[0]} and ${names[1]}`;
+  if (op.gate === 'swap') return `${who}SWAP ${names[0]} and ${names[1]}`;
   return `${who}${op.gate.toUpperCase()} on ${names[0]}`;
 }
 

@@ -28,15 +28,13 @@ test('sideways platforms park at x0 and x1 on one height', () => {
   assert.deepEqual(slotMid(lift), { x: 40, y: 257 });
 });
 
-test('a cavity drives what is in its band, unless something blocks the way', async () => {
-  const { cavityReaches } = await import('../game/geometry.js');
-  const down = { x: 100, w: 100, y: 20, dir: 'down' };
-  const target = { x: 120, y: 300, w: 60, h: 14 };
-  assert.ok(cavityReaches(down, target, []));
-  assert.ok(!cavityReaches(down, { x: 300, y: 300, w: 60, h: 14 }, []), 'outside the band');
-  assert.ok(!cavityReaches(down, target, [{ x: 90, y: 150, w: 130, h: 14 }]), 'a shield above it');
-  assert.ok(cavityReaches(down, target, [{ x: 90, y: 400, w: 130, h: 14 }]), 'a block below it does not matter');
-  const up = { x: 100, w: 100, y: 530, dir: 'up' };
-  assert.ok(cavityReaches(up, target, []));
-  assert.ok(!cavityReaches(up, target, [{ x: 90, y: 450, w: 130, h: 14 }]), 'a block between the pit and it');
+test('a cavity is all or nothing: only a full-width blocker between its caps shuts it', async () => {
+  const { cavityBlocked, cavityHolds } = await import('../game/geometry.js');
+  const c = { x: 100, w: 80, y: 20, to: 480, dir: 'down' };
+  assert.ok(cavityHolds(c, { x: 100, y: 300, w: 80, h: 14 }));
+  assert.ok(!cavityHolds(c, { x: 300, y: 300, w: 80, h: 14 }), 'outside the band');
+  assert.ok(!cavityHolds(c, { x: 100, y: 500, w: 80, h: 14 }), 'beyond the far cap');
+  assert.ok(cavityBlocked(c, [{ x: 100, y: 150, w: 80, h: 14 }]), 'a shield exactly as wide as the band');
+  assert.ok(!cavityBlocked(c, [{ x: 130, y: 150, w: 80, h: 14 }]), 'half over the band blocks nothing');
+  assert.ok(!cavityBlocked(c, [{ x: 100, y: 520, w: 80, h: 14 }]), 'outside the caps blocks nothing');
 });

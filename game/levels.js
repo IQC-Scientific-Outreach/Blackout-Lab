@@ -14,21 +14,22 @@
 //              at x0, state 1 at x1, on one height (it can slide in and out of a light's path);
 //              speed in pixels a second, 240 if not given. `steady: true`: cavities do not
 //              turn it (a shield that blocks their waves).
-//              shuttle: { to, speed, arrive }: any gate on it sends it across to x = to and
-//              back; on arrival the terminal named `arrive` (an `auto` one) applies its gates.
-//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q, angle? } with q = ids
+//              A swap gate between two platforms sends each across to the other's place
+//              (after the swap delay, an arrow showing where it will go), so a qubit's state
+//              really travels: see game.js.
+//   terminals  { id, x, y, ops, port?, sealed? }  op = { gate, q, angle? } with q = ids
 //              (angle, in radians, for ry)
-//              `auto: true` is out of the player's reach: it works by itself (see shuttle).
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
 //              Any op that touches the canister needs the canister in hand.
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
 //   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
-//   cavities   Rabi drives: { x, w, y, dir: 'down' | 'up', rate }, an emitter sending a band of
-//              waves that rotates every platform it reaches (Ry, `rate` radians a second):
-//              0, +, 1, - and round again. Watched platforms (lit, or stood on) hold still.
-//              Solids and certain platforms block the waves.
+//   cavities   Rabi drives: { x, w, y, to, dir: 'down' | 'up', rate }, a band of waves between
+//              an emitting cap at height y and a far cap at `to`, turning every platform in it
+//              (Ry, `rate` radians a second): 0, +, 1, - and round again. Watched platforms
+//              (lit, or stood on) hold still. All or nothing: a solid or a steady platform
+//              spanning the band's whole width shuts it off; it reloads when cleared.
 //   lights     backup lights: { x, y, angle, spread, range, kind }, a lamp shining a cone
 //              (angle and spread in radians). Like the flashlight, a light resting on a
 //              superposed platform measures it: 'normal' as fast as the flashlight, 'weak'
@@ -36,8 +37,10 @@
 //              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   bonus      an extra star: { sequences: [{ q, gates }], text } for applying one of those
-//              gate sequences to its qubit, or { seconds, text } for clearing the floor in time
+//   bonus      an extra star: { sequences: [{ q, gates, value?, untouched? }], text } for applying
+//              one of those gate sequences to its qubit (value: it must end in that state;
+//              untouched: nothing measured in between), or { seconds, text } for clearing the
+//              floor in time
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
 // `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
@@ -69,6 +72,11 @@ export const GATE_INFO = {
     symbol: 'CNOT',
     name: 'Controlled flip',
     text: 'Flips the target only when the control is in state 1. A control in superposition leaves the two entangled.',
+  },
+  swap: {
+    symbol: 'SWAP',
+    name: 'Swap',
+    text: 'Exchanges the states of two qubits. Here the two platforms trade places, so a state really travels across the room.',
   },
   ry: {
     symbol: 'RY',
@@ -480,56 +488,58 @@ export const BONUS_LEVELS = [
     id: 'channel',
     name: 'Quantum Communication',
     tag: 'Bonus level 1',
-    gates: ['i', 'h', 'x', 'z'],
+    gates: ['h', 'swap', 'z', 'x'],
     torchOff: true,
     qubits: [
       { id: 'Q', init: '0', role: 'platform' },
+      { id: 'R', init: '0', role: 'platform' },
       { id: 'S', init: '0', role: 'platform' },
     ],
     spawn: { x: 30, y: 450 },
     solids: [
       { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
-      { kind: 'stand', x: 0, y: 270, w: 140, h: 14 },
       { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 820, y: 270, w: 140, h: 14 },
     ],
     platforms: [
-      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1, shuttle: { to: 720, speed: 150, arrive: 'T2' } },
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1 },
+      { q: 'R', x: 720, w: 80, y0: 455, y1: 360, need: 1 },
       { q: 'S', axis: 'x', x0: 235, x1: 420, y: 230, w: 110, need: 1 },
     ],
     lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'normal' }],
     terminals: [
-      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'i', q: ['Q'] }, { gate: 'h', q: ['Q'] }, { gate: 'x', q: ['S'] }] },
-      { id: 'T2', x: 875, y: 450, auto: true, ops: [{ gate: 'z', q: ['Q'] }] },
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
     ],
     decor: [
       { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
-      { type: 'sign', x: 846, y: 300, lines: ['BOB'] },
+      { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
     ],
-    door: { x: 60, y: 270, key: null, lock: [] },
-    shortest: 3,
+    door: { x: 900, y: 270, key: null, lock: [] },
+    shortest: 7,
     bonus: {
-      sequences: [{ q: 'Q', gates: ['h', 'z', 'h'] }],
-      text: 'Built an X from H, Z, H with nothing seeing Q on the way',
+      sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
+      text: 'Built an X from H, Z, H with nothing seeing the qubit on the way',
     },
-    goal: 'Send platform Q across to the Z terminal and back so that it returns raised, then climb from it to the exit above.',
+    goal: 'Send Q\'s state across to Bob\'s platform R and back so that it comes home as 1, then ride it over to the exit above Bob.',
     concept:
-      'Any light is a measurement, including the backup lights left on in the lab. A qubit sent across a lit channel arrives collapsed, which is how quantum key distribution notices an eavesdropper. H, then Z, then H adds up to an X, but only if nothing looks at the qubit in between.',
+      'SWAP trades the states of two qubits: here the platforms Q and R change places, so a state really crosses the room. Any light on the way is a measurement, the way quantum key distribution spots an eavesdropper. H, then Z, then H adds up to an X, but only if nothing looks at the qubit in between.',
     hints: [
-      'Any gate on Q at T1 sends it across the room. The terminal on the far side applies Z when it arrives, then Q comes back.',
-      'The backup light in the middle collapses Q on its way. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off while Q is near you.',
-      'With the shield in place: H, wait for Q to come back, then H again. H, Z, H is an X, so Q returns raised. Jump on, then up to the exit.',
+      'Z at T1 acts on R, over on Bob\'s side, and R is a plain 0, so on its own Z does nothing. SWAP sends Q\'s state over to R\'s place (and R\'s back): watch the arrows, then the platforms trade places.',
+      'The backup light in the middle sees any superposition crossing under it. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off.',
+      'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit.',
     ],
     takeaway:
-      'The light in the middle was an eavesdropper. Looking at Q in transit collapsed it, and the far side\'s Z no longer combined with your H gates. With the channel shielded, the phase survived the trip.',
+      'The light in the middle was an eavesdropper. With the channel shielded, your state crossed the room, picked up Bob\'s Z and came back, and H, Z, H made an X.',
   },
   {
     id: 'channel-emergency',
     name: 'Emergency Channel',
     tag: 'Bonus level 2',
-    gates: ['i', 'h', 'x', 'z'],
+    gates: ['h', 'swap', 'z', 'x'],
     torchOff: true,
     qubits: [
       { id: 'Q', init: '0', role: 'platform' },
+      { id: 'R', init: '0', role: 'platform' },
       // The emergency light damps whatever is not certainly 0, so here the shield blocks
       // the light in state 0, and starts in state 1, parked out of the light.
       { id: 'S', init: '1', role: 'platform' },
@@ -537,38 +547,38 @@ export const BONUS_LEVELS = [
     spawn: { x: 30, y: 450 },
     solids: [
       { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
-      { kind: 'stand', x: 0, y: 270, w: 140, h: 14 },
       { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 820, y: 270, w: 140, h: 14 },
     ],
     platforms: [
-      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1, shuttle: { to: 720, speed: 150, arrive: 'T2' } },
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1 },
+      { q: 'R', x: 720, w: 80, y0: 455, y1: 360, need: 1 },
       { q: 'S', axis: 'x', x0: 420, x1: 235, y: 230, w: 110, need: 0 },
     ],
     lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'emergency' }],
     terminals: [
-      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'i', q: ['Q'] }, { gate: 'h', q: ['Q'] }, { gate: 'x', q: ['S'] }] },
-      { id: 'T2', x: 875, y: 450, auto: true, ops: [{ gate: 'z', q: ['Q'] }] },
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
     ],
     decor: [
       { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
-      { type: 'sign', x: 846, y: 300, lines: ['BOB'] },
+      { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
     ],
-    door: { x: 60, y: 270, key: null, lock: [] },
-    shortest: 3,
+    door: { x: 900, y: 270, key: null, lock: [] },
+    shortest: 7,
     bonus: {
-      sequences: [{ q: 'Q', gates: ['h', 'z', 'h'] }],
-      text: 'Built an X from H, Z, H with nothing seeing Q on the way',
+      sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
+      text: 'Built an X from H, Z, H with nothing seeing the qubit on the way',
     },
-    goal: 'The same channel, but the backup light is an emergency one. Send platform Q across to the Z terminal and back so that it returns raised, then climb from it to the exit above.',
+    goal: 'The same channel, but the backup light is an emergency one. Make Q a certain 1 by way of Bob\'s Z, then ride it over to the exit above Bob.',
     concept:
-      'An emergency light does not just look: it drains the qubit to its ground state, 0, whatever it was. That is amplitude damping, the way a real qubit loses its energy to its surroundings. An unshielded trip now always brings Q home lowered, so there is no getting lucky.',
+      'An emergency light does not just look: it drains a qubit to its ground state, 0, whatever it was. That is amplitude damping, the way a real qubit loses its energy to its surroundings. Unshielded, any crossing comes out as 0, even the raised platform you ride at the end.',
     hints: [
-      'Any gate on Q at T1 sends it across the room, where the terminal applies Z, and back again.',
-      'The red light damps Q to 0 on its way, even a Q that is certainly 1. X at T1 slides the shield S under the light. Keep your own flashlight off while Q is near you.',
-      'With the shield in place: H, wait for Q to come back, then H again. H, Z, H is an X, so Q returns raised.',
+      'SWAP sends Q\'s state to Bob\'s side, where Z at T1 can reach it, and brings R\'s state back. The platforms trade places under the light.',
+      'The red light damps whatever crosses under it to 0. X at T1 slides the shield S under the light (this shield blocks it as 0).',
+      'With the shield in place: H, SWAP, Z, SWAP, H, then SWAP once more and jump onto the raised platform to ride it to Bob\'s side.',
     ],
     takeaway:
-      'The emergency light was not an eavesdropper but a drain: it pulled Q down to 0 whatever it held. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',
+      'The emergency light was not an eavesdropper but a drain: it pulled everything down to 0. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',
   },
   {
     id: 'decoherence',
@@ -640,8 +650,8 @@ export const BONUS_LEVELS = [
       { q: 'S', axis: 'x', x0: 240, x1: 478, y: 150, w: 234, need: 1, speed: 1000, steady: true },
     ],
     cavities: [
-      { x: 192, w: 100, y: 530, dir: 'up', rate: Math.PI / 2 },
-      { x: 482, w: 226, y: 40, dir: 'down', rate: Math.PI / 2 },
+      { x: 200, w: 84, y: 490, to: 300, dir: 'up', rate: Math.PI / 2 },
+      { x: 482, w: 226, y: 75, to: 485, dir: 'down', rate: Math.PI / 2 },
     ],
     terminals: [
       { id: 'T1', x: 96, y: 440, ops: [{ gate: 'ry', q: ['B'], angle: Math.PI / 2 }] },

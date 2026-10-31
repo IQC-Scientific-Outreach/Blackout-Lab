@@ -172,25 +172,24 @@ export function rectLit(hand, angle, r) {
 
 // -- cavities (Rabi drive) ---------------------------------------------------------
 //
-// A cavity is an emitter at height y sending a band of waves straight down or up:
-// { x, w, y, dir: 'down' | 'up', rate } (rate: radians of Ry per second). Each column of
-// the band runs until the first blocker in its way, and drives what it reaches.
+// A cavity is a band of waves between two caps: { x, w, y, to, dir, rate }. The emitting
+// cap is at height y, the far cap at `to`, and `dir` ('down' or 'up') says which way the
+// waves run (rate: radians of Ry per second). It is all or nothing: a blocker spanning
+// the band's whole width anywhere between the caps shuts it off completely, and anything
+// narrower does not block it at all.
 
-// Where the wave column at x stops: the first blocker's near edge, or the room's edge.
-export function cavityStop(cavity, x, blockers) {
-  let stop = cavity.dir === 'up' ? 0 : WORLD.h;
-  for (const r of blockers) {
-    if (x < r.x || x > r.x + r.w) continue;
-    if (cavity.dir === 'up' && r.y + r.h <= cavity.y) stop = Math.max(stop, r.y + r.h);
-    if (cavity.dir !== 'up' && r.y >= cavity.y) stop = Math.min(stop, r.y);
-  }
-  return stop;
+export function cavitySpan(c) {
+  return { top: Math.min(c.y, c.to), bottom: Math.max(c.y, c.to) };
 }
 
-// Whether the band reaches a rectangle, through its middle column.
-export function cavityReaches(cavity, r, blockers) {
+export function cavityBlocked(c, blockers) {
+  const { top, bottom } = cavitySpan(c);
+  return blockers.some((r) => r.x <= c.x && r.x + r.w >= c.x + c.w && r.y < bottom && r.y + r.h > top);
+}
+
+// Whether a rectangle sits in the band: its middle column inside it, between the caps.
+export function cavityHolds(c, r) {
   const x = r.x + r.w / 2;
-  if (x < cavity.x || x > cavity.x + cavity.w) return false;
-  const stop = cavityStop(cavity, x, blockers);
-  return cavity.dir === 'up' ? r.y < cavity.y && r.y + r.h > stop : r.y + r.h > cavity.y && r.y < stop;
+  const { top, bottom } = cavitySpan(c);
+  return x >= c.x && x <= c.x + c.w && r.y < bottom && r.y + r.h > top;
 }

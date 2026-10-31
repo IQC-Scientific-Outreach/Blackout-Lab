@@ -14,7 +14,7 @@ export function grabDom() {
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'dev-canister-view', 'dev-show-gates', 'pause-dev-slot', 'pause-keys',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'dev-canister-view', 'dev-show-gates', 'dev-swap-delay', 'dev-swap-delay-text', 'pause-dev-slot', 'pause-keys',
   ];
   const dom = {};
   for (const id of ids) {
@@ -128,6 +128,7 @@ export function createUI(dom, handlers) {
   function opLabel(op) {
     if (op.gate === 'cx') return `${op.q[0]} → ${op.q[1]}`;
     if (op.gate === 'cz') return `${op.q[0]} · ${op.q[1]}`;
+    if (op.gate === 'swap') return `${op.q[0]} ↔ ${op.q[1]}`;
     if (op.gate === 'ry') return `${op.q[0]}, ${Math.round((op.angle / Math.PI) * 100) / 100 === 0.5 ? 'π/2' : `${(op.angle / Math.PI).toFixed(2)}π`}`;
     return op.q.join(', ');
   }
@@ -149,7 +150,7 @@ export function createUI(dom, handlers) {
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
         const locked = op.needsCanister && !carrying;
-        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : op.gate === 'cz' ? 'phase if both are 1' : info.name;
+        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : op.gate === 'cz' ? 'phase if both are 1' : op.gate === 'swap' ? 'trade places' : info.name;
         const on = op.gate === 'cx' ? `from ${op.q[0]} to ${op.q[1]}` : `on ${op.q.join(' and ')}`;
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
@@ -269,6 +270,7 @@ export function createUI(dom, handlers) {
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
   for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
+  dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
   dom.btnFloors.addEventListener('click', () => {
     const open = dom.titleFloors.hidden;
     dom.titleFloors.hidden = !open;
@@ -341,6 +343,9 @@ export function createUI(dom, handlers) {
     setDev(dev) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
+      dom.devSwapDelay.value = String(dev.swapDelay);
+      dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
+      dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
       dom.lab.classList.toggle('panel-bottom', dev.panel === 'bottom');
     },
     // The title screen swaps the instruments in the rack for a short "about" panel.

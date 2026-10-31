@@ -4,7 +4,7 @@
 // signs, speech bubbles) are drawn again on top, so they stay readable in the dark.
 
 import { WORLD, PLATFORM_H } from './levels.js';
-import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS, cavityStop } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS } from './geometry.js';
 
 const C = {
   wallTop: '#1a2942',
@@ -92,7 +92,7 @@ export function paintCanister(ctx, x, baseY, state) {
 // circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
 // (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
 // over the animation: in with a spring, hold, then out. `size` is the box width.
-export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', ry: '#c39bff', cx: '#ff8adf', cz: '#ff8adf' };
+export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', ry: '#c39bff', cx: '#ff8adf', cz: '#ff8adf', swap: '#e6edf7' };
 
 export function gatePop(k, calm) {
   if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
@@ -144,6 +144,20 @@ export function paintGate(ctx, x, y, part, pop, size) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(part.symbol, 0, size * 0.03);
+  } else if (part.role === 'swap') {
+    // A swap's end: a cross, as in a circuit diagram.
+    const r = size * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(-r, -r);
+    ctx.lineTo(r, r);
+    ctx.moveTo(r, -r);
+    ctx.lineTo(-r, r);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+    glow();
   } else if (part.role === 'ctrl') {
     ctx.beginPath();
     ctx.arc(0, 0, size * 0.17, 0, Math.PI * 2);
@@ -442,14 +456,6 @@ export function createRenderer(canvas) {
       ctx.fillStyle = '#3a4d72';
       for (const x of [p.x0, p.x1]) ctx.fillRect(x + p.w / 2 - 5, y - 1, 10, 3);
       return;
-    }
-    if (p.shuttle) {
-      // A shuttle's lift rides a track across the room, low under its lowered slot.
-      const y = p.y0 + PLATFORM_H + 14;
-      ctx.beginPath();
-      ctx.moveTo(Math.min(p.home, p.shuttle.to) - 6, y);
-      ctx.lineTo(Math.max(p.home, p.shuttle.to) + p.w + 6, y);
-      ctx.stroke();
     }
     ctx.beginPath();
     for (const x of [p.x + 9, p.x + p.w - 9]) {
@@ -1230,20 +1236,78 @@ export function createRenderer(canvas) {
 
   const LIGHT_TINT = { normal: '255,236,190', weak: '255,226,160', emergency: '255,70,70' };
 
-  // Cavities: the emitter, and wave columns running from it until something blocks them.
+  // Cavities: a cap at each end of the band, like the mirrors of a microwave cavity, and
+  // the waves between them. Blocked, the cavity is empty; cleared, its waves come back one
+  // column at a time as it loads (it drives nothing until full).
+  function drawCavityCap(c, y, facing) {
+    // facing: +1 when the cap's mirror faces down the room, -1 when it faces up.
+    ctx.fillStyle = '#2c3a55';
+    ctx.fillRect(c.x - 8, facing > 0 ? y - 12 : y, c.w + 16, 12);
+    ctx.strokeStyle = '#c39bff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(c.x - 4, y);
+    ctx.quadraticCurveTo(c.x + c.w / 2, y - facing * 7, c.x + c.w + 4, y); // a concave mirror
+    ctx.stroke();
+    ctx.fillStyle = '#43557a';
+    ctx.fillRect(c.x - 8, facing > 0 ? y - 16 : y + 12, 6, 4);
+    ctx.fillRect(c.x + c.w + 2, facing > 0 ? y - 16 : y + 12, 6, 4);
+  }
+
+  // The feed: a waveguide from the edge of the room into the emitting cap, with power
+  // flowing along it into the cavity. Always on, even while the cavity is blocked: the
+  // cavity only keeps its waves while energy is pumped in.
+  function drawCavityFeed(c, sign, drift) {
+    const cx = c.x + c.w / 2;
+    const from = sign > 0 ? 0 : WORLD.h; // the room's edge behind the emitter
+    const to = c.y - sign * 12; // the back of the emitting cap
+    const half = 13;
+    ctx.save();
+    ctx.fillStyle = 'rgba(20,28,46,0.9)';
+    ctx.fillRect(cx - half, Math.min(from, to), half * 2, Math.abs(to - from));
+    ctx.strokeStyle = '#43557a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - half, from);
+    ctx.lineTo(cx - half, to);
+    ctx.moveTo(cx + half, from);
+    ctx.lineTo(cx + half, to);
+    ctx.stroke();
+    // The seeding wave, travelling towards the cavity, brighter as it arrives.
+    const length = Math.abs(to - from);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let d = 0; d <= length; d += 2) {
+      const y = from + sign * d;
+      const x = cx + Math.sin((d - drift * 1.6) / 5) * (half - 4);
+      if (d === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    const g = ctx.createLinearGradient(0, from, 0, to);
+    g.addColorStop(0, 'rgba(195,155,255,0.25)');
+    g.addColorStop(1, 'rgba(225,200,255,0.95)');
+    ctx.strokeStyle = g;
+    ctx.shadowColor = 'rgba(195,155,255,0.8)';
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawCavities(G) {
     const room = G.room;
     if (!room.cavities || !room.cavities.length) return;
-    const blockers = [...room.solids, ...room.platforms.filter((p) => p.state !== null).map((p) => ({ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }))];
     const drift = calm.matches ? 0 : G.t * 40; // the waves travel away from the emitter
     for (const c of room.cavities) {
       const sign = c.dir === 'up' ? -1 : 1;
+      drawCavityFeed(c, sign, drift);
+      const length = Math.abs(c.to - c.y);
+      const columns = [];
+      for (let x = c.x + 9; x <= c.x + c.w - 9; x += 18) columns.push(x);
+      const shown = c.blocked ? 0 : Math.ceil((c.load || 0) * columns.length - 1e-9);
       ctx.save();
       ctx.strokeStyle = 'rgba(195,155,255,0.38)';
       ctx.lineWidth = 1.6;
-      for (let x = c.x + 9; x <= c.x + c.w - 9; x += 18) {
-        const stop = cavityStop(c, x, blockers);
-        const length = Math.abs(stop - c.y);
+      columns.slice(0, shown).forEach((x) => {
         ctx.beginPath();
         for (let d = 0; d <= length; d += 4) {
           const wx = x + Math.sin((d - drift) / 9) * 3.5;
@@ -1251,12 +1315,39 @@ export function createRenderer(canvas) {
           else ctx.lineTo(wx, c.y + sign * d);
         }
         ctx.stroke();
-      }
-      // The emitter: a slab with a glowing slit facing the waves.
-      ctx.fillStyle = '#2c3a55';
-      ctx.fillRect(c.x - 6, c.y - (c.dir === 'up' ? 0 : 12), c.w + 12, 12);
-      ctx.fillStyle = '#c39bff';
-      ctx.fillRect(c.x, c.dir === 'up' ? c.y : c.y - 3, c.w, 3);
+      });
+      ctx.restore();
+      drawCavityCap(c, c.y, sign);
+      drawCavityCap(c, c.to, -sign);
+    }
+  }
+
+  // During a swap's delay: an arrow in the middle of each platform's state, pointing
+  // where it is about to go.
+  function drawSwapArrows(G) {
+    const sw = G.swap;
+    if (!sw || sw.travel) return;
+    const pulse = calm.matches ? 1 : 0.65 + 0.35 * Math.sin(G.t * 9);
+    for (const [p, other] of [[sw.a, sw.b], [sw.b, sw.a]]) {
+      const mid = slotMid(p);
+      const dir = Math.sign(other.placeX - p.placeX) || 1;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.translate(mid.x, mid.y);
+      ctx.scale(dir, 1);
+      ctx.shadowColor = 'rgba(255,255,255,0.9)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(-22, -4);
+      ctx.lineTo(8, -4);
+      ctx.lineTo(8, -11);
+      ctx.lineTo(24, 0);
+      ctx.lineTo(8, 11);
+      ctx.lineTo(8, 4);
+      ctx.lineTo(-22, 4);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     }
   }
@@ -1881,6 +1972,7 @@ export function createRenderer(canvas) {
     drawDecorGlow(G);
     drawCavities(G);
     drawLights(G);
+    drawSwapArrows(G);
     drawFx(G);
     drawSpeech(G);
     ctx.restore();

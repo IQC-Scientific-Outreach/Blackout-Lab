@@ -351,3 +351,16 @@ test('a cavity drive is one growing circuit entry per stretch, cut by anything e
   assert.equal(ops.filter((op) => op.kind === 'drive').length, 2, 'a measurement starts a new stretch');
   assert.match(q.code(), /qc\.ry\(6\.283185, 0\) {2}# cavity drive on A/);
 });
+
+test('SWAP exchanges two qubits\' states, superpositions and phases included', () => {
+  const q = lab(['-', '0', '1']);
+  q.apply('swap', [0, 1]);
+  const snap = q.snapshot();
+  assert.deepEqual(snap.definite, [0, null, 1]);
+  close(snap.bloch[1][0], -1, 'the - moved to B');
+  assert.match(q.code(), /qc\.swap\(0, 1\)/);
+  // H, SWAP, Z on the other qubit, SWAP back, H: an X, as in bonus levels 1 and 2.
+  const r = lab(['0', '0']);
+  for (const [g, w] of [['h', [0]], ['swap', [0, 1]], ['z', [1]], ['swap', [0, 1]], ['h', [0]]]) r.apply(g, w);
+  assert.deepEqual(r.snapshot().definite, [1, 0]);
+});

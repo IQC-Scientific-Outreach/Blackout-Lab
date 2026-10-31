@@ -6,7 +6,7 @@
 // platforms to wherever the returned snapshot says they are.
 
 import { LEVELS, BONUS_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
-import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityReaches } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } from './geometry.js';
 import { STORY } from './story.js';
 import { createQuantum } from './quantum.js';
 import { createInput } from './input.js';
@@ -43,6 +43,7 @@ const DEV_DEFAULTS = {
   instantResponse: false,
   passiveTerminal: false,
   canisterView: false,
+  swapDelay: 1, // seconds between choosing SWAP and the platforms setting off (1 to 5)
   showGates: false,
   panel: 'right',
   circuitRight: false,
@@ -53,6 +54,7 @@ function loadDev() {
     const saved = JSON.parse(localStorage.getItem(DEV_KEY) || '{}');
     const dev = { ...DEV_DEFAULTS };
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
+    dev.swapDelay = Math.min(5, Math.max(1, Number(dev.swapDelay) || 1));
     return dev;
   } catch (err) {
     return { ...DEV_DEFAULTS };
@@ -377,11 +379,11 @@ export function startGame() {
           built.y = start.y;
           built.targetX = start.x;
           built.targetY = start.y;
-          if (p.shuttle) Object.assign(built, { home: built.x, trip: null }); // trip: null | 'out' | 'there' | 'back'
+          built.placeX = built.x; // where a swap is taking it (see swapPlatforms)
           return built;
         }),
         lights: (room.lights || []).map((l) => ({ ...l, poly: null })),
-        cavities: (room.cavities || []).map((c) => ({ ...c })),
+        cavities: (room.cavities || []).map((c) => ({ ...c, load: 0 })), // load: 0 to 1, refilling after a block
         terminals: (room.terminals || []).map((t) => {
           const surface = room.solids.find((s) => t.x >= s.x && t.x <= s.x + s.w && Math.abs(s.y - t.y) < 1);
           const fitsRight = surface ? t.x + 40 <= surface.x + surface.w : true;
@@ -438,6 +440,7 @@ export function startGame() {
     G.torch.flickLeft = 0;
     G.terminal = null;
     G.passive = null;
+    G.swap = null;
     G.busy = false;
   }
 
@@ -583,7 +586,7 @@ export function startGame() {
   // Resolves at step 2, as the gate appears.
   const SPARK_SECONDS = 0.45;
   const GATE_SECONDS = 1;
-  const COLOR_OF = (gate) => (gate === 'cx' || gate === 'cz' ? '#ff8adf' : '#5ee6ff');
+  const COLOR_OF = (gate) => (gate === 'cx' || gate === 'cz' ? '#ff8adf' : gate === 'swap' ? '#e6edf7' : '#5ee6ff');
 
   function untilFx(fx, part, epoch) {
     return new Promise((resolve) => {
@@ -614,6 +617,8 @@ export function startGame() {
         ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
         : gate === 'cz'
         ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'ctrl', gate }]
+        : gate === 'swap'
+        ? [{ qi: qis[0], role: 'swap', gate }, { qi: qis[1], role: 'swap', gate }]
         : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
     const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
     G.fx.push(fx);
@@ -646,9 +651,70 @@ export function startGame() {
     if (story().onMachine) story().onMachine(storyCtx(null), results);
   }
 
-  function endsWith(snap, qi, gates) {
-    const last = snap.ops.filter((op) => op.qubits.includes(qi)).slice(-gates.length);
-    return last.length === gates.length && snap.definite[qi] !== null && last.every((op, i) => (op.kind === 'gate' || op.kind === 'auto') && op.gate === gates[i]);
+  // Whether qubit qi's latest operations are exactly `seq.gates` (the floor's own gates count
+  // too), leaving it certain; `seq.value`: certain in that state; `seq.untouched`: with
+  // nothing measured or reset anywhere since the sequence began.
+  function endsWith(snap, qi, seq) {
+    const gates = seq.gates;
+    const mine = snap.ops.map((op, at) => ({ op, at })).filter(({ op }) => op.qubits.includes(qi)).slice(-gates.length);
+    if (mine.length !== gates.length || snap.definite[qi] === null) return false;
+    if (seq.value !== undefined && snap.definite[qi] !== seq.value) return false;
+    if (!mine.every(({ op }, i) => (op.kind === 'gate' || op.kind === 'auto') && op.gate === gates[i])) return false;
+    return !seq.untouched || !snap.ops.slice(mine[0].at).some((op) => op.kind === 'measure' || op.kind === 'reset');
+  }
+
+  function checkBonus(snap, target) {
+    const bonus = G.level.bonus;
+    if (bonus && bonus.sequences && bonus.sequences.some((s) => target === G.qIndex[s.q] && endsWith(snap, target, s))) G.bonusDone = true;
+  }
+
+  // SWAP between two platforms: after the swap delay (arrows show where each will go, so
+  // the player can jump on or off), the states are exchanged and the two platforms trade
+  // places, each carrying its old state to the other's place: the platform setting off
+  // for R's place now shows R's qubit, which holds what was Q's. The other gates wait.
+  const SWAP_SPEED = 260;
+  async function swapPlatforms(term, op) {
+    const epoch = G.epoch;
+    const [pa, pb] = op.qi.map((qi) => G.platforms.find((p) => p.qi === qi));
+    G.busy = true;
+    ui.setTerminalBusy(true, carrying());
+    audio.play('switch');
+    G.swap = { a: pa, b: pb, wait: G.dev.swapDelay, delay: G.dev.swapDelay };
+    say(`SWAP ${pa.q} and ${pb.q}: in ${G.dev.swapDelay} s the platforms trade places.`, 'info');
+    await new Promise((resolve) => {
+      const tick = () => (epoch !== G.epoch || G.swap.wait <= 0 ? resolve() : requestAnimationFrame(tick));
+      tick();
+    });
+    if (epoch !== G.epoch) return;
+    const before = G.q;
+    const res = await Q.apply('swap', op.qi);
+    if (!res.ok) {
+      G.swap = null;
+      G.busy = false;
+      ui.setTerminalBusy(false, carrying());
+      ui.setTerminalStatus(`That gate did not go through. ${res.error}`, 'bad');
+      return;
+    }
+    if (G.dev.showGates) await throwGate(term, 'swap', op.qi, 'gate', epoch);
+    else audio.play('gate');
+    if (epoch !== G.epoch) return;
+    // Each platform takes on the other's qubit and place, and sets off.
+    for (const key of ['qi', 'q', 'need', 'y0', 'y1']) [pa[key], pb[key]] = [pb[key], pa[key]];
+    [pa.placeX, pb.placeX] = [pb.placeX, pa.placeX];
+    G.swap.travel = true;
+    G.stats.gates += 1;
+    applySnapshot(res.state);
+    checkBonus(res.state, op.qi[0]);
+    const words = (qi) => stateSentence(res.state, qi);
+    say(`SWAP: ${before.labels[op.qi[0]]} and ${before.labels[op.qi[1]]} traded states, and their platforms trade places. ${words(op.qi[0])} ${words(op.qi[1])}`, 'quantum');
+    await new Promise((resolve) => {
+      const tick = () => (epoch !== G.epoch || (pa.x === pa.placeX && pb.x === pb.placeX) ? resolve() : requestAnimationFrame(tick));
+      tick();
+    });
+    if (epoch !== G.epoch) return;
+    G.swap = null;
+    G.busy = false;
+    ui.setTerminalBusy(false, carrying());
   }
 
   async function applyOp(i) {
@@ -663,9 +729,8 @@ export function startGame() {
       await machineMeasure(term, op);
       return;
     }
-    const away = G.platforms.find((p) => p.shuttle && p.trip && op.qi.includes(p.qi));
-    if (away) {
-      ui.setTerminalStatus(`${away.q} is on its way. Wait for it to come back.`, 'bad');
+    if (op.gate === 'swap' && G.platforms.filter((p) => op.qi.includes(p.qi)).length === 2) {
+      await swapPlatforms(term, op);
       return;
     }
     const qis = op.qi;
@@ -688,15 +753,7 @@ export function startGame() {
     }
     G.stats.gates += 1;
     applySnapshot(res.state);
-    // A gate on a shuttle sends it off across the room.
-    for (const p of G.platforms) {
-      if (p.shuttle && !p.trip && qis.includes(p.qi)) {
-        p.trip = 'out';
-        say(`${p.q} sets off towards ${p.shuttle.arrive}.`, 'info');
-      }
-    }
-    const bonus = G.level.bonus;
-    if (bonus && bonus.sequences && bonus.sequences.some((s) => target === G.qIndex[s.q] && endsWith(res.state, target, s.gates))) G.bonusDone = true;
+    checkBonus(res.state, target);
 
     if (!G.dev.showGates) {
       const to = renderer.anchorOf(G, target);
@@ -959,7 +1016,7 @@ export function startGame() {
       const d = Math.abs(cx - x);
       if (d < reach && (!best || d < best.d)) best = { type, obj, d };
     };
-    for (const t of room.terminals) if (!t.auto) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
+    for (const t of room.terminals) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
     for (const n of room.npcs) offer('npc', n, n.x, n.y, 34);
     for (const p of room.portals) offer('portal', p, p.x, p.y, 22);
     const d = room.door;
@@ -1022,62 +1079,23 @@ export function startGame() {
     return out;
   }
 
-  // Definite platforms glide to the height their state says, carrying the player.
-  // Certain platforms glide to the slot their state says, carrying the player; a
-  // shuttle travels along its route whatever its state.
+  // Certain platforms glide to the slot their state says, carrying the player; a platform
+  // in a swap travels to its new place whatever its state.
   function movePlatforms(dt) {
     const pl = G.player;
     for (const p of G.platforms) {
       const bx = p.x;
       const by = p.y;
-      if (p.shuttle) moveShuttle(p, dt);
-      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), (p.speed || 240) * dt);
+      if (p.axis !== 'x' && p.x !== p.placeX) {
+        p.x += Math.sign(p.placeX - p.x) * Math.min(Math.abs(p.placeX - p.x), SWAP_SPEED * dt);
+        if (p.state !== null) p.targetX = p.x;
+      } else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), (p.speed || 240) * dt);
       if (p.state !== null) p.y += Math.sign(p.targetY - p.y) * Math.min(Math.abs(p.targetY - p.y), 300 * dt);
       if (pl.standing === p) {
         pl.x += p.x - bx;
         pl.y += p.y - by;
       }
     }
-  }
-
-  // A shuttle: out to `to`, a stop while the far terminal works, then home again.
-  function moveShuttle(p, dt) {
-    if (p.trip !== 'out' && p.trip !== 'back') return;
-    const goal = p.trip === 'out' ? p.shuttle.to : p.home;
-    p.x += Math.sign(goal - p.x) * Math.min(Math.abs(goal - p.x), p.shuttle.speed * dt);
-    if (p.x !== goal) return;
-    if (p.trip === 'back') {
-      p.trip = null;
-      say(`${p.q} is back.`, 'info');
-      return;
-    }
-    p.trip = 'there';
-    shuttleArrives(p);
-  }
-
-  // The far terminal applies its gates to the shuttle, then sends it home.
-  async function shuttleArrives(p) {
-    const epoch = G.epoch;
-    const term = G.room.terminals.find((t) => t.id === p.shuttle.arrive);
-    if (term) {
-      for (const op of term.ops) {
-        const before = G.q;
-        if (G.dev.showGates) await throwGate(term, op.gate, op.qi, 'gate', epoch);
-        else {
-          const to = renderer.anchorOf(G, op.qi[op.qi.length - 1]);
-          if (to) G.fx.push({ type: 'spark', from: center(screenRect(term)), to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(op.gate) });
-          audio.play('gate');
-        }
-        if (epoch !== G.epoch) return;
-        const res = await Q.auto([{ gate: op.gate, qubits: op.qi }]);
-        if (epoch !== G.epoch || !res.ok) return;
-        applySnapshot(res.state);
-        const target = op.qi[op.qi.length - 1];
-        const changed = before.definite[target] === null && op.gate === 'z';
-        say(`${term.id} applied ${GATE_INFO[op.gate].symbol} to ${p.q} as it arrived. ${changed ? 'The odds did not move, but the phase flipped. ' : ''}${stateSentence(res.state, target)}`, res.state.definite[target] === null ? 'quantum' : 'info');
-      }
-    }
-    if (epoch === G.epoch) p.trip = 'back';
   }
 
   // Backup lights: each traces its lit area around the shadows of solids and certain
@@ -1140,17 +1158,23 @@ export function startGame() {
   // Cavities: the waves rotate every platform they reach (Ry, a Rabi oscillation),
   // 0 to + to 1 to - and round again, unless something is watching it. Blocked waves
   // drive nothing beyond the blocker.
+  // A cleared cavity takes this long to fill with waves again before it drives anything.
+  const CAVITY_LOAD = 0.45;
   function updateCavities(dt) {
     const room = G.room;
     if (!room || !room.cavities.length || !G.q) return;
-    const certain = certainRects(room);
+    // Only solids and steady platforms (shields) block, and only across the whole band.
+    const blockers = [...room.solids, ...certainRects(room).filter((c) => c.p.steady).map((c) => c.r)];
+    for (const c of room.cavities) {
+      c.blocked = cavityBlocked(c, blockers);
+      c.load = c.blocked ? 0 : Math.min(1, c.load + dt / CAVITY_LOAD);
+    }
     const pairs = [];
     for (const p of room.platforms) {
       p.driven = false;
       if (p.pending || p.steady) continue;
-      const blockers = [...room.solids, ...certain.filter((c) => c.p !== p).map((c) => c.r)];
       const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
-      const cavity = room.cavities.find((c) => rects.some((r) => cavityReaches(c, r, blockers)));
+      const cavity = room.cavities.find((c) => c.load >= 1 && rects.some((r) => cavityHolds(c, r)));
       if (!cavity) continue;
       if (watched(p)) {
         p.driven = 'held';
@@ -1662,9 +1686,9 @@ export function startGame() {
     const orAct = act ? ` ${act}` : '';
     const station = G.room.battery;
     panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
-    const shuttle = G.room.platforms.find((p) => p.shuttle && p.trip);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
-    else if (shuttle) ui.setPrompt(`<b>${shuttle.q}</b> is on its way ${shuttle.trip === 'back' ? 'back to you' : `to ${esc(shuttle.shuttle.arrive)}`}.${orAct}`);
+    else if (G.swap && !G.swap.travel) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are about to trade places: jump on or off now.`);
+    else if (G.swap) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are trading places.`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
     } else if (act && !ghost) ui.setPrompt(act);
@@ -1719,7 +1743,8 @@ export function startGame() {
       // Platforms wait until you leave the terminal, except with the instant response developer
       // option, or in a room with a cavity, where timing is the whole puzzle (a shield cutting
       // the waves has to do so the moment you apply its gate).
-      if (G.dev.instantResponse || G.room.cavities.length) movePlatforms(dt);
+      if (G.dev.instantResponse || G.room.cavities.length || G.swap) movePlatforms(dt); // a swap does not wait either
+      if (G.swap) G.swap.wait -= dt;
       updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
       updateCavities(dt); // nor does a cavity's drive
       updateTorch(dt);
@@ -1756,6 +1781,7 @@ export function startGame() {
 
     updateLights(dt);
     updateCavities(dt);
+    if (G.swap) G.swap.wait -= dt;
     pickUps();
     const hit = findInteract();
     updatePassive(hit);

@@ -5,19 +5,22 @@
 // not match its lock, a floor the engine cannot start.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVELS, GATE_INFO, roomsOf } from '../game/levels.js';
+import { LEVELS, BONUS_LEVELS, GATE_INFO, roomsOf } from '../game/levels.js';
+import { LIGHT_KINDS } from '../game/geometry.js';
 import { Lab } from '../game/quantum.js';
 
 const ROLES = ['platform', 'canister', 'sealed', 'box', 'door'];
 
-for (const [index, level] of LEVELS.entries()) {
-  test(`floor ${index + 1}: ${level.name}`, () => {
+const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level])];
+
+for (const [where0, level] of ALL) {
+  test(`${where0}: ${level.name}`, () => {
     const ids = level.qubits.map((q) => q.id);
     const known = (id, where) => assert.ok(ids.includes(id), `${where} uses qubit ${id}, which is not in this floor's qubits`);
     const gateOps = (ops, where) => {
       for (const op of ops || []) {
         assert.ok(op.gate in GATE_INFO, `${where}: unknown gate ${op.gate}`);
-        if (op.gate === 'cx') assert.equal(op.q.length, 2, `${where}: cx needs [control, target]`);
+        if (op.gate === 'cx' || op.gate === 'cz') assert.equal(op.q.length, 2, `${where}: ${op.gate} needs two qubits`);
         else if (op.gate !== 'measure') assert.equal(op.q.length, 1, `${where}: ${op.gate} acts on one qubit`);
         op.q.forEach((id) => known(id, where));
       }
@@ -33,8 +36,25 @@ for (const [index, level] of LEVELS.entries()) {
       for (const p of room.platforms || []) {
         known(p.q, where('platform'));
         assert.ok([0, 1].includes(p.need), where(`platform ${p.q}: need must be 0 or 1`));
+        if (p.axis === 'x') assert.ok([p.x0, p.x1, p.y].every(Number.isFinite), where(`sideways platform ${p.q} needs x0, x1 and y`));
+        else assert.ok([p.x, p.y0, p.y1].every(Number.isFinite), where(`platform ${p.q} needs x, y0 and y1`));
+        if (p.shuttle) {
+          const far = (room.terminals || []).find((t) => t.id === p.shuttle.arrive);
+          assert.ok(far && far.auto, where(`shuttle ${p.q} arrives at ${p.shuttle.arrive}, which must be an auto terminal`));
+          assert.ok(p.shuttle.speed > 0 && Number.isFinite(p.shuttle.to), where(`shuttle ${p.q} needs a speed and a destination`));
+        }
       }
-      for (const t of room.terminals || []) gateOps(t.ops, where(`terminal ${t.id}`));
+      for (const light of room.lights || []) {
+        assert.ok(light.kind in LIGHT_KINDS, where(`unknown light kind ${light.kind}`));
+        assert.ok([light.x, light.y, light.angle, light.spread, light.range].every(Number.isFinite), where('a light needs x, y, angle, spread and range'));
+      }
+      for (const c of room.cavities || []) {
+        assert.ok([c.x, c.w, c.y, c.rate].every(Number.isFinite) && ['up', 'down'].includes(c.dir), where('a cavity needs x, w, y, rate and dir up or down'));
+      }
+      for (const t of room.terminals || []) {
+        gateOps(t.ops, where(`terminal ${t.id}`));
+        for (const op of t.ops) if (op.gate === 'ry') assert.ok(Number.isFinite(op.angle), where(`terminal ${t.id}: ry needs an angle`));
+      }
       if (room.canister) known(room.canister.q, where('canister'));
       if (room.door) {
         const { key, lock } = room.door;

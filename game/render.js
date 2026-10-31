@@ -4,7 +4,7 @@
 // signs, speech bubbles) are drawn again on top, so they stay readable in the dark.
 
 import { WORLD, PLATFORM_H } from './levels.js';
-import { TORCH, PLAYER, slotRect, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS, cavityStop } from './geometry.js';
 
 const C = {
   wallTop: '#1a2942',
@@ -49,12 +49,219 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// The canister sprite, standing on baseY. Shared with the canister view in the rack.
+//
+// `state` (canister view only) lights its two bands the way platforms show a qubit:
+//   { value: 0 | 1 }   definite: the bottom band (0) or the top band (1) glows bright blue
+//   { p1, t }          superposed or entangled: both bands get a moving dashed outline,
+//                      each as strong as the chance of its value, like a platform's outlines
+export function paintCanister(ctx, x, baseY, state) {
+  const bands = [
+    { value: 1, y: baseY - 16 },
+    { value: 0, y: baseY - 6 },
+  ];
+  ctx.fillStyle = '#9fb3d6';
+  rr(ctx, x - 5, baseY - 19, 10, 19, 4);
+  ctx.fill();
+  for (const band of bands) {
+    const lit = state && state.value === band.value;
+    ctx.save();
+    if (lit) {
+      ctx.shadowColor = '#3ea6ff';
+      ctx.shadowBlur = 6;
+    }
+    ctx.fillStyle = lit ? '#3ea6ff' : '#5d7299';
+    ctx.fillRect(x - 6, band.y, 12, 2.5);
+    ctx.restore();
+    if (state && state.p1 !== undefined) {
+      ctx.save();
+      ctx.globalAlpha = 0.3 + 0.7 * (band.value ? state.p1 : 1 - state.p1);
+      ctx.strokeStyle = '#5ee6ff';
+      ctx.lineWidth = 0.55;
+      ctx.setLineDash([1.4, 1]);
+      ctx.lineDashOffset = -(state.t || 0) * 3;
+      ctx.strokeRect(x - 6.6, band.y - 0.6, 13.2, 3.7);
+      ctx.restore();
+    }
+  }
+  ctx.fillStyle = '#2a3855';
+  ctx.fillRect(x - 2, baseY - 22, 4, 3);
+}
+
+// Show gates (developer option): a gate popping up over a qubit, drawn like the
+// circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
+// (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
+// over the animation: in with a spring, hold, then out. `size` is the box width.
+export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', ry: '#c39bff', cx: '#ff8adf', cz: '#ff8adf' };
+
+export function gatePop(k, calm) {
+  if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+  let scale = 1;
+  if (k < 0.2) {
+    const u = k / 0.2 - 1; // ease out with a small overshoot
+    scale = 1 + 2.7 * u * u * u + 1.7 * u * u;
+  } else if (k > 0.8) {
+    const u = (k - 0.8) / 0.2;
+    scale = 1 - u * u;
+  }
+  return { scale: Math.max(0, scale), alpha: 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+}
+
+export function paintGate(ctx, x, y, part, pop, size) {
+  const half = size / 2;
+  const color = GATE_COLORS[part.gate] || '#dbe7f5';
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(pop.scale, pop.scale);
+  ctx.globalAlpha = pop.alpha;
+  ctx.lineWidth = size * 0.06;
+  // A soft white halo behind the gate, brightest as it appears.
+  const halo = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.15);
+  halo.addColorStop(0, `rgba(255,255,255,${0.42 * pop.glow})`);
+  halo.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(-size * 1.15, -size * 1.15, size * 2.3, size * 2.3);
+  // The white outline under a light blur, strongest as the gate appears. (The halo above
+  // carries most of the glow: blurs are costly, so there is only one, and a small one.)
+  const glow = () => {
+    ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+    ctx.lineWidth = size * 0.07;
+    ctx.shadowBlur = size * 0.5 * pop.glow;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+  if (part.role === 'box') {
+    rr(ctx, -half, -half, size, size, size * 0.19);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    rr(ctx, -half - size * 0.08, -half - size * 0.08, size * 1.16, size * 1.16, size * 0.25);
+    glow();
+    ctx.fillStyle = color;
+    ctx.font = `700 ${Math.round(size * 0.46)}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(part.symbol, 0, size * 0.03);
+  } else if (part.role === 'ctrl') {
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.17, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.27, 0, Math.PI * 2);
+    glow();
+  } else {
+    const r = size * 0.37;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0, r);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r + size * 0.09, 0, Math.PI * 2);
+    glow();
+  }
+  ctx.restore();
+}
+
+// The glowing white line joining a CNOT's control and target.
+export function paintGateLink(ctx, a, b, pop, size) {
+  ctx.save();
+  ctx.globalAlpha = pop.alpha * Math.min(1, pop.scale);
+  ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+  ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+  ctx.lineWidth = size * 0.08;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.shadowBlur = size * 0.5 * pop.glow;
+  ctx.stroke();
+  ctx.restore();
+}
+
+const CAT = { fur: '#f0a04b', stripe: '#b9631c', chest: '#fbe3c0', eye: '#1d3b16' };
+
+// The cat, sitting on y. `dead` (the canister view's cat): upside down, eyes crossed out.
+export function paintCat(ctx, x, y, dead) {
+  ctx.save();
+  if (dead) {
+    // Upside down, legs in the air, around the middle of the body.
+    ctx.translate(x, y - 9);
+    ctx.rotate(Math.PI);
+    ctx.translate(-x, -(y - 9));
+  }
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = CAT.fur;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); // tail
+  ctx.moveTo(x - 6, y - 4);
+  ctx.quadraticCurveTo(x - 13, y - 6, x - 11, y - 14);
+  ctx.stroke();
+  ctx.fillStyle = CAT.fur;
+  ctx.beginPath();
+  ctx.ellipse(x, y - 5, 7, 6, 0, 0, Math.PI * 2); // body
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 5, y - 12, 4.5, 0, Math.PI * 2); // head
+  ctx.fill();
+  ctx.beginPath(); // ears
+  ctx.moveTo(x + 1.5, y - 14);
+  ctx.lineTo(x + 2.5, y - 19);
+  ctx.lineTo(x + 5, y - 15.5);
+  ctx.moveTo(x + 5.5, y - 15.5);
+  ctx.lineTo(x + 8, y - 19);
+  ctx.lineTo(x + 9, y - 14);
+  ctx.fill();
+  ctx.fillStyle = CAT.chest;
+  ctx.beginPath();
+  ctx.ellipse(x + 4, y - 5, 2.6, 3.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = CAT.stripe;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); // tabby stripes
+  for (const dx of [-4, -1.5]) {
+    ctx.moveTo(x + dx, y - 10);
+    ctx.lineTo(x + dx - 0.5, y - 6.5);
+  }
+  ctx.stroke();
+  if (dead) {
+    ctx.strokeStyle = CAT.eye; // eyes crossed out
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (const ex of [4, 7]) {
+      ctx.moveTo(x + ex - 1.1, y - 13.4);
+      ctx.lineTo(x + ex + 1.1, y - 11.2);
+      ctx.moveTo(x + ex + 1.1, y - 13.4);
+      ctx.lineTo(x + ex - 1.1, y - 11.2);
+    }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = CAT.eye;
+    ctx.fillRect(x + 3.2, y - 13.2, 1.6, 1.8);
+    ctx.fillRect(x + 6.2, y - 13.2, 1.6, 1.8);
+  }
+  ctx.restore();
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
   const mctx = mask.getContext('2d');
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let scale = 1;
+  // The darkness is drawn small and stretched over the picture: it is all soft edges,
+  // so the stretch blurs it for free, and it is a fraction of the pixels to fill and copy.
+  let maskScale = 0.5;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -63,11 +270,12 @@ export function createRenderer(canvas) {
     scale = Math.max(0.5, Math.min(2, (cssW / WORLD.w) * dpr));
     const w = Math.round(WORLD.w * scale);
     const h = Math.round(WORLD.h * scale);
+    maskScale = Math.min(scale, 0.5);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
-      mask.width = w;
-      mask.height = h;
+      mask.width = Math.round(WORLD.w * maskScale);
+      mask.height = Math.round(WORLD.h * maskScale);
     }
   }
 
@@ -116,10 +324,11 @@ export function createRenderer(canvas) {
     ctx.font = `800 150px ${SIGN_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(String(G.levelIndex + 1).padStart(2, '0'), 250, 200);
+    const bonus = /^Bonus level (\d+)/.exec(G.level.tag || ''); // a bonus level is painted B1, B2, ...
+    ctx.fillText(bonus ? `B${bonus[1]}` : String(G.levelIndex + 1).padStart(2, '0'), 250, 200);
     ctx.font = `700 22px ${SIGN_FONT}`;
     ctx.fillStyle = 'rgba(219,231,245,0.24)';
-    ctx.fillText('FLOOR', 254, 78);
+    ctx.fillText(bonus ? 'BONUS' : 'FLOOR', 254, 78);
     ctx.restore();
 
     ctx.fillStyle = '#22314c';
@@ -223,6 +432,25 @@ export function createRenderer(canvas) {
   function drawRails(p) {
     ctx.strokeStyle = '#2a3a58';
     ctx.lineWidth = 3;
+    if (p.axis === 'x') {
+      // A sideways platform runs along a track under both of its slots.
+      const y = p.y + PLATFORM_H + 4;
+      ctx.beginPath();
+      ctx.moveTo(Math.min(p.x0, p.x1) - 8, y);
+      ctx.lineTo(Math.max(p.x0, p.x1) + p.w + 8, y);
+      ctx.stroke();
+      ctx.fillStyle = '#3a4d72';
+      for (const x of [p.x0, p.x1]) ctx.fillRect(x + p.w / 2 - 5, y - 1, 10, 3);
+      return;
+    }
+    if (p.shuttle) {
+      // A shuttle's lift rides a track across the room, low under its lowered slot.
+      const y = p.y0 + PLATFORM_H + 14;
+      ctx.beginPath();
+      ctx.moveTo(Math.min(p.home, p.shuttle.to) - 6, y);
+      ctx.lineTo(Math.max(p.home, p.shuttle.to) + p.w + 6, y);
+      ctx.stroke();
+    }
     ctx.beginPath();
     for (const x of [p.x + 9, p.x + p.w - 9]) {
       ctx.moveTo(x, p.y1 - 14);
@@ -299,48 +527,9 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  const CAT = { fur: '#f0a04b', stripe: '#b9631c', chest: '#fbe3c0', eye: '#1d3b16' };
 
   function drawCat(x, y) {
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = CAT.fur;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath(); // tail
-    ctx.moveTo(x - 6, y - 4);
-    ctx.quadraticCurveTo(x - 13, y - 6, x - 11, y - 14);
-    ctx.stroke();
-    ctx.fillStyle = CAT.fur;
-    ctx.beginPath();
-    ctx.ellipse(x, y - 5, 7, 6, 0, 0, Math.PI * 2); // body
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + 5, y - 12, 4.5, 0, Math.PI * 2); // head
-    ctx.fill();
-    ctx.beginPath(); // ears
-    ctx.moveTo(x + 1.5, y - 14);
-    ctx.lineTo(x + 2.5, y - 19);
-    ctx.lineTo(x + 5, y - 15.5);
-    ctx.moveTo(x + 5.5, y - 15.5);
-    ctx.lineTo(x + 8, y - 19);
-    ctx.lineTo(x + 9, y - 14);
-    ctx.fill();
-    ctx.fillStyle = CAT.chest;
-    ctx.beginPath();
-    ctx.ellipse(x + 4, y - 5, 2.6, 3.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = CAT.stripe;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath(); // tabby stripes
-    for (const dx of [-4, -1.5]) {
-      ctx.moveTo(x + dx, y - 10);
-      ctx.lineTo(x + dx - 0.5, y - 6.5);
-    }
-    ctx.stroke();
-    ctx.fillStyle = CAT.eye;
-    ctx.fillRect(x + 3.2, y - 13.2, 1.6, 1.8);
-    ctx.fillRect(x + 6.2, y - 13.2, 1.6, 1.8);
-    ctx.restore();
+    paintCat(ctx, x, y);
   }
 
   function drawCatRun(x, y, stride, tilt) {
@@ -435,14 +624,7 @@ export function createRenderer(canvas) {
   }
 
   function drawCanister(x, baseY) {
-    ctx.fillStyle = '#9fb3d6';
-    rr(ctx, x - 5, baseY - 19, 10, 19, 4);
-    ctx.fill();
-    ctx.fillStyle = '#5d7299';
-    ctx.fillRect(x - 6, baseY - 16, 12, 2.5);
-    ctx.fillRect(x - 6, baseY - 6, 12, 2.5);
-    ctx.fillStyle = '#2a3855';
-    ctx.fillRect(x - 2, baseY - 22, 4, 3);
+    paintCanister(ctx, x, baseY);
   }
 
   function drawPickups(G) {
@@ -679,7 +861,7 @@ export function createRenderer(canvas) {
 
   function drawDarkness(G) {
     const room = G.room;
-    mctx.setTransform(scale, 0, 0, scale, 0, 0);
+    mctx.setTransform(maskScale, 0, 0, maskScale, 0, 0);
     mctx.globalCompositeOperation = 'source-over';
     mctx.clearRect(0, 0, WORLD.w, WORLD.h);
     mctx.fillStyle = C.dark;
@@ -705,6 +887,19 @@ export function createRenderer(canvas) {
       const c = center(doorRect(room.door));
       hole(c.x, c.y - 26, room.door.open ? 96 : 64, room.door.open ? 0.85 : 0.5);
     }
+    // Backup lights cut their traced cones (shadows included) out of the dark.
+    for (const light of room.lights || []) {
+      if (!light.poly) continue;
+      const g = mctx.createRadialGradient(light.x, light.y, 6, light.x, light.y, light.range);
+      const strength = light.kind === 'weak' ? 0.62 : 0.92;
+      g.addColorStop(0, `rgba(0,0,0,${strength})`);
+      g.addColorStop(0.7, `rgba(0,0,0,${strength * 0.75})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      mctx.fillStyle = g;
+      polyPath(mctx, light.poly);
+      mctx.fill();
+      hole(light.x, light.y, 26, 0.7); // the lamp itself
+    }
 
     if (G.torch.active) {
       const hand = handOf(p);
@@ -714,15 +909,14 @@ export function createRenderer(canvas) {
       g.addColorStop(0.9, 'rgba(0,0,0,0.45)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       mctx.fillStyle = g;
-      if ('filter' in mctx) mctx.filter = `blur(${Math.round(4 * scale)}px)`;
-      beamPath(mctx, hand, G.torch.angle, TORCH.range);
+      beamPath(mctx, hand, G.torch.angle, TORCH.range); // its edge is softened by the stretch below
       mctx.fill();
-      if ('filter' in mctx) mctx.filter = 'none';
     }
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(mask, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
     if (G.torch.active) {
@@ -738,11 +932,12 @@ export function createRenderer(canvas) {
 
   // -- things that glow -----------------------------------------------------
 
-  function drawGhost(G, p, state, prob, lit, percent) {
+  // `fade` (0 to 1) thins the outline for a state close to 0 or 1 (see drawPlatformGlow).
+  function drawGhost(G, p, state, prob, lit, percent, fade = 1) {
     const r = slotRect(p, state);
     const jitter = Math.sin(G.t * 9 + p.x + state * 2) * 1.2;
     ctx.save();
-    ctx.globalAlpha = 0.3 + 0.7 * prob;
+    ctx.globalAlpha = (0.3 + 0.7 * prob) * fade;
     ctx.fillStyle = 'rgba(94,230,255,0.10)';
     platformPath(p, r.x, r.y + jitter);
     ctx.fill();
@@ -755,27 +950,48 @@ export function createRenderer(canvas) {
     tag(`${state} · ${percent}%`, r.x + r.w / 2, r.y - 12, C.qubit);
   }
 
+  // How far a light has got towards measuring a platform: a ring filling up.
+  function exposureRing(x, y, part, color) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, part));
+    ctx.stroke();
+  }
+
+  const LIGHT_RING = { normal: '#ffe9b0', weak: '#ffe9b0', emergency: '#ff6b6b' };
+
   function drawPlatformGlow(G, p) {
+    const lightPart = p.lightKind ? p.lightExposure / LIGHT_KINDS[p.lightKind].dwell : 0;
     if (p.state === null) {
       const p1 = p.p1;
       const one = Math.round(p1 * 100);
-      drawGhost(G, p, 0, 1 - p1, p.exposure > 0, 100 - one);
-      drawGhost(G, p, 1, p1, p.exposure > 0, one);
-      const mid = { x: p.x + p.w / 2, y: (p.y0 + p.y1 + PLATFORM_H) / 2 };
-      if (p.exposure > 0) {
-        ctx.strokeStyle = 'rgba(255,217,138,0.25)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(mid.x, mid.y, 13, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = C.torch;
-        ctx.beginPath();
-        ctx.arc(mid.x, mid.y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, p.exposure / TORCH.dwell));
-        ctx.stroke();
+      const seen = p.exposure > 0 || lightPart > 0;
+      // A state part way between certain and 50/50 (a cavity's rotation) is drawn as both
+      // at once: the platform at its likelier slot, as solid as the state is close to it,
+      // over the 50/50 outlines, as faint as it is far from them.
+      const near = Math.abs(1 - 2 * p1);
+      if (near > 0.02) {
+        const slot = slotRect(p, p1 > 0.5 ? 1 : 0);
+        ctx.save();
+        ctx.globalAlpha = near * 0.85;
+        drawPlatformBody({ ...p, x: slot.x, y: slot.y });
+        ctx.restore();
       }
-      tag(p.q, mid.x, mid.y + (p.exposure > 0 ? 26 : 0), C.qubit);
+      const fade = Math.max(0.2, 1 - near);
+      drawGhost(G, p, 0, near > 0.02 ? 0.5 : 1 - p1, seen, 100 - one, fade);
+      drawGhost(G, p, 1, near > 0.02 ? 0.5 : p1, seen, one, fade);
+      const mid = slotMid(p);
+      if (p.exposure > 0) exposureRing(mid.x, mid.y, p.exposure / TORCH.dwell, C.torch);
+      else if (lightPart > 0) exposureRing(mid.x, mid.y, lightPart, LIGHT_RING[p.lightKind]);
+      tag(p.q, mid.x - (seen ? 30 : 0), mid.y, C.qubit); // beside the ring while a light works on it
       return;
     }
+    if (lightPart > 0) exposureRing(p.x + p.w / 2, p.y - 16, lightPart, LIGHT_RING[p.lightKind]); // an emergency light at work
     const flash = Math.max(0, p.flash);
     ctx.fillStyle = flash > 0 ? `rgba(255,255,255,${0.35 + 0.65 * flash})` : p.state ? 'rgba(255,217,138,0.75)' : 'rgba(143,179,255,0.75)';
     ctx.fillRect(p.x + 7, p.y + 1, p.w - 14, 2);
@@ -844,7 +1060,9 @@ export function createRenderer(canvas) {
       for (let i = 0; i < 6; i += 1) ctx.fillRect(term.x - 10 + i * 3.6, term.y - 30, 2, 1.5);
     }
     const catOut = !!(term.box && G.flags.opened);
-    if (term.near && G.mode === 'play' && (!term.port || carrying || catOut)) {
+    // A passive terminal (developer option) needs no E: its gates show by themselves. Petting the cat still does.
+    const passive = G.dev.passiveTerminal && !catOut;
+    if (term.near && G.mode === 'play' && !passive && (!term.port || carrying || catOut)) {
       const bob = Math.sin(G.t * 5) * 2;
       tag('E', term.x + (catOut ? 3 : 0), s.y - (catOut ? 28 : 14) + bob, C.torch);
     }
@@ -1003,6 +1221,95 @@ export function createRenderer(canvas) {
     }
   }
 
+  function polyPath(c, poly) {
+    c.beginPath();
+    c.moveTo(poly[0].x, poly[0].y);
+    for (let i = 1; i < poly.length; i += 1) c.lineTo(poly[i].x, poly[i].y);
+    c.closePath();
+  }
+
+  const LIGHT_TINT = { normal: '255,236,190', weak: '255,226,160', emergency: '255,70,70' };
+
+  // Cavities: the emitter, and wave columns running from it until something blocks them.
+  function drawCavities(G) {
+    const room = G.room;
+    if (!room.cavities || !room.cavities.length) return;
+    const blockers = [...room.solids, ...room.platforms.filter((p) => p.state !== null).map((p) => ({ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }))];
+    const drift = calm.matches ? 0 : G.t * 40; // the waves travel away from the emitter
+    for (const c of room.cavities) {
+      const sign = c.dir === 'up' ? -1 : 1;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(195,155,255,0.38)';
+      ctx.lineWidth = 1.6;
+      for (let x = c.x + 9; x <= c.x + c.w - 9; x += 18) {
+        const stop = cavityStop(c, x, blockers);
+        const length = Math.abs(stop - c.y);
+        ctx.beginPath();
+        for (let d = 0; d <= length; d += 4) {
+          const wx = x + Math.sin((d - drift) / 9) * 3.5;
+          if (d === 0) ctx.moveTo(wx, c.y + sign * d);
+          else ctx.lineTo(wx, c.y + sign * d);
+        }
+        ctx.stroke();
+      }
+      // The emitter: a slab with a glowing slit facing the waves.
+      ctx.fillStyle = '#2c3a55';
+      ctx.fillRect(c.x - 6, c.y - (c.dir === 'up' ? 0 : 12), c.w + 12, 12);
+      ctx.fillStyle = '#c39bff';
+      ctx.fillRect(c.x, c.dir === 'up' ? c.y : c.y - 3, c.w, 3);
+      ctx.restore();
+    }
+  }
+
+  // Backup lights: the tint of each cone, then the lamp hanging at its top. A faulty
+  // (weak) lamp sparks at its wiring; an emergency lamp glows red.
+  function drawLights(G) {
+    for (const light of G.room.lights || []) {
+      if (!light.poly) continue;
+      const tint = LIGHT_TINT[light.kind] || LIGHT_TINT.normal;
+      const g = ctx.createRadialGradient(light.x, light.y, 4, light.x, light.y, light.range);
+      g.addColorStop(0, `rgba(${tint},${light.kind === 'emergency' ? 0.3 : 0.2})`);
+      g.addColorStop(1, `rgba(${tint},0)`);
+      ctx.fillStyle = g;
+      polyPath(ctx, light.poly);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(light.x, light.y);
+      ctx.rotate(light.angle - Math.PI / 2);
+      ctx.fillStyle = '#2c3a55'; // cable and housing
+      ctx.fillRect(-1, -60, 2, 52);
+      ctx.beginPath();
+      ctx.moveTo(-14, -2);
+      ctx.lineTo(14, -2);
+      ctx.lineTo(8, -12);
+      ctx.lineTo(-8, -12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = light.kind === 'emergency' ? '#ff5a5a' : light.kind === 'weak' ? '#e9d79a' : '#fff4d0';
+      ctx.fillRect(-11, -3, 22, 3);
+      if (light.kind === 'weak') {
+        // A faulty circuit: a few short sparks by the housing, changing several times a
+        // second. Small and local, so not a flashing hazard (the cone itself is steady).
+        const tick = Math.floor(G.t * 8);
+        ctx.strokeStyle = '#fff2a8';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let k = 0; k < 3; k += 1) {
+          const r = Math.sin((tick + 1) * 12.9898 + k * 78.233) * 43758.5453;
+          const u = r - Math.floor(r);
+          if (u < 0.35) continue;
+          const sx = -10 + u * 20;
+          const sy = -8 - u * 6;
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + (u - 0.5) * 8, sy - 3);
+          ctx.lineTo(sx + (u - 0.5) * 3, sy - 6);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   function drawDecorGlow(G) {
     for (const d of G.room.decor) {
       if (d.type === 'candle') {
@@ -1049,8 +1356,7 @@ export function createRenderer(canvas) {
     const room = G.room;
     for (const p of room.platforms) {
       if (p.qi === qi) {
-        const y = p.state === null ? (p.y0 + p.y1 + PLATFORM_H) / 2 : p.y + PLATFORM_H / 2;
-        return { x: p.x + p.w / 2, y };
+        return p.state === null ? slotMid(p) : { x: p.x + p.w / 2, y: p.y + PLATFORM_H / 2 };
       }
     }
     if (G.canister && G.canister.qi === qi) return canisterAnchor(G);
@@ -1092,6 +1398,31 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
+  // Where a gate pops up over a qubit: halfway between a platform's two heights (the
+  // middle of its state), or over the qubit's machine, lamp or carried canister.
+  // A canister held in the canister view shows its part in that tile instead.
+  function gateAnchor(G, qi) {
+    const p = G.room.platforms.find((pl) => pl.qi === qi);
+    if (p) return slotMid(p);
+    return anchorOf(G, qi);
+  }
+
+  function drawGateFx(G, fx, k) {
+    const pop = gatePop(k, calm.matches);
+    const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: fx.tileQis.includes(part.qi) }));
+    // A gate wholly on qubits in the canister view tile is drawn only there.
+    if (at.every((a) => a.tile)) return;
+    if (at.length === 2 && at[0].pos && at[1].pos) paintGateLink(ctx, at[0].pos, at[1].pos, pop, 26); // a two-qubit gate's line
+    for (const a of at) {
+      if (!a.pos) continue;
+      // The canister view tile shows a qubit's gate; on the player's back stays only a
+      // CNOT's dot, so the line still starts somewhere. Without the tile the canister gets it all, small.
+      if (a.tile && a.part.role !== 'ctrl') continue;
+      const small = G.canister && a.part.qi === G.canister.qi;
+      paintGate(ctx, a.pos.x, a.pos.y, a.part, pop, small ? 16 : 26);
+    }
+  }
+
   function drawFx(G) {
     for (const fx of G.fx) {
       const k = Math.min(1, fx.t / fx.dur);
@@ -1103,15 +1434,21 @@ export function createRenderer(canvas) {
         ctx.beginPath();
         ctx.arc(fx.x, fx.y, 8 + k * (fx.size || 46), 0, Math.PI * 2);
         ctx.stroke();
+      } else if (fx.type === 'gate') {
+        drawGateFx(G, fx, k);
       } else if (fx.type === 'spark') {
-        const x = fx.from.x + (fx.to.x - fx.from.x) * k;
-        const y = fx.from.y + (fx.to.y - fx.from.y) * k - Math.sin(k * Math.PI) * 26;
+        // The ball rides the drawn arc itself: the same quadratic curve, at k along it.
+        const cx = (fx.from.x + fx.to.x) / 2;
+        const cy = Math.min(fx.from.y, fx.to.y) - 52;
+        const u = 1 - k;
+        const x = u * u * fx.from.x + 2 * u * k * cx + k * k * fx.to.x;
+        const y = u * u * fx.from.y + 2 * u * k * cy + k * k * fx.to.y;
         ctx.globalAlpha = 0.35 * (1 - k);
         ctx.strokeStyle = fx.color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(fx.from.x, fx.from.y);
-        ctx.quadraticCurveTo((fx.from.x + fx.to.x) / 2, Math.min(fx.from.y, fx.to.y) - 52, fx.to.x, fx.to.y);
+        ctx.quadraticCurveTo(cx, cy, fx.to.x, fx.to.y);
         ctx.stroke();
         ctx.globalAlpha = 1;
         ctx.fillStyle = fx.color;
@@ -1542,10 +1879,23 @@ export function createRenderer(canvas) {
     drawPickupGlow(G);
     drawDoorGlow(G);
     drawDecorGlow(G);
+    drawCavities(G);
+    drawLights(G);
     drawFx(G);
     drawSpeech(G);
     ctx.restore();
   }
 
-  return { draw, resize, anchorOf };
+  // The exit's lock panel, its sign and the door, in this canvas's pixels (the lock view
+  // developer option magnifies this part of the picture). Null if this room has no lock.
+  function lockCrop(G) {
+    const d = G.room && G.room.door;
+    if (!d || !d.lock || !d.lock.length) return null;
+    const l = lockRect(d);
+    const x0 = l.x - 10;
+    const y0 = d.y - 104;
+    return { x: x0 * scale, y: y0 * scale, w: (d.x + 32 - x0) * scale, h: (d.y + 8 - y0) * scale };
+  }
+
+  return { draw, resize, anchorOf, gateAnchor, lockCrop };
 }

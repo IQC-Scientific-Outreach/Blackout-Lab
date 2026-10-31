@@ -5,8 +5,8 @@
 // ever asks the engine to apply a gate, measure, or reset, and then moves the
 // platforms to wherever the returned snapshot says they are.
 
-import { LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
-import { TORCH, PLAYER, slotRect, doorRect, lockRect, screenRect, center, handOf, rectLit } from './geometry.js';
+import { LEVELS, BONUS_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityReaches } from './geometry.js';
 import { STORY } from './story.js';
 import { createQuantum } from './quantum.js';
 import { createInput } from './input.js';
@@ -34,6 +34,44 @@ const NO_QUBITS = {
   code: '# No qubits on the terrace.',
   stats: { gates: 0, measurements: 0, depth: 0 },
 };
+
+// Developer options (title screen). Remembered in this browser only.
+const DEV_KEY = 'blackoutLab.dev';
+const DEV_DEFAULTS = {
+  keyTorch: false,
+  touchCollapse: false,
+  instantResponse: false,
+  passiveTerminal: false,
+  canisterView: false,
+  showGates: false,
+  panel: 'right',
+  circuitRight: false,
+};
+
+function loadDev() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DEV_KEY) || '{}');
+    const dev = { ...DEV_DEFAULTS };
+    for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
+    return dev;
+  } catch (err) {
+    return { ...DEV_DEFAULTS };
+  }
+}
+
+function saveDev(dev) {
+  try {
+    localStorage.setItem(DEV_KEY, JSON.stringify(dev));
+  } catch (err) {
+    // private windows and blocked storage: the options last until the page closes
+  }
+}
+
+// Level numbers: the climb's floors (0 to 6), then the terrace, then the bonus levels,
+// which are reached only from "Skip to floor" and are not part of the climb.
+const BONUS_FROM = LEVELS.length + 1;
+const isBonus = (index) => index >= BONUS_FROM;
+const levelAt = (index) => (index < LEVELS.length ? LEVELS[index] : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null);
 
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -71,6 +109,7 @@ export function startGame() {
     shake: 0,
     lives: LIVES_PER_FLOOR,
     infinite: false,
+    dev: loadDev(),
     stats: null,
     results: [],
     hints: 0,
@@ -82,6 +121,8 @@ export function startGame() {
     hasKey: false,
     busy: false,
     terminal: null,
+    passive: null, // the terminal shown passively (developer option), if any
+    passiveCarrying: false,
     fallT: 0,
     started: false,
   };
@@ -112,13 +153,19 @@ export function startGame() {
     closeTerminal: () => closeTerminal(),
     applyOp: (i) => applyOp(i),
     option: (name, value) => setOption(name, value),
+    dev: (name, value) => setDev(name, value),
+    menu: () => toTitle(),
     touchHold: (action, down) => input.setHeld(action, down),
     touchTap: (action) => {
       input.setHeld(action, true);
       input.setHeld(action, false);
     },
   });
-  ui.setFloors(LEVELS.map((level, i) => `${i + 1}. ${level.name}`), `Ending: ${TERRACE.name}`);
+  ui.setFloors(
+    LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
+    `Ending: ${TERRACE.name}`,
+    BONUS_LEVELS.map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i }))
+  );
 
   // -- small helpers --------------------------------------------------------
 
@@ -134,8 +181,10 @@ export function startGame() {
   const LIVE_MODES = ['play', 'terminal', 'dialogue', 'cutscene'];
   function setMode(mode) {
     G.mode = mode;
+    if (mode !== 'play') closePassive();
     input.setEnabled(LIVE_MODES.includes(mode));
     ui.setPlaying(LIVE_MODES.includes(mode));
+    ui.setMenuButton(mode !== 'boot' && mode !== 'title');
     input.clearPresses();
   }
 
@@ -318,17 +367,21 @@ export function startGame() {
         spawn: room.spawn,
         solids: room.solids,
         decor: room.decor || [],
-        platforms: (room.platforms || []).map((p) => ({
-          ...p,
-          qi: G.qIndex[p.q],
-          state: 0,
-          p1: 0,
-          y: p.y0,
-          targetY: p.y0,
-          flash: 0,
-          exposure: 0,
-          pending: false,
-        })),
+        platforms: (room.platforms || []).map((p) => {
+          // A sideways platform keeps one height and moves between x0 and x1.
+          const sideways = p.axis === 'x' ? { x: p.x0, y0: p.y, y1: p.y } : {};
+          const built = { ...p, ...sideways, qi: G.qIndex[p.q], state: 0, p1: 0, flash: 0, exposure: 0, lightExposure: 0, lightKind: null, pending: false };
+          // It starts where its starting state parks it (a qubit that starts as 1 does not glide over).
+          const start = slotRect(built, level.qubits[G.qIndex[p.q]].init === '1' ? 1 : 0);
+          built.x = start.x;
+          built.y = start.y;
+          built.targetX = start.x;
+          built.targetY = start.y;
+          if (p.shuttle) Object.assign(built, { home: built.x, trip: null }); // trip: null | 'out' | 'there' | 'back'
+          return built;
+        }),
+        lights: (room.lights || []).map((l) => ({ ...l, poly: null })),
+        cavities: (room.cavities || []).map((c) => ({ ...c })),
         terminals: (room.terminals || []).map((t) => {
           const surface = room.solids.find((s) => t.x >= s.x && t.x <= s.x + s.w && Math.abs(s.y - t.y) < 1);
           const fitsRight = surface ? t.x + 40 <= surface.x + surface.w : true;
@@ -378,22 +431,24 @@ export function startGame() {
     G.bonusDone = false;
     G.scene = null;
     G.hasKey = false;
-    G.torch.on = true;
+    G.torch.on = !level.torchOff;
     G.torch.tilt = 0.15;
     G.torch.battery = level.torch || 'ok';
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
     G.torch.flickLeft = 0;
     G.terminal = null;
+    G.passive = null;
     G.busy = false;
   }
 
   async function loadLevel(index, opts) {
-    if (index >= LEVELS.length) return loadTerrace();
-    const level = LEVELS[index];
+    if (index === LEVELS.length) return loadTerrace();
+    const level = levelAt(index);
+    if (!level) return toTitle();
     const epoch = (G.epoch += 1);
     const backdrop = !!(opts && opts.backdrop);
     const carry = opts && opts.carry;
-    if (G.terminal) ui.closeTerminal();
+    if (G.terminal || G.passive) ui.closeTerminal();
     G.levelIndex = index;
     buildFloor(level);
     ui.setNote(null);
@@ -412,7 +467,7 @@ export function startGame() {
       G.hints = 0;
     }
     if (!backdrop) ui.setAbout(false);
-    panel.setLevel(level, index, LEVELS.length);
+    panel.setLevel(level, isBonus(index) ? index - BONUS_FROM : index, isBonus(index) ? BONUS_LEVELS.length : LEVELS.length);
     panel.setHints(G.hints);
     applySnapshot(res.state);
     updateHud();
@@ -424,14 +479,15 @@ export function startGame() {
     } else if (carry === 'restart') {
       say('Floor restarted: platforms and circuit are back to their starting states.', 'info', true);
     } else {
-      say(`Floor ${index + 1}: ${level.name}. ${level.goal}`, 'info');
+      say(`${isBonus(index) ? level.tag : `Floor ${index + 1}`}: ${level.name}. ${level.goal}`, 'info');
     }
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
     return true;
   }
 
-  function applySnapshot(snap) {
+  // `quiet`: a cavity's drive, every frame; the rack is then redrawn ten times a second.
+  function applySnapshot(snap, quiet) {
     G.q = snap;
     for (const p of G.platforms) {
       const now = snap.definite[p.qi];
@@ -440,15 +496,22 @@ export function startGame() {
         if (p.state !== null) p.exposure = 0;
         p.state = null;
       } else {
+        const slot = slotRect(p, now);
         if (p.state === null) {
-          p.y = now ? p.y1 : p.y0; // it materialises where it collapsed
+          p.x = slot.x; // it materialises where it collapsed
+          p.y = slot.y;
           p.flash = 1;
         }
         p.state = now;
-        p.targetY = now ? p.y1 : p.y0;
+        p.targetX = slot.x;
+        p.targetY = slot.y;
       }
     }
-    panel.render(snap);
+    if (!quiet || snap.ops.length !== G.drawnOps || G.t - G.drawnAt > 0.1) {
+      panel.render(snap);
+      G.drawnOps = snap.ops.length;
+      G.drawnAt = G.t;
+    }
   }
 
   function enterRoom(portal) {
@@ -456,6 +519,7 @@ export function startGame() {
     if (index < 0) return;
     G.roomIndex = index;
     G.room = G.rooms[index];
+    closePassive();
     placePlayer(portal.arrive.x, portal.arrive.y);
     G.fx = [];
     G.floaters = [];
@@ -479,7 +543,7 @@ export function startGame() {
     }
     G.terminal = term;
     setMode('terminal');
-    ui.openTerminal(term, carrying());
+    ui.openTerminal(term, carrying(), { numbers: G.dev.passiveTerminal });
     audio.play('click');
     ui.announce(`${term.id} open. ${term.ops.length} gate${term.ops.length === 1 ? '' : 's'} available.`);
   }
@@ -489,6 +553,71 @@ export function startGame() {
     G.terminal = null;
     ui.closeTerminal();
     setMode('play');
+  }
+
+  // Developer option: standing at a terminal shows its gates, and 1 to 9 apply them,
+  // without entering the terminal (so the player can still move and look).
+  function updatePassive(hit) {
+    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !(hit.obj.port && !carrying()) ? hit.obj : null;
+    if (!hit && G.passive && !G.player.onGround) return; // a hop at the terminal keeps it open
+    if (term === G.passive && (!term || G.passiveCarrying === carrying())) return;
+    closePassive();
+    if (!term) return;
+    G.passive = term;
+    G.passiveCarrying = carrying();
+    ui.openTerminal(term, carrying(), { passive: true });
+  }
+
+  function closePassive() {
+    if (!G.passive) return;
+    G.passive = null;
+    ui.closeTerminal();
+  }
+
+  // Developer option (show gates), in order:
+  //   1. the key is pressed: a switch sound, and a ball is thrown from the terminal to
+  //      where the gate will appear (the middle of a platform's state), and to the
+  //      canister too when a two-qubit gate involves it;
+  //   2. the ball lands: the gate pops up over its qubits, with its sound, and the new
+  //      state is shown at once; the gate stays its full second, then pops out.
+  // Resolves at step 2, as the gate appears.
+  const SPARK_SECONDS = 0.45;
+  const GATE_SECONDS = 1;
+  const COLOR_OF = (gate) => (gate === 'cx' || gate === 'cz' ? '#ff8adf' : '#5ee6ff');
+
+  function untilFx(fx, part, epoch) {
+    return new Promise((resolve) => {
+      const wait = () => (fx.t >= fx.dur * part || epoch !== G.epoch || !G.fx.includes(fx) ? resolve() : requestAnimationFrame(wait));
+      wait();
+    });
+  }
+
+  async function throwGate(term, gate, qis, pop, epoch) {
+    audio.play('switch');
+    const from = center(screenRect(term));
+    const target = qis[qis.length - 1];
+    const aims = [target];
+    if (qis.length === 2 && G.canister && qis.includes(G.canister.qi) && G.canister.qi !== target) aims.push(G.canister.qi);
+    let lead = null;
+    for (const qi of aims) {
+      const to = renderer.gateAnchor(G, qi);
+      if (!to) continue;
+      const spark = { type: 'spark', from, to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(gate) };
+      G.fx.push(spark);
+      lead = lead || spark;
+    }
+    if (lead) await untilFx(lead, 1, epoch);
+    if (epoch !== G.epoch) return;
+    const tileQis = tileItems().map((it) => it.qi);
+    const parts =
+      gate === 'cx'
+        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
+        : gate === 'cz'
+        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'ctrl', gate }]
+        : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
+    const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
+    G.fx.push(fx);
+    audio.play(pop);
   }
 
   async function machineMeasure(term, op) {
@@ -519,11 +648,11 @@ export function startGame() {
 
   function endsWith(snap, qi, gates) {
     const last = snap.ops.filter((op) => op.qubits.includes(qi)).slice(-gates.length);
-    return last.length === gates.length && snap.definite[qi] !== null && last.every((op, i) => op.kind === 'gate' && op.gate === gates[i]);
+    return last.length === gates.length && snap.definite[qi] !== null && last.every((op, i) => (op.kind === 'gate' || op.kind === 'auto') && op.gate === gates[i]);
   }
 
   async function applyOp(i) {
-    const term = G.terminal;
+    const term = G.terminal || G.passive;
     if (!term || G.busy || !term.ops[i]) return;
     const op = term.ops[i];
     if (op.needsCanister && !carrying()) {
@@ -534,13 +663,22 @@ export function startGame() {
       await machineMeasure(term, op);
       return;
     }
+    const away = G.platforms.find((p) => p.shuttle && p.trip && op.qi.includes(p.qi));
+    if (away) {
+      ui.setTerminalStatus(`${away.q} is on its way. Wait for it to come back.`, 'bad');
+      return;
+    }
     const qis = op.qi;
     const target = qis[qis.length - 1];
     const epoch = G.epoch;
     const before = G.q;
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
-    const res = await Q.apply(op.gate, qis);
+    const res = await Q.apply(op.gate, qis, op.angle);
+    const wasDefinite = before.definite[target] !== null;
+    const nowDefinite = res.ok && res.state.definite[target] !== null;
+    const pop = wasDefinite && !nowDefinite ? 'superpose' : 'gate';
+    if (res.ok && G.dev.showGates) await throwGate(term, op.gate, qis, pop, epoch);
     G.busy = false;
     if (epoch !== G.epoch) return;
     ui.setTerminalBusy(false, carrying());
@@ -550,18 +688,24 @@ export function startGame() {
     }
     G.stats.gates += 1;
     applySnapshot(res.state);
+    // A gate on a shuttle sends it off across the room.
+    for (const p of G.platforms) {
+      if (p.shuttle && !p.trip && qis.includes(p.qi)) {
+        p.trip = 'out';
+        say(`${p.q} sets off towards ${p.shuttle.arrive}.`, 'info');
+      }
+    }
     const bonus = G.level.bonus;
     if (bonus && bonus.sequences && bonus.sequences.some((s) => target === G.qIndex[s.q] && endsWith(res.state, target, s.gates))) G.bonusDone = true;
 
-    const from = center(screenRect(term));
-    const to = renderer.anchorOf(G, target);
-    if (to) G.fx.push({ type: 'spark', from, to, t: 0, dur: 0.45, color: op.gate === 'cx' ? '#ff8adf' : '#5ee6ff' });
-    const wasDefinite = before.definite[target] !== null;
-    const nowDefinite = res.state.definite[target] !== null;
-    audio.play(wasDefinite && !nowDefinite ? 'superpose' : 'gate');
+    if (!G.dev.showGates) {
+      const to = renderer.anchorOf(G, target);
+      if (to) G.fx.push({ type: 'spark', from: center(screenRect(term)), to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(op.gate) });
+      audio.play(pop);
+    }
 
     const info = GATE_INFO[op.gate];
-    const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;
+    const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : op.gate === 'cz' ? `CZ on ${op.q[0]} and ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;
     let text = `${what}. ${stateSentence(res.state, target)}`;
     if (op.gate === 'z' && !nowDefinite) text = `${what}. The odds did not move, but the phase flipped. ${stateSentence(res.state, target)}`;
     if (op.gate === 'cx' && wasDefinite && nowDefinite && before.definite[target] === res.state.definite[target]) {
@@ -589,6 +733,8 @@ export function startGame() {
       let text = `${e.label} was measured: it collapsed to ${value}.`;
       if (e.by === 'torch') text = `Flashlight on ${e.label}: it collapsed to ${value}.`;
       if (e.by === 'lock') text = `The lock observed ${e.label}: it collapsed to ${value}.`;
+      if (e.by === 'touch') text = `You landed on ${e.label} without looking: it collapsed to ${value}.`;
+      if (e.by === 'light') text = `The backup light observed ${e.label}: it collapsed to ${value}.`;
       const partners = [];
       for (let q = 0; q < snap.definite.length; q += 1) {
         if (!seen.has(q) && before.definite[q] === null && snap.definite[q] !== null) {
@@ -627,11 +773,16 @@ export function startGame() {
     const pl = G.player;
     const t = G.torch;
     const dead = t.battery === 'dead';
+    const keyTorch = G.dev.keyTorch; // developer option: hold F, straight ahead, no mouse
     if (input.pointer.moved) {
-      t.useMouse = true;
+      t.useMouse = !keyTorch;
       input.pointer.moved = false;
     }
-    if (G.mode === 'play') {
+    if (G.mode === 'play' && keyTorch) {
+      t.useMouse = false;
+      if (input.take('torch') && dead && story().onDeadTorch) story().onDeadTorch(storyCtx(null));
+      t.angle = pl.facing > 0 ? 0 : Math.PI;
+    } else if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
         t.useMouse = false;
@@ -672,7 +823,7 @@ export function startGame() {
       }
     }
     t.lowered = G.mode !== 'play';
-    t.active = t.on && !t.lowered && !dead && !blink;
+    t.active = (keyTorch ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
 
     if (G.mode !== 'play' || !G.q) return;
     const hand = handOf(pl);
@@ -751,11 +902,28 @@ export function startGame() {
     d.pending = false;
   }
 
+  // With the passive terminal developer option, an exit opens by itself as soon as
+  // every lamp is certain and matches the key: reading certain lamps changes
+  // nothing, so no measurement is needed. A lock that runs its own gates before
+  // reading (floor 6) still has to be tried, since those gates are part of the test.
+  function autoOpen(d) {
+    if (!d.key || d.unlocked || d.pending || d.check || !G.q) return;
+    const bits = d.lockQi.map((q) => (G.q.definite[q] === null ? '?' : G.q.definite[q])).join('');
+    if (bits !== d.key) return;
+    d.unlocked = true;
+    d.open = true;
+    d.lastRead = bits;
+    audio.play('unlock');
+    addRing(center(lockRect(d)), '#7dffa8', 60);
+    say(`The lamps show ${bits.split('').join(' ')}, which matches the key: the exit opens by itself.`, 'good', true);
+  }
+
   function updateDoor(dt) {
     const d = G.room.door;
     if (!d) return;
     const pl = G.player;
     if (d.deniedT > 0) d.deniedT -= dt;
+    if (G.dev.passiveTerminal) autoOpen(d);
     if (d.key && !d.unlocked && !d.byHand) {
       const lit = G.torch.active && rectLit(handOf(pl), G.torch.angle, lockRect(d));
       if (!lit) {
@@ -791,7 +959,7 @@ export function startGame() {
       const d = Math.abs(cx - x);
       if (d < reach && (!best || d < best.d)) best = { type, obj, d };
     };
-    for (const t of room.terminals) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
+    for (const t of room.terminals) if (!t.auto) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
     for (const n of room.npcs) offer('npc', n, n.x, n.y, 34);
     for (const p of room.portals) offer('portal', p, p.x, p.y, 22);
     const d = room.door;
@@ -854,15 +1022,169 @@ export function startGame() {
     return out;
   }
 
-  function physicsStep(dt) {
+  // Definite platforms glide to the height their state says, carrying the player.
+  // Certain platforms glide to the slot their state says, carrying the player; a
+  // shuttle travels along its route whatever its state.
+  function movePlatforms(dt) {
     const pl = G.player;
     for (const p of G.platforms) {
-      if (p.state === null) continue;
-      const before = p.y;
-      const gap = p.targetY - p.y;
-      p.y += Math.sign(gap) * Math.min(Math.abs(gap), 300 * dt);
-      if (pl.standing === p) pl.y += p.y - before;
+      const bx = p.x;
+      const by = p.y;
+      if (p.shuttle) moveShuttle(p, dt);
+      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), (p.speed || 240) * dt);
+      if (p.state !== null) p.y += Math.sign(p.targetY - p.y) * Math.min(Math.abs(p.targetY - p.y), 300 * dt);
+      if (pl.standing === p) {
+        pl.x += p.x - bx;
+        pl.y += p.y - by;
+      }
     }
+  }
+
+  // A shuttle: out to `to`, a stop while the far terminal works, then home again.
+  function moveShuttle(p, dt) {
+    if (p.trip !== 'out' && p.trip !== 'back') return;
+    const goal = p.trip === 'out' ? p.shuttle.to : p.home;
+    p.x += Math.sign(goal - p.x) * Math.min(Math.abs(goal - p.x), p.shuttle.speed * dt);
+    if (p.x !== goal) return;
+    if (p.trip === 'back') {
+      p.trip = null;
+      say(`${p.q} is back.`, 'info');
+      return;
+    }
+    p.trip = 'there';
+    shuttleArrives(p);
+  }
+
+  // The far terminal applies its gates to the shuttle, then sends it home.
+  async function shuttleArrives(p) {
+    const epoch = G.epoch;
+    const term = G.room.terminals.find((t) => t.id === p.shuttle.arrive);
+    if (term) {
+      for (const op of term.ops) {
+        const before = G.q;
+        if (G.dev.showGates) await throwGate(term, op.gate, op.qi, 'gate', epoch);
+        else {
+          const to = renderer.anchorOf(G, op.qi[op.qi.length - 1]);
+          if (to) G.fx.push({ type: 'spark', from: center(screenRect(term)), to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(op.gate) });
+          audio.play('gate');
+        }
+        if (epoch !== G.epoch) return;
+        const res = await Q.auto([{ gate: op.gate, qubits: op.qi }]);
+        if (epoch !== G.epoch || !res.ok) return;
+        applySnapshot(res.state);
+        const target = op.qi[op.qi.length - 1];
+        const changed = before.definite[target] === null && op.gate === 'z';
+        say(`${term.id} applied ${GATE_INFO[op.gate].symbol} to ${p.q} as it arrived. ${changed ? 'The odds did not move, but the phase flipped. ' : ''}${stateSentence(res.state, target)}`, res.state.definite[target] === null ? 'quantum' : 'info');
+      }
+    }
+    if (epoch === G.epoch) p.trip = 'back';
+  }
+
+  // Backup lights: each traces its lit area around the shadows of solids and certain
+  // platforms, and measures (or, for an emergency light, damps to 0) a platform it
+  // rests on for long enough. The flashlight's rule, without the player.
+  const certainRects = (room) => room.platforms.filter((p) => p.state !== null).map((p) => ({ p, r: { x: p.x, y: p.y, w: p.w, h: PLATFORM_H } }));
+
+  // Every frame, in any mode: the lit area of each light, for drawing and for updateLights.
+  function traceLights() {
+    const room = G.room;
+    if (!room || !room.lights || !room.lights.length) return;
+    const blockers = [...room.solids, ...certainRects(room).map((c) => c.r)];
+    for (const light of room.lights) light.poly = lightPolygon(light, blockers);
+  }
+
+  function updateLights(dt) {
+    const room = G.room;
+    if (!room.lights.length || !G.q) return;
+    const solids = room.solids;
+    const certain = certainRects(room);
+    for (const p of room.platforms) {
+      if (p.pending) continue;
+      // What a light acts on: a superposed platform, and for an emergency light anything not certainly 0.
+      let kind = null;
+      for (const light of room.lights) {
+        const acts = light.kind === 'emergency' ? p.state !== 0 : p.state === null;
+        if (!acts) continue;
+        // A certain platform does not shade itself.
+        const own = p.state === null ? light.poly : lightPolygon(light, [...solids, ...certain.filter((c) => c.p !== p).map((c) => c.r)]);
+        const seen = p.state === null ? rectInLight(slotRect(p, 0), own) || rectInLight(slotRect(p, 1), own) : rectInLight({ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }, own);
+        if (seen && (!kind || LIGHT_KINDS[light.kind].dwell < LIGHT_KINDS[kind].dwell || light.kind === 'emergency')) kind = light.kind;
+      }
+      if (!kind) {
+        p.lightExposure = 0;
+        p.lightKind = null;
+        continue;
+      }
+      if (kind !== p.lightKind) p.lightExposure = 0;
+      p.lightKind = kind;
+      p.lightExposure += dt;
+      if (p.lightExposure >= LIGHT_KINDS[kind].dwell) {
+        p.lightExposure = 0;
+        if (kind === 'emergency') dampToZero(p);
+        else observe([p], 'light');
+      }
+    }
+  }
+
+  // Whether anything is watching a platform: the flashlight or a backup light on it, or
+  // the player standing on it. Watched, a driven platform does not evolve (the quantum
+  // watchdog, or Zeno, effect): it holds where it is, and a measurement collapses it.
+  function watched(p) {
+    if (G.player.standing === p) return true;
+    const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
+    const t = G.torch;
+    if (t.active && rects.some((r) => rectLit(handOf(G.player), t.angle, r))) return true;
+    return G.room.lights.some((light) => light.poly && rects.some((r) => rectInLight(r, light.poly)));
+  }
+
+  // Cavities: the waves rotate every platform they reach (Ry, a Rabi oscillation),
+  // 0 to + to 1 to - and round again, unless something is watching it. Blocked waves
+  // drive nothing beyond the blocker.
+  function updateCavities(dt) {
+    const room = G.room;
+    if (!room || !room.cavities.length || !G.q) return;
+    const certain = certainRects(room);
+    const pairs = [];
+    for (const p of room.platforms) {
+      p.driven = false;
+      if (p.pending || p.steady) continue;
+      const blockers = [...room.solids, ...certain.filter((c) => c.p !== p).map((c) => c.r)];
+      const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
+      const cavity = room.cavities.find((c) => rects.some((r) => cavityReaches(c, r, blockers)));
+      if (!cavity) continue;
+      if (watched(p)) {
+        p.driven = 'held';
+        continue;
+      }
+      p.driven = true;
+      pairs.push([p.qi, cavity.rate * dt]);
+    }
+    if (!pairs.length) return;
+    const res = Q.drive(pairs);
+    if (res.ok) applySnapshot(res.state, true);
+  }
+
+  // An emergency light: amplitude damping, all the way, so the qubit ends in |0>.
+  async function dampToZero(p) {
+    const epoch = G.epoch;
+    const before = G.q;
+    p.pending = true;
+    const res = await Q.reset([p.qi], 'emergency');
+    if (epoch !== G.epoch) return;
+    p.pending = false;
+    if (!res.ok) return;
+    applySnapshot(res.state);
+    const pt = renderer.anchorOf(G, p.qi);
+    addRing(pt, '#ff6b6b', 52);
+    addFloater(pt, `${p.q} → 0`, '#ff8585');
+    audio.play('collapse0');
+    const partners = res.state.definite.map((d, q) => (q !== p.qi && before.definite[q] === null && d !== null ? `${res.state.labels[q]} = ${d}` : null)).filter(Boolean);
+    say(`The emergency light damped ${p.q} to ${valueWords(p.qi, 0)}.${partners.length ? ` Entangled partner${partners.length > 1 ? 's' : ''} settled with it: ${list(partners)}.` : ''}`, 'quantum');
+  }
+
+  function physicsStep(dt) {
+    const pl = G.player;
+    movePlatforms(dt);
     const want = G.mode === 'play' ? (input.held.right ? 1 : 0) - (input.held.left ? 1 : 0) : 0;
     const targetV = want * PHYS.speed;
     const dv = targetV - pl.vx;
@@ -911,6 +1233,9 @@ export function startGame() {
         }
       }
     }
+    if (pl.vy >= 0 && !pl.onGround && G.dev.touchCollapse && G.mode === 'play') {
+      touchCollapse(feetBefore, pl.y + PLAYER.h);
+    }
     if (pl.vy >= 0 && !pl.onGround) {
       const feet = pl.y + PLAYER.h;
       for (const s of slabs()) {
@@ -926,6 +1251,24 @@ export function startGame() {
     if (pl.onGround && !wasOnGround) audio.play('land');
   }
 
+  // Developer option: coming down onto either outline of a superposed platform
+  // measures it. It materialises at the height it collapsed to, so the player
+  // lands only if that is the outline they touched (or one still below them).
+  function touchCollapse(feetBefore, feet) {
+    const pl = G.player;
+    for (const p of G.room.platforms) {
+      if (p.state !== null || p.pending) continue;
+      const touched = [slotRect(p, 1), slotRect(p, 0)].some((r) => pl.x + PLAYER.w > r.x && pl.x < r.x + r.w && feetBefore <= r.y + 2 && feet >= r.y);
+      if (!touched) continue;
+      const before = G.q;
+      const res = Q.measure([p.qi], false, 'touch');
+      if (!res.ok) return;
+      applySnapshot(res.state);
+      reportCollapse(before, res.state, res.measured);
+      return;
+    }
+  }
+
   function loseLife() {
     audio.play('fall');
     G.stats.falls += 1;
@@ -937,6 +1280,12 @@ export function startGame() {
   }
 
   function afterFall() {
+    if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
+      // A bonus level is not part of the climb: out of lives, it simply starts over.
+      loadLevel(G.levelIndex);
+      say('Out of lives: the bonus level starts over with three.', 'bad', true);
+      return;
+    }
     if (G.lives <= 0 && !G.infinite) {
       setMode('over');
       ui.showScreen('over');
@@ -961,7 +1310,8 @@ export function startGame() {
     if (bonus) earned.push({ got: bonus.seconds ? G.floorTime <= bonus.seconds : G.bonusDone, text: bonus.text });
     const stars = earned.filter((e) => e.got).length;
     const of = earned.length;
-    G.results[G.levelIndex] = { stars, of, ...s, hints: G.hints };
+    const bonusLevel = isBonus(G.levelIndex);
+    if (!bonusLevel) G.results[G.levelIndex] = { stars, of, ...s, hints: G.hints }; // bonus levels are not part of the climb
     const last = G.levelIndex === LEVELS.length - 1;
     setMode('complete');
     audio.play(last ? 'win' : 'unlock');
@@ -978,6 +1328,7 @@ export function startGame() {
       name: level.name,
       index: G.levelIndex,
       total: LEVELS.length,
+      bonus: bonusLevel ? { tag: level.tag, more: !!levelAt(G.levelIndex + 1) } : null,
       stars,
       of,
       earned,
@@ -985,11 +1336,12 @@ export function startGame() {
       stats: `${parts.join(' · ')}.`,
       last,
     });
-    ui.announce(`Floor ${G.levelIndex + 1} cleared with ${stars} of ${of} stars. ${level.takeaway}`);
+    ui.announce(`${bonusLevel ? level.tag : `Floor ${G.levelIndex + 1}`} cleared with ${stars} of ${of} stars. ${level.takeaway}`);
   }
 
   function nextFloor() {
-    loadLevel(G.levelIndex + 1);
+    if (isBonus(G.levelIndex) && !levelAt(G.levelIndex + 1)) toTitle(); // after the last bonus level
+    else loadLevel(G.levelIndex + 1);
   }
 
   // -- the terrace: an epilogue with no qubits ---------------------------------
@@ -997,7 +1349,7 @@ export function startGame() {
   function loadTerrace() {
     const s = TERRACE.scene;
     G.epoch += 1;
-    if (G.terminal) ui.closeTerminal();
+    if (G.terminal || G.passive) ui.closeTerminal();
     G.levelIndex = LEVELS.length;
     buildFloor(TERRACE);
     ui.setNote(null);
@@ -1237,6 +1589,13 @@ export function startGame() {
   async function toTitle() {
     const fromRoof = !!(G.level && G.level.outdoor);
     G.epoch += 1;
+    if (G.terminal) {
+      G.terminal = null;
+      ui.closeTerminal();
+    }
+    closePassive();
+    G.dialogue = null;
+    G.bubbles = [];
     setMode('title');
     ui.showScreen('title');
     ui.setAbout(true);
@@ -1260,6 +1619,18 @@ export function startGame() {
     ui.announce(`Hint ${G.hints}: ${G.level.hints[G.hints - 1]}`);
   }
 
+  function applyDev() {
+    ui.setDev(G.dev);
+    panel.setSequential(G.dev.circuitRight);
+    requestAnimationFrame(() => panel.refresh()); // the rack may have changed size
+  }
+
+  function setDev(name, value) {
+    G.dev[name] = value;
+    saveDev(G.dev);
+    applyDev();
+  }
+
   function setOption(name, value) {
     if (name === 'lives') {
       G.infinite = value;
@@ -1277,6 +1648,7 @@ export function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate, or <b>E</b> to step in.`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -1289,11 +1661,15 @@ export function startGame() {
     const act = interactPrompt(hit);
     const orAct = act ? ` ${act}` : '';
     const station = G.room.battery;
+    panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
+    const shuttle = G.room.platforms.find((p) => p.shuttle && p.trip);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
+    else if (shuttle) ui.setPrompt(`<b>${shuttle.q}</b> is on its way ${shuttle.trip === 'back' ? 'back to you' : `to ${esc(shuttle.shuttle.arrive)}`}.${orAct}`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
+    else if (ghost && !G.torch.on && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
     else if (ghost && !G.torch.on) ui.setPrompt(`<b>${ghost.q}</b> is in superposition and your flashlight is off. <b>F</b> switches it on.${orAct}`);
     else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Aim the flashlight at a dotted outline to observe it (mouse, or <b>I</b> / <b>K</b>).${orAct}`);
     else if (d && d.item && !d.open && G.player.x > d.x - 220) ui.setPrompt('The exit is locked, and this lock takes an ordinary key.');
@@ -1306,7 +1682,7 @@ export function startGame() {
       );
     }
     else if (d && d.open && (d.key || d.item)) ui.setPrompt('The exit is open. Walk through it.');
-    else ui.setPrompt(esc(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal));
+    else ui.setPrompt('Walk with <b>&larr;</b> <b>&rarr;</b>, jump with <b>Space</b>, and use terminals with <b>E</b>. The goal is at the top of the panel.');
   }
 
   function update(dt) {
@@ -1325,6 +1701,7 @@ export function startGame() {
     for (const p of G.platforms) p.flash = Math.max(0, p.flash - dt * 2.2);
 
     if (input.take('mute')) toggleSound();
+    traceLights();
 
     if (G.mode === 'falling') {
       G.fallT -= dt;
@@ -1338,6 +1715,13 @@ export function startGame() {
     if (G.mode === 'terminal') {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
+      for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
+      // Platforms wait until you leave the terminal, except with the instant response developer
+      // option, or in a room with a cavity, where timing is the whole puzzle (a shield cutting
+      // the waves has to do so the moment you apply its gate).
+      if (G.dev.instantResponse || G.room.cavities.length) movePlatforms(dt);
+      updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
+      updateCavities(dt); // nor does a cavity's drive
       updateTorch(dt);
       return;
     }
@@ -1370,10 +1754,17 @@ export function startGame() {
       left -= step;
     }
 
+    updateLights(dt);
+    updateCavities(dt);
     pickUps();
     const hit = findInteract();
+    updatePassive(hit);
+    for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
     if (input.take('use') && hit) {
-      if (hit.type === 'terminal') useTerminal(hit.obj);
+      if (hit.type === 'terminal') {
+        closePassive(); // with the passive terminal option, E steps in: arrow keys or numbers pick a gate
+        useTerminal(hit.obj);
+      }
       else if (hit.type === 'npc') {
         const talk = (story().talk || {})[hit.obj.id];
         if (talk) talk(storyCtx(hit.obj));
@@ -1410,6 +1801,40 @@ export function startGame() {
     ev.preventDefault();
   });
 
+  // -- canister and lock views (developer option) -------------------------------
+
+  // The terminal the player is using or standing at, if any.
+  function terminalAtHand() {
+    if (!G.room || (G.mode !== 'play' && G.mode !== 'terminal')) return null;
+    return G.terminal || G.room.terminals.find((t) => t.near) || null;
+  }
+
+  // What the canister view shows, left to right: the carried canister, and at the
+  // Professor's box the cat (the atom's qubit) beside it.
+  function tileItems() {
+    if (!G.dev.canisterView || !G.q || !G.level || G.level.outdoor) return [];
+    const items = [];
+    if (carrying()) items.push({ qi: G.canister.qi, kind: 'canister' });
+    const term = terminalAtHand();
+    const cat = G.level.qubits.findIndex((q) => q.role === 'box');
+    if (term && term.box && cat >= 0) items.push({ qi: cat, kind: 'cat' });
+    return items;
+  }
+
+  // Each frame, after the game is drawn: the tile, and the magnified lock when the
+  // terminal at hand acts on one of the lock's lamps.
+  function updateViews() {
+    const items = tileItems();
+    const qis = items.map((it) => it.qi);
+    const fx = items.length ? G.fx.find((f) => f.type === 'gate' && f.parts.some((p) => qis.includes(p.qi))) : null;
+    panel.setTile(items, G.t, fx ? { parts: fx.parts, k: Math.min(1, fx.t / fx.dur) } : null);
+    const term = G.dev.canisterView && G.q && !G.level.outdoor ? terminalAtHand() : null;
+    const d = G.room && G.room.door;
+    const lamps = d && d.lockQi ? d.lockQi : [];
+    const touches = !!term && lamps.length > 0 && term.ops.some((op) => (op.qi || []).some((q) => lamps.includes(q)));
+    panel.setLockView(dom.game, touches ? renderer.lockCrop(G) : null, touches ? `The exit lock, magnified: key ${d.key.split('').join(' ')}, lamps ${lamps.map((q) => G.q.labels[q]).join(', ')}` : null);
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
@@ -1417,6 +1842,7 @@ export function startGame() {
     try {
       update(dt);
       renderer.draw(G);
+      updateViews();
       ui.tick(dt);
     } catch (err) {
       console.log(`Blackout Lab frame error: ${err && err.stack ? err.stack : err}`);
@@ -1435,6 +1861,7 @@ export function startGame() {
     ui.showScreen('title');
     ui.setAbout(true);
     ui.showTouch(!!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+    applyDev();
     requestAnimationFrame(frame);
 
     await loadLevel(0, { backdrop: true });

@@ -2,6 +2,7 @@
 // Redrawn from the engine's snapshot.
 
 import { GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from './levels.js';
+import { paintCanister, paintCat, paintGate, paintGateLink, gatePop } from './render.js';
 
 const ROW = 36;
 const TOP = 12;
@@ -23,6 +24,18 @@ function shares(ps) {
   return out;
 }
 const KET = { 0: '|0⟩', 1: '|1⟩', '+': '|+⟩', '-': '|−⟩' };
+// A ket written large, e.g. |0⟩: the bar and the angle bracket are drawn rather than typed,
+// so they line up whatever font the browser falls back to for ⟩ (the game's monospace
+// font has no such character). Anything that is not a ket stays plain text.
+function ketHtml(text) {
+  const m = /^\|(.+)⟩$/.exec(text);
+  if (!m) return esc(text);
+  return (
+    `<span class="ket"><span class="ket-bar"></span>${esc(m[1])}` +
+    `<svg class="ket-close" viewBox="0 0 10 24" aria-hidden="true"><polyline points="2,1 8,12 2,23"/></svg></span>`
+  );
+}
+const listNames = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
 // What one qubit looks like right now, in words and in a short ket.
 export function describe(snap, qi) {
@@ -35,7 +48,10 @@ export function describe(snap, qi) {
   return { kind: 'superposed', ket, p1: snap.p1[qi] };
 }
 
-function layoutColumns(ops, n) {
+// Each op goes in the leftmost column free on the wires it spans. With
+// `sequential`, every op gets its own column instead, in the order it happened.
+export function layoutColumns(ops, n, sequential) {
+  if (sequential) return { cols: ops.map((_, i) => i), count: ops.length };
   const next = new Array(n).fill(0);
   const cols = [];
   for (const op of ops) {
@@ -63,7 +79,12 @@ function opSvg(op, x, yOf) {
     );
   }
   if (op.kind === 'reset') return gateBox(x, y, KET[0], 'g-reset');
+  if (op.gate === 'ry') return gateBox(x, y, 'RY', op.kind === 'drive' ? 'g-ry g-drive' : 'g-ry');
   const auto = op.kind === 'auto' ? ' g-auto' : '';
+  if (op.gate === 'cz') {
+    const ya = yOf(op.qubits[0]);
+    return `<g class="gate g-cx g-cz${auto}"><line x1="${x}" y1="${ya}" x2="${x}" y2="${y}"/><circle class="ctrl" cx="${x}" cy="${ya}" r="4.5"/><circle class="ctrl" cx="${x}" cy="${y}" r="4.5"/></g>`;
+  }
   if (op.gate === 'cx') {
     const yc = yOf(op.qubits[0]);
     return (
@@ -74,14 +95,16 @@ function opSvg(op, x, yOf) {
   return gateBox(x, y, op.gate.toUpperCase(), `g-${op.gate}${auto}`);
 }
 
-const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on' };
+const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on', touch: 'Player landed on', light: 'Backup light observed' };
 
 function opWords(op, labels) {
   const names = op.qubits.map((q) => labels[q]);
   if (op.kind === 'measure') return `${MEASURED_BY[op.by] || 'Measured'} ${names[0]}: found in state ${op.result}`;
-  if (op.kind === 'reset') return `${names[0]} reset to state 0`;
+  if (op.gate === 'ry') return `${op.kind === 'drive' ? 'Cavity drive: ' : ''}Y rotation by ${(op.angle / Math.PI).toFixed(2)} pi on ${names[0]}`;
+  if (op.kind === 'reset') return op.by === 'emergency' ? `Emergency light damped ${names[0]} to state 0` : `${names[0]} reset to state 0`;
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
+  if (op.gate === 'cz') return `${who}CZ on ${names[0]} and ${names[1]}`;
   return `${who}${op.gate.toUpperCase()} on ${names[0]}`;
 }
 
@@ -92,6 +115,7 @@ export function createPanel(dom) {
   let lastOps = -1;
   let lastSnap = null;
   let expanded = false;
+  let sequential = false;
   const log = [];
   const circuitModule = dom.circuitGates.closest('.module');
   const home = { parent: circuitModule.parentElement, next: circuitModule.nextElementSibling };
@@ -145,7 +169,7 @@ export function createPanel(dom) {
 
   function renderCircuit(snap) {
     const n = snap.labels.length;
-    const { cols, count } = layoutColumns(snap.ops, n);
+    const { cols, count } = layoutColumns(snap.ops, n, sequential);
     const room = expanded
       ? Math.floor(((dom.circuitGates.parentElement.clientWidth || 0) - LABEL_W - READ_W) / COL)
       : Math.ceil((dom.circuitGates.clientWidth || 0) / COL);
@@ -245,7 +269,7 @@ export function createPanel(dom) {
       .join('');
   }
 
-  // Expanded, the circuit moves under the game, where it has the full width.
+  // Expanded (the default), the circuit moves under the game, where it has the full width.
   function setExpanded(on) {
     expanded = on;
     if (on) dom.dockPlay.closest('.left').appendChild(circuitModule);
@@ -261,15 +285,166 @@ export function createPanel(dom) {
     if (ev.detail > 0) dom.game.focus({ preventScroll: true }); // a mouse click hands the keys back to the game
   });
 
+  // Redraw the circuit, e.g. after the rack changes size or layout.
+  function refresh() {
+    lastOps = -1;
+    shownTile = { key: '', snap: null }; // the tile redraws at its new size
+    if (level && lastSnap) renderCircuit(lastSnap);
+  }
+
+  // Canister view (developer option): the qubits in hand, enlarged on black: the canister
+  // you carry, and at the Professor's box (floor 5) the cat as well, canister on the left.
+  // Each shows its state over its middle, or what it is entangled with, and gates (show
+  // gates) pop up over them, a CNOT between the two joined by its line.
+  const canisterModule = document.getElementById('canister-module');
+  const canisterHeading = document.getElementById('canister-h');
+  const canisterCanvas = document.getElementById('canister-canvas');
+  const canisterView = document.getElementById('canister-view');
+  const tileLabels = { canister: document.getElementById('canister-state'), cat: document.getElementById('cat-state') };
+  const lockModule = document.getElementById('lock-module');
+  const lockCanvas = document.getElementById('lock-canvas');
+  let shownTile = { key: '', snap: null };
+  if (window.ResizeObserver) new ResizeObserver(() => (shownTile = { key: '', snap: null })).observe(canisterView); // redraw at the new size
+  const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+
+  function stateText(snap, qi) {
+    const d = describe(snap, qi);
+    if (d.kind === 'entangled') return `Entangled with ${listNames(d.partners.map((k) => snap.labels[k]))}`;
+    return d.ket === 'ψ' ? '|ψ⟩' : d.ket;
+  }
+
+  // A canvas drawn at its on-screen size, cleared, with its size in device pixels.
+  function fitCanvas(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx, w, h };
+  }
+
+  // items: [{ qi, kind: 'canister' | 'cat' }], left to right. gate: { parts, k } or null.
+  // Called every frame while shown, but only redrawn when something in it moves: a new
+  // state, a gate popping up (and the frame after it), or an uncertain canister's dashes.
+  function setTile(items, t, gate) {
+    const snap = lastSnap;
+    const on = items.length > 0 && !!snap;
+    canisterModule.classList.toggle('is-off', !on);
+    if (!on) {
+      shownTile = { key: '', snap: null };
+      return;
+    }
+    const key = items.map((it) => `${it.kind}${it.qi}`).join(' ');
+    const changed = key !== shownTile.key || snap !== shownTile.snap;
+    const moving = items.some((it) => it.kind === 'canister' && snap.definite[it.qi] === null) && !calm.matches;
+    const wasGate = shownTile.gate;
+    shownTile.gate = !!gate;
+    if (!changed && !gate && !wasGate && !moving) return;
+    if (changed) {
+      shownTile = { key, snap, gate: !!gate };
+      const kinds = items.map((it) => it.kind);
+      canisterHeading.textContent = kinds.length === 2 ? 'Canister and cat qubits' : kinds[0] === 'cat' ? 'Cat qubit' : 'Canister qubit';
+      canisterView.classList.toggle('is-pair', items.length === 2);
+      for (const [kind, label] of Object.entries(tileLabels)) label.hidden = !kinds.includes(kind);
+      const said = [];
+      items.forEach((it, i) => {
+        const text = stateText(snap, it.qi);
+        const label = tileLabels[it.kind];
+        label.innerHTML = ketHtml(text);
+        label.dataset.state = text; // the state as typed, |0⟩ and so on
+        label.classList.toggle('is-long', text.length > 4);
+        said.push(`the ${it.kind === 'cat' ? 'cat' : 'canister'} ${text.startsWith('Entangled') ? text.toLowerCase() : `in state ${text}`}`);
+      });
+      canisterView.setAttribute('aria-label', `In hand: ${said.join('; ')}`);
+    }
+    for (const it of items) tileLabels[it.kind].classList.toggle('is-hidden', !!(gate && gate.parts.some((p) => p.qi === it.qi)));
+
+    const { ctx, w, h } = fitCanvas(canisterCanvas);
+    const slot = w / items.length;
+    const zoom = Math.min((h * 0.8) / 22, (slot * 0.75) / 22); // both sprites are about 22 units across
+    const base = h / 2 + 10.5 * zoom;
+    const middles = {};
+    items.forEach((it, i) => {
+      const cx = (i + 0.5) * slot;
+      const d = describe(snap, it.qi);
+      ctx.setTransform(zoom, 0, 0, zoom, cx, base);
+      if (it.kind === 'canister') {
+        paintCanister(ctx, 0, 0, d.kind === 'definite' ? { value: d.p1 } : { p1: d.p1, t: calm.matches ? 0 : t });
+        middles[it.qi] = { x: cx, y: base - 9.75 * zoom }; // between the two bands
+      } else {
+        // 0 = the atom intact, the cat alive; 1 = decayed, dead. Uncertain: both, see-through.
+        const alive = d.kind === 'definite' ? 1 - d.p1 : 0.25 + 0.6 * (1 - d.p1);
+        const dead = d.kind === 'definite' ? d.p1 : 0.25 + 0.6 * d.p1;
+        if (alive > 0) {
+          ctx.globalAlpha = alive;
+          paintCat(ctx, 2, 0, false);
+        }
+        if (dead > 0) {
+          ctx.globalAlpha = dead;
+          paintCat(ctx, 2, 0, true);
+        }
+        ctx.globalAlpha = 1;
+        middles[it.qi] = { x: cx, y: base - 9.5 * zoom };
+      }
+    });
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Each label sits on the very middle its sprite was drawn around (canvas pixels to CSS pixels).
+    const toCss = canisterCanvas.clientHeight / h || 1;
+    for (const it of items) {
+      tileLabels[it.kind].style.left = `${middles[it.qi].x * toCss}px`;
+      tileLabels[it.kind].style.top = `${middles[it.qi].y * toCss}px`;
+    }
+    if (!gate) return;
+    const pop = gatePop(gate.k, calm.matches);
+    const size = 7.5 * zoom;
+    const parts = gate.parts.filter((p) => middles[p.qi]);
+    if (parts.length === 2) paintGateLink(ctx, middles[parts[0].qi], middles[parts[1].qi], pop, size);
+    for (const part of parts) paintGate(ctx, middles[part.qi].x, middles[part.qi].y, part, pop, size);
+  }
+
+  // Lock view (developer option): the exit's lock, magnified from the game picture.
+  // `source` is the game canvas and `crop` the lock's part of it, or null to hide.
+  function setLockView(source, crop, words) {
+    lockModule.classList.toggle('is-off', !crop);
+    if (!crop) return;
+    const { ctx, w, h } = fitCanvas(lockCanvas);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    const fit = Math.min(w / crop.w, h / crop.h);
+    const dw = crop.w * fit;
+    const dh = crop.h * fit;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(source, crop.x, crop.y, crop.w, crop.h, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    if (words && lockCanvas.getAttribute('aria-label') !== words) lockCanvas.setAttribute('aria-label', words);
+  }
+
   function renderLog() {
     dom.log.innerHTML = log.length
       ? log.map((e) => `<li class="log-${e.kind}">${esc(e.text)}</li>`).join('')
       : '<li class="log-quiet">Nothing has happened yet.</li>';
   }
 
+  setExpanded(true);
+
   return {
     setLevel,
     setHints,
+    setTile,
+    setGoal(text) {
+      if (dom.goal.textContent !== text) dom.goal.textContent = text;
+    },
+    setSequential(on) {
+      sequential = !!on;
+      refresh();
+    },
+    refresh,
+    setLockView,
     render(snap) {
       if (!level || !snap) return;
       lastSnap = snap;

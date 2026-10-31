@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
+<!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
 <link rel="stylesheet" href="main.css">
 <script type="module" src="main.js"></script>
 </head>
@@ -22,6 +27,7 @@
       <button type="button" class="key-btn" id="btn-restart" disabled>Restart floor <kbd>R</kbd></button>
       <button type="button" class="key-btn" id="btn-pause" disabled>Pause <kbd>P</kbd></button>
       <button type="button" class="key-btn" id="btn-sound" aria-pressed="true">Sound <kbd>M</kbd></button>
+      <button type="button" class="key-btn" id="btn-menu" disabled>Main menu</button>
     </div>
   </header>
 
@@ -47,9 +53,36 @@
               </div>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
-                <p class="boot-line">The physics is ideal quantum mechanics, worked out exactly in your browser: no
-                  install, no quantum computer, no noise.</p>
+                <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
+              <details class="dev" id="dev">
+                <summary>Developer options</summary>
+                <label class="dev-opt" title="The flashlight shines only while F is held, straight ahead. The mouse does not aim it.">
+                  <input type="checkbox" role="switch" id="dev-key-torch"> <b>Keyboard flashlight</b>
+                  <span class="dev-hint">hold F to shine straight ahead</span></label>
+                <label class="dev-opt" title="Landing on a superposed platform measures it: you land if it collapses where you touched it.">
+                  <input type="checkbox" role="switch" id="dev-touch-collapse"> <b>Touch-collapse</b>
+                  <span class="dev-hint">landing on a superposition measures it</span></label>
+                <label class="dev-opt" title="Platforms move as soon as a gate is applied, while you are still at the terminal.">
+                  <input type="checkbox" role="switch" id="dev-instant"> <b>Instant response</b>
+                  <span class="dev-hint">platforms move while you are at a terminal</span></label>
+                <label class="dev-opt" title="Standing at a terminal shows its gates. Press 1, 2, 3 and so on, or click, to apply one. No E needed.">
+                  <input type="checkbox" role="switch" id="dev-passive-terminal"> <b>Passive terminal</b>
+                  <span class="dev-hint">stand at a terminal, press 1, 2, 3 for gates</span></label>
+                <label class="dev-opt" title="While you hold the canister, the panel shows it enlarged with its state, or what it is entangled with.">
+                  <input type="checkbox" role="switch" id="dev-canister-view"> <b>Canister view</b>
+                  <span class="dev-hint">show the held canister's state in the panel</span></label>
+                <label class="dev-opt" title="Each gate you apply pops up for a second over the platforms (and the canister view) it acts on.">
+                  <input type="checkbox" role="switch" id="dev-show-gates"> <b>Show gates</b>
+                  <span class="dev-hint">each gate pops up over its qubits</span></label>
+                <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
+                  <b id="dev-panel-name">Panel position</b>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-bottom" value="bottom"> Bottom</label>
+                </div>
+                <label class="dev-opt" title="Every new step in the circuit gets its own column, after everything before it.">
+                  <input type="checkbox" role="switch" id="dev-circuit-right"> <b>Circuit always adds to the right</b></label>
+              </details>
             </div>
             <div class="title-side">
               <h2>Controls</h2>
@@ -58,7 +91,7 @@
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
                 <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>F</kbd></dt><dd>Flashlight on / off</dd></div>
-                <div><dt><kbd>E</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
+                <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
                 <div><dt><kbd>P</kbd></dt><dd>Pause and options</dd></div>
               </dl>
@@ -69,15 +102,23 @@
 
           <section class="screen screen-card" id="screen-pause" aria-labelledby="pause-h" hidden>
             <h2 id="pause-h">Paused</h2>
-            <fieldset class="options">
-              <legend>Options</legend>
-              <label class="opt" for="opt-lives"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
-              <label class="opt" for="opt-floor">Skip to floor <select id="opt-floor"></select></label>
-            </fieldset>
-            <div class="title-actions">
-              <button type="button" class="primary" id="btn-resume">Resume</button>
-              <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
-              <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+            <div class="pause-cols">
+              <div class="pause-main">
+                <fieldset class="options">
+                  <legend>Options</legend>
+                  <label class="opt"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
+                  <label class="opt">Skip to floor <select id="opt-floor"></select></label>
+                </fieldset>
+                <div id="pause-dev-slot"></div>
+                <div class="title-actions">
+                  <button type="button" class="primary" id="btn-resume">Resume</button>
+                  <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
+                  <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+                </div>
+              </div>
+              <div class="pause-keys" id="pause-keys">
+                <h3 class="plate plate-small">Controls</h3>
+              </div>
             </div>
           </section>
 
@@ -171,10 +212,28 @@
             <li><span>View GitHub Repository:</span> <a href="" target="_blank" rel="noopener noreferrer"></a></li>
           </ul>
         </section>
+        <section class="module goal-module" aria-labelledby="floor-tag">
+          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
+          <p class="goal" id="goal"></p>
+        </section>
+        <section class="module is-off" id="canister-module" aria-labelledby="canister-h">
+          <h2 class="plate" id="canister-h">Canister qubit</h2>
+          <div class="canister-view" id="canister-view" role="img" aria-label="The canister you are holding">
+            <canvas id="canister-canvas" aria-hidden="true"></canvas>
+            <p class="canister-state" id="canister-state" aria-hidden="true"></p>
+            <p class="canister-state" id="cat-state" aria-hidden="true"></p>
+          </div>
+        </section>
+        <section class="module is-off" id="lock-module" aria-labelledby="lock-h">
+          <h2 class="plate" id="lock-h">Exit lock</h2>
+          <div class="canister-view lock-view">
+            <canvas id="lock-canvas" role="img" aria-label="The exit lock, magnified"></canvas>
+          </div>
+        </section>
         <section class="module" aria-labelledby="mod-circuit-h">
           <div class="module-head">
             <h2 class="plate" id="mod-circuit-h">Circuit</h2>
-            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="false">Expand</button>
+            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="true">Collapse</button>
           </div>
           <div class="circuit" id="circuit">
             <div class="circuit-fixed" id="circuit-labels"></div>
@@ -183,11 +242,6 @@
           </div>
           <div class="sr-only" id="circuit-desc"></div>
           <p class="fine" id="stats">0 gates</p>
-          <details class="code-box">
-            <summary>This floor as Qiskit code</summary>
-            <pre id="code" tabindex="0"></pre>
-            <button type="button" class="key-btn" id="copy-code">Copy code</button>
-          </details>
         </section>
 
         <section class="module" aria-labelledby="mod-probs-h">
@@ -200,14 +254,19 @@
 
         <section class="module" aria-labelledby="mod-notes-h">
           <h2 class="plate" id="mod-notes-h">Lab notes</h2>
-          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
-          <p class="goal" id="goal"></p>
           <p class="concept" id="concept"></p>
           <ol class="hints" id="hints"></ol>
           <button type="button" class="key-btn" id="hint-button">Show a hint (H)</button>
           <ul class="gate-list" id="gate-list"></ul>
           <h3 class="plate plate-small">Event log</h3>
           <ul class="log" id="log"></ul>
+        </section>
+        <section class="module" id="code-module" aria-label="Qiskit code">
+          <details class="code-box">
+            <summary>This floor as Qiskit code</summary>
+            <pre id="code" tabindex="0"></pre>
+            <button type="button" class="key-btn" id="copy-code">Copy code</button>
+          </details>
         </section>
       </div>
     </aside>

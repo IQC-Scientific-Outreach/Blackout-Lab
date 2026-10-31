@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Big+Shoulders+Display:wght@700;800&family=JetBrains+Mono:wght@500;700&display=swap');
-
 /* Layout: game window on the left, instrument rack on the right, console strip under the window. */
 :root {
   color-scheme: dark;
@@ -118,6 +116,10 @@ kbd {
 #screen-title { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: clamp(14px, 3%, 32px); align-items: start; }
 .title-main, .title-side, .screen-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .screen-card { max-width: 560px; }
+#screen-pause { max-width: 860px; }
+.pause-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px 24px; align-items: start; }
+.pause-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pause-keys { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--qubit); }
 .screen h2 { font-family: var(--sign); font-weight: 800; font-size: clamp(24px, 4vw, 34px); line-height: 1; letter-spacing: 0.05em; text-transform: uppercase; text-wrap: balance; }
 .screen .title-name { font-family: var(--sign); font-weight: 800; font-size: clamp(34px, 5.4vw, 60px); line-height: 0.92; letter-spacing: 0.04em; text-transform: uppercase; text-wrap: balance; }
@@ -144,12 +146,35 @@ kbd {
 .replay { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
 .replay-h { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; }
 .replay-floors { display: flex; flex-wrap: wrap; gap: 6px; }
+.bonus-head { flex-basis: 100%; margin: 4px 0 0; font: 700 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 
 .options { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; margin: 0; }
 .options legend { font-family: var(--mono); font-size: 11px; color: var(--dim); padding: 0 6px; text-transform: uppercase; letter-spacing: 0.1em; }
 .opt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
 .opt input { width: 17px; height: 17px; accent-color: var(--torch); }
 .opt select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
+
+/* Developer options on the title screen: experimental switches, one line each. */
+.dev { border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
+.dev summary { cursor: pointer; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+.dev[open] { display: flex; flex-direction: column; gap: 7px; padding-bottom: 9px; }
+.dev[open] summary { margin-bottom: 2px; }
+.dev-opt { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.dev-opt b { font-weight: 700; }
+.dev-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-size: 12px; }
+.dev-opt[role="radiogroup"] { gap: 14px; padding-left: 42px; cursor: default; } /* lines up with the names beside the switches */
+.dev-opt[role="radiogroup"] label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.dev-opt input[type="radio"] { accent-color: var(--torch); width: 14px; height: 14px; margin: 0; }
+input[role="switch"] {
+  appearance: none; flex: none; position: relative; width: 34px; height: 18px; margin: 1px 0 0;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;
+}
+input[role="switch"]::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--dim);
+  transition: transform 0.15s;
+}
+input[role="switch"]:checked { background: var(--torch); border-color: var(--torch); }
+input[role="switch"]:checked::after { transform: translateX(16px); background: var(--night); }
 
 /* ---- touch controls ---- */
 .touch { display: flex; justify-content: space-between; gap: 8px; }
@@ -162,7 +187,7 @@ kbd {
 .touch-btn.is-down { background: var(--torch); color: #1c1403; }
 
 /* ---- console strip under the window ---- */
-.dock { min-height: 98px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; }
+.dock { min-height: 56px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px 12px; display: flex; }
 .dock-play { display: flex; flex-direction: column; justify-content: center; gap: 6px; width: 100%; }
 .note { align-self: flex-start; font: 700 12px var(--mono); color: #1c1403; background: var(--torch); border-radius: 3px; padding: 3px 8px; }
 .prompt .fine { margin-inline-start: 6px; white-space: nowrap; }
@@ -187,6 +212,8 @@ kbd {
 .term-status { font-size: 13px; color: var(--dim); min-height: 1.45em; }
 .term-status.is-quantum { color: var(--qubit); }
 .term-status.is-bad { color: var(--bad); }
+/* Passive terminal (developer option): the key that applies each gate. */
+.op-key { grid-column: 1 / -1; justify-self: center; margin-top: 4px; min-width: 18px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; font: 700 11px var(--mono); color: var(--torch); text-align: center; }
 
 /* ---- instrument rack ---- */
 .rack { position: relative; min-width: 0; }
@@ -202,6 +229,20 @@ kbd {
 .circuit-svg[data-fit] { max-width: 100%; height: auto; }
 .module-head { display: flex; align-items: center; gap: 8px; }
 .module-head .plate { flex: 1; }
+.goal-module { gap: 4px; }
+/* Canister view (developer option): the held canister, enlarged, with its state over it. */
+.module.is-off { display: none; }
+.canister-view { position: relative; height: 170px; border-radius: 6px; background: #000; display: grid; place-items: center; overflow: hidden; }
+.canister-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; } /* sized by the box, never by its own pixels */
+.canister-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; display: flex; align-items: center; justify-content: center; line-height: 1; margin: 0; padding: 2px 6px; font: 700 26px var(--mono); color: #39ff7a; text-align: center; white-space: nowrap; text-shadow: 0 0 6px #000, 0 0 12px #000; }
+.canister-state.is-long { font-size: 17px; }
+.ket { display: inline-flex; align-items: center; gap: 0.06em; filter: drop-shadow(0 0 3px #000) drop-shadow(0 0 6px #000); transform: translateX(0.15em); } /* nudged right: the light bracket makes it look left of centre otherwise */
+.ket-bar { width: 0.1em; height: 1.05em; background: currentColor; border-radius: 0.04em; }
+.ket-close { width: 0.42em; height: 1.05em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.canister-view.is-pair .canister-state { font-size: 20px; }
+.canister-view.is-pair .canister-state.is-long { font-size: 12px; }
+.lock-view { height: 150px; }
+.canister-state.is-hidden { visibility: hidden; }
 .key-btn.mini { font-size: 11px; padding: 2px 8px; }
 .circuit-fixed { flex: none; }
 .circuit-svg { display: block; font-family: var(--mono); }
@@ -221,6 +262,7 @@ kbd {
 .g-h rect { stroke: var(--qubit); } .g-h text { fill: var(--qubit); }
 .g-x rect { stroke: var(--torch); } .g-x text { fill: var(--torch); }
 .g-z rect { stroke: var(--zero); } .g-z text { fill: var(--zero); }
+.g-ry rect { stroke: #c39bff; } .g-ry text { fill: #c39bff; font-size: 10px; } .g-drive rect { stroke-dasharray: 3 2; }
 .g-cx line { stroke: var(--link); } .g-cx .ctrl { fill: var(--link); } .g-cx .targ { fill: var(--panel-2); stroke: var(--link); stroke-width: 1.5; }
 .g-measure rect { stroke: var(--ink); } .g-measure .result { fill: var(--torch); } .g-measure .result-text { fill: #1c1403; font-size: 10px; }
 .g-reset rect { stroke: var(--dim); stroke-dasharray: 3 2; } .g-reset text { fill: var(--dim); font-size: 10px; }
@@ -288,14 +330,20 @@ kbd {
 
 .credit { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font-size: 12px; color: var(--dim); }
 
+/* ---- developer option: the rack under the game, its modules side by side ---- */
+.lab.panel-bottom .deck { grid-template-columns: minmax(0, 1fr); }
+.lab.panel-bottom .rack-inner { position: static; overflow: visible; flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+.lab.panel-bottom .rack-inner > .module { flex: 1 1 300px; }
+
 /* ---- narrow screens: the rack moves under the game ---- */
 @media (max-width: 900px) {
   .deck { grid-template-columns: minmax(0, 1fr); }
+  .pause-cols { grid-template-columns: minmax(0, 1fr); }
   .rack-inner { position: static; overflow: visible; }
   #screen-title { grid-template-columns: minmax(0, 1fr); }
   .hud { margin-inline-start: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .seg { transition: none; }
+  .seg, input[role="switch"]::after { transition: none; }
 }

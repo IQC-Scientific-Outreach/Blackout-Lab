@@ -24,7 +24,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2 }; // i: identity, which does nothing
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2, cz: 2 }; // i: identity, which does nothing
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -89,11 +89,22 @@ export class Lab {
     return [name, qubits];
   }
 
-  // The gate itself, on the amplitudes. cx is [control, target].
+  // The gate itself, on the amplitudes. cx is [control, target]; cz is symmetric.
   _evolve(name, qubits) {
     if (name === 'i') return;
     const { re, im } = this;
     const size = 1 << this.n;
+    if (name === 'cz') {
+      // Z on one qubit when the other is 1: the |11> amplitudes change sign (it is symmetric).
+      const both = (1 << qubits[0]) | (1 << qubits[1]);
+      for (let i = 0; i < size; i += 1) {
+        if ((i & both) === both) {
+          re[i] = -re[i];
+          im[i] = -im[i];
+        }
+      }
+      return;
+    }
     const bit = 1 << qubits[qubits.length - 1];
     if (name === 'cx') {
       const ctrl = 1 << qubits[0];

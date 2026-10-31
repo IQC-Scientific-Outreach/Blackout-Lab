@@ -296,3 +296,27 @@ test('an emergency light damps a qubit to 0, even a certain 1, and says so', () 
   assert.equal(q.snapshot().ops[0].by, 'emergency');
   assert.match(q.code(), /emergency light: A damped to 0/);
 });
+
+test('CZ flips the phase of |11> only, either way round', () => {
+  // On |+>|1>, CZ turns the + into a -: H then shows it as a certain 1.
+  const q = lab(['+', '1']);
+  q.apply('cz', [0, 1]);
+  q.apply('h', [0]);
+  assert.deepEqual(q.snapshot().definite, [1, 1]);
+  const r = lab(['1', '+']);
+  r.apply('cz', [1, 0]);
+  r.apply('h', [1]);
+  assert.deepEqual(r.snapshot().definite, [1, 1]);
+  // With the other qubit at 0, nothing happens.
+  const s = lab(['+', '0']);
+  s.apply('cz', [0, 1]);
+  s.apply('h', [0]);
+  assert.deepEqual(s.snapshot().definite, [0, 0]);
+  assert.match(q.code(), /qc\.cz\(0, 1\)/);
+});
+
+test('bonus level 3, stage 2: A ends 0 and B ends 1 with H, Z on A, H on B and CZ', () => {
+  const q = lab(['0', '0']);
+  for (const [g, w] of [['h', 0], ['z', 0], ['h', 0], ['h', 1], ['cz', 0], ['h', 1], ['h', 0], ['z', 0], ['h', 0]]) q.apply(g, g === 'cz' ? [0, 1] : [w]);
+  assert.deepEqual(q.snapshot().definite, [0, 1]);
+});

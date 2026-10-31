@@ -371,9 +371,12 @@ export function startGame() {
           // A sideways platform keeps one height and moves between x0 and x1.
           const sideways = p.axis === 'x' ? { x: p.x0, y0: p.y, y1: p.y } : {};
           const built = { ...p, ...sideways, qi: G.qIndex[p.q], state: 0, p1: 0, flash: 0, exposure: 0, lightExposure: 0, lightKind: null, pending: false };
-          built.y = built.y0;
-          built.targetX = built.x;
-          built.targetY = built.y0;
+          // It starts where its starting state parks it (a qubit that starts as 1 does not glide over).
+          const start = slotRect(built, level.qubits[G.qIndex[p.q]].init === '1' ? 1 : 0);
+          built.x = start.x;
+          built.y = start.y;
+          built.targetX = start.x;
+          built.targetY = start.y;
           if (p.shuttle) Object.assign(built, { home: built.x, trip: null }); // trip: null | 'out' | 'there' | 'back'
           return built;
         }),
@@ -574,7 +577,7 @@ export function startGame() {
   // Resolves at step 2, as the gate appears.
   const SPARK_SECONDS = 0.45;
   const GATE_SECONDS = 1;
-  const COLOR_OF = (gate) => (gate === 'cx' ? '#ff8adf' : '#5ee6ff');
+  const COLOR_OF = (gate) => (gate === 'cx' || gate === 'cz' ? '#ff8adf' : '#5ee6ff');
 
   function untilFx(fx, part, epoch) {
     return new Promise((resolve) => {
@@ -588,7 +591,7 @@ export function startGame() {
     const from = center(screenRect(term));
     const target = qis[qis.length - 1];
     const aims = [target];
-    if (gate === 'cx' && G.canister && qis.includes(G.canister.qi) && G.canister.qi !== target) aims.push(G.canister.qi);
+    if (qis.length === 2 && G.canister && qis.includes(G.canister.qi) && G.canister.qi !== target) aims.push(G.canister.qi);
     let lead = null;
     for (const qi of aims) {
       const to = renderer.gateAnchor(G, qi);
@@ -603,6 +606,8 @@ export function startGame() {
     const parts =
       gate === 'cx'
         ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
+        : gate === 'cz'
+        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'ctrl', gate }]
         : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
     const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
     G.fx.push(fx);
@@ -694,7 +699,7 @@ export function startGame() {
     }
 
     const info = GATE_INFO[op.gate];
-    const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;
+    const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : op.gate === 'cz' ? `CZ on ${op.q[0]} and ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;
     let text = `${what}. ${stateSentence(res.state, target)}`;
     if (op.gate === 'z' && !nowDefinite) text = `${what}. The odds did not move, but the phase flipped. ${stateSentence(res.state, target)}`;
     if (op.gate === 'cx' && wasDefinite && nowDefinite && before.definite[target] === res.state.definite[target]) {
@@ -1667,10 +1672,8 @@ export function startGame() {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
       for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
-      if (G.dev.instantResponse) {
-        movePlatforms(dt); // developer option: see each gate land at once
-        updateLights(dt);
-      }
+      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
+      updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
       updateTorch(dt);
       return;
     }

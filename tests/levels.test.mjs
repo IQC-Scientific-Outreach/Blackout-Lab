@@ -20,7 +20,7 @@ for (const [where0, level] of ALL) {
     const gateOps = (ops, where) => {
       for (const op of ops || []) {
         assert.ok(op.gate in GATE_INFO, `${where}: unknown gate ${op.gate}`);
-        if (op.gate === 'cx') assert.equal(op.q.length, 2, `${where}: cx needs [control, target]`);
+        if (op.gate === 'cx' || op.gate === 'cz') assert.equal(op.q.length, 2, `${where}: ${op.gate} needs two qubits`);
         else if (op.gate !== 'measure') assert.equal(op.q.length, 1, `${where}: ${op.gate} acts on one qubit`);
         op.q.forEach((id) => known(id, where));
       }

@@ -80,6 +80,10 @@ function opSvg(op, x, yOf) {
   }
   if (op.kind === 'reset') return gateBox(x, y, KET[0], 'g-reset');
   const auto = op.kind === 'auto' ? ' g-auto' : '';
+  if (op.gate === 'cz') {
+    const ya = yOf(op.qubits[0]);
+    return `<g class="gate g-cx g-cz${auto}"><line x1="${x}" y1="${ya}" x2="${x}" y2="${y}"/><circle class="ctrl" cx="${x}" cy="${ya}" r="4.5"/><circle class="ctrl" cx="${x}" cy="${y}" r="4.5"/></g>`;
+  }
   if (op.gate === 'cx') {
     const yc = yOf(op.qubits[0]);
     return (
@@ -98,6 +102,7 @@ function opWords(op, labels) {
   if (op.kind === 'reset') return op.by === 'emergency' ? `Emergency light damped ${names[0]} to state 0` : `${names[0]} reset to state 0`;
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
+  if (op.gate === 'cz') return `${who}CZ on ${names[0]} and ${names[1]}`;
   return `${who}${op.gate.toUpperCase()} on ${names[0]}`;
 }
 
@@ -397,9 +402,7 @@ export function createPanel(dom) {
     const pop = gatePop(gate.k, calm.matches);
     const size = 7.5 * zoom;
     const parts = gate.parts.filter((p) => middles[p.qi]);
-    const ctrl = parts.find((p) => p.role === 'ctrl');
-    const targ = parts.find((p) => p.role === 'targ');
-    if (ctrl && targ) paintGateLink(ctx, middles[ctrl.qi], middles[targ.qi], pop, size);
+    if (parts.length === 2) paintGateLink(ctx, middles[parts[0].qi], middles[parts[1].qi], pop, size);
     for (const part of parts) paintGate(ctx, middles[part.qi].x, middles[part.qi].y, part, pop, size);
   }
 

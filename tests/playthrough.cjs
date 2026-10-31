@@ -768,12 +768,101 @@ async function main() {
     await bot.hop(bot.solid(1));
     await bot.exit();
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (document.getElementById('complete-eyebrow').textContent !== 'Bonus level 1 cleared' || document.getElementById('btn-next').textContent !== 'Back to title') {
+    if (document.getElementById('complete-eyebrow').textContent !== 'Bonus level 1 cleared' || document.getElementById('btn-next').textContent !== 'Next bonus level') {
       throw new Error('a bonus level should end with its own cleared screen');
     }
     return `bonus level 1: unshielded the light measured Q (${first}); shielded, ${trips} trips brought Q home raised; stars ${stars.join(', ')}`;
   });
   await shot('15b-bonus-cleared');
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel-emergency');
+
+  // Bonus level 2: the same channel, with an emergency light that damps Q to 0.
+  await step('bonus level 2', async () => {
+    const g = bot.G();
+    const Q = bot.platform('Q');
+    const S = bot.platform('S');
+    if (S.state !== 1 || S.x !== S.x1) throw new Error('the shield should start parked, out of the light');
+    const home = () => bot.until(() => Q.trip === null && !Q.pending, 15000, 'Q to come home');
+    await bot.terminal('T1', [2]);
+    await home();
+    const first = g.q.ops.map((op) => `${op.gate}${op.by ? `:${op.by}` : ''}`).join(' ');
+    if (first !== 'h reset:emergency z' || Q.state !== 0) throw new Error(`unshielded, the emergency light should damp Q to 0: ${first}, Q=${Q.state}`);
+    await bot.terminal('T1', [3]);
+    await bot.until(() => S.state === 0 && S.x === S.x0, 3000, 'the shield to slide in');
+    let trips = 0;
+    while (!(Q.state === 1 && g.bonusDone) && trips < 6) {
+      const before = g.q.ops.length;
+      await bot.terminal('T1', [2]);
+      await home();
+      trips += 1;
+      if (g.q.ops.slice(before).some((op) => op.by === 'emergency')) throw new Error('the shielded emergency light still reached Q');
+    }
+    if (Q.state !== 1 || S.state !== 0) throw new Error('Q should come home raised, with the shield still in place');
+    await bot.hop(bot.slab('Q'));
+    await bot.hop(bot.solid(1));
+    await bot.exit();
+    return `bonus level 2: unshielded the emergency light damped Q (${first}); the shield (blocking at 0) stayed put, and ${trips} trips brought Q home raised`;
+  });
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'decoherence');
+
+  // Bonus level 3: weak lights over every platform; a timed H Z H, then A = 0 and B = 1 through CZ.
+  await step('bonus level 3', async () => {
+    const g = bot.G();
+    const P = bot.platform('P');
+    const A = bot.platform('A');
+    const B = bot.platform('B');
+    // The deadline: H on P, then wait at the terminal. The weak light measures P within a few seconds.
+    const t1 = g.room.terminals.find((t) => t.id === 'T1');
+    await bot.walkTo(t1.x);
+    await bot.until(() => t1.near, 2000, 'stand at T1');
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'terminal', 2000, 'T1 to open');
+    const opened = performance.now();
+    document.querySelector('#term-ops button[data-op="0"]').click();
+    await bot.until(() => P.state === null, 2000, 'P in superposition');
+    await bot.until(() => P.state !== null, 4000, 'the weak light to catch P');
+    const caughtAfter = (performance.now() - opened) / 1000;
+    const last = g.q.ops[g.q.ops.length - 1];
+    if (g.mode !== 'terminal' || last.by !== 'light' || caughtAfter < 2) throw new Error(`the weak light should measure P after about 2.25 s, even at the terminal: ${JSON.stringify(last)} after ${caughtAfter.toFixed(2)} s in ${g.mode}`);
+    await bot.tap('KeyE');
+    await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
+    let tries = 0;
+    // Stage 1: H, Z, H on P, quickly (a lucky collapse to 1 would do as well).
+    while (P.state !== 1 && tries < 6) {
+      await bot.terminal('T1', P.state === 0 ? [1, 2, 1] : [2]);
+      await bot.until(() => P.state !== null, 4000, 'P to settle');
+      tries += 1;
+    }
+    if (P.state !== 1) throw new Error('P should be raised');
+    await bot.settle('P');
+    await bot.hop(bot.slab('P'));
+    await bot.hop(bot.solid(1));
+    // Stage 2: H Z H on A; H on B; CZ; H on B; H Z H on A. Retry from scratch if a light catches one.
+    let rounds = 0;
+    while (!(A.state === 0 && B.state === 1) && rounds < 6) {
+      const steps = [];
+      if (A.state !== 0 || B.state !== 0) {
+        // Bring them back to 0 0 first: a certain 1 becomes 0 with H Z H.
+        if (A.state === 1) steps.push(1, 2, 1);
+        if (B.state === 1) throw new Error('B is 1 but A is not 0: unexpected');
+      }
+      steps.push(1, 2, 1, 3, 4, 3, 1, 2, 1);
+      await bot.terminal('T2', steps);
+      await bot.until(() => A.state !== null && B.state !== null, 5000, 'A and B to settle');
+      rounds += 1;
+    }
+    if (A.state !== 0 || B.state !== 1) throw new Error(`A should be 0 and B 1: ${A.state} ${B.state}`);
+    await bot.settle('A');
+    await bot.settle('B');
+    await bot.hop(bot.slab('A'));
+    await bot.hop(bot.slab('B'));
+    await bot.hop(bot.solid(2));
+    await bot.exit();
+    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
+    return `bonus level 3: left in superposition at T1, P was measured by the weak light after ${caughtAfter.toFixed(2)} s; P raised after ${tries} more try at T1; A=0, B=1 after ${rounds} round(s) at T2; crossed to the exit in ${Math.round(g.floorTime)} s`;
+  });
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
   await page.click('#btn-start');

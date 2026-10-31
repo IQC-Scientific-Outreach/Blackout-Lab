@@ -92,7 +92,7 @@ export function paintCanister(ctx, x, baseY, state) {
 // circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
 // (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
 // over the animation: in with a spring, hold, then out. `size` is the box width.
-export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf' };
+export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf', cz: '#ff8adf' };
 
 export function gatePop(k, calm) {
   if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
@@ -1368,9 +1368,7 @@ export function createRenderer(canvas) {
     const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: fx.tileQis.includes(part.qi) }));
     // A gate wholly on qubits in the canister view tile is drawn only there.
     if (at.every((a) => a.tile)) return;
-    const ctrl = at.find((a) => a.part.role === 'ctrl');
-    const targ = at.find((a) => a.part.role === 'targ');
-    if (ctrl && targ && ctrl.pos && targ.pos) paintGateLink(ctx, ctrl.pos, targ.pos, pop, 26);
+    if (at.length === 2 && at[0].pos && at[1].pos) paintGateLink(ctx, at[0].pos, at[1].pos, pop, 26); // a two-qubit gate's line
     for (const a of at) {
       if (!a.pos) continue;
       // The canister view tile shows a qubit's gate; on the player's back stays only a

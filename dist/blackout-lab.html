@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-nuAoLL5VXUFxUvZJNipc2lZHtQlHkQuDw5wBhCr/t5I='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-LbozaKhLkCf88UzYv/fNDOS3twuSHewQKxpYlVgWvj8='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -714,6 +714,11 @@ const GATE_INFO = {
     name: 'Controlled flip',
     text: 'Flips the target only when the control is in state 1. A control in superposition leaves the two entangled.',
   },
+  cz: {
+    symbol: 'CZ',
+    name: 'Controlled Z',
+    text: 'Applies Z to one qubit when the other is in state 1: a phase flip that only H makes visible. It works the same both ways round.',
+  },
   measure: {
     symbol: 'M',
     name: 'Measure',
@@ -1156,6 +1161,98 @@ const BONUS_LEVELS = [
     takeaway:
       'The light in the middle was an eavesdropper. Looking at Q in transit collapsed it, and the far side\'s Z no longer combined with your H gates. With the channel shielded, the phase survived the trip.',
   },
+  {
+    id: 'channel-emergency',
+    name: 'Emergency Channel',
+    tag: 'Bonus level 2',
+    gates: ['i', 'h', 'x', 'z'],
+    torchOff: true,
+    qubits: [
+      { id: 'Q', init: '0', role: 'platform' },
+      // The emergency light damps whatever is not certainly 0, so here the shield blocks
+      // the light in state 0, and starts in state 1, parked out of the light.
+      { id: 'S', init: '1', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 450 },
+    solids: [
+      { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 0, y: 270, w: 140, h: 14 },
+      { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+    ],
+    platforms: [
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1, shuttle: { to: 720, speed: 150, arrive: 'T2' } },
+      { q: 'S', axis: 'x', x0: 420, x1: 235, y: 230, w: 110, need: 0 },
+    ],
+    lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'emergency' }],
+    terminals: [
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'i', q: ['Q'] }, { gate: 'h', q: ['Q'] }, { gate: 'x', q: ['S'] }] },
+      { id: 'T2', x: 875, y: 450, auto: true, ops: [{ gate: 'z', q: ['Q'] }] },
+    ],
+    decor: [
+      { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
+      { type: 'sign', x: 846, y: 300, lines: ['BOB'] },
+    ],
+    door: { x: 60, y: 270, key: null, lock: [] },
+    shortest: 3,
+    bonus: {
+      sequences: [{ q: 'Q', gates: ['h', 'z', 'h'] }],
+      text: 'Built an X from H, Z, H with nothing seeing Q on the way',
+    },
+    goal: 'The same channel, but the backup light is an emergency one. Send platform Q across to the Z terminal and back so that it returns raised, then climb from it to the exit above.',
+    concept:
+      'An emergency light does not just look: it drains the qubit to its ground state, 0, whatever it was. That is amplitude damping, the way a real qubit loses its energy to its surroundings. An unshielded trip now always brings Q home lowered, so there is no getting lucky.',
+    hints: [
+      'Any gate on Q at T1 sends it across the room, where the terminal applies Z, and back again.',
+      'The red light damps Q to 0 on its way, even a Q that is certainly 1. X at T1 slides the shield S under the light. Keep your own flashlight off while Q is near you.',
+      'With the shield in place: H, wait for Q to come back, then H again. H, Z, H is an X, so Q returns raised.',
+    ],
+    takeaway:
+      'The emergency light was not an eavesdropper but a drain: it pulled Q down to 0 whatever it held. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',
+  },
+  {
+    id: 'decoherence',
+    name: 'Decoherence Time',
+    tag: 'Bonus level 3',
+    gates: ['h', 'z', 'cz'],
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 40, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 340, w: 110, h: 14 },
+      { kind: 'ground', x: 760, y: 160, w: 200, h: 380 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 505, y1: 395, need: 1 },
+      { q: 'A', x: 490, w: 80, y0: 340, y1: 220, need: 0 },
+      { q: 'B', x: 620, w: 80, y0: 430, y1: 250, need: 1 },
+    ],
+    lights: [
+      { x: 242, y: 70, angle: Math.PI / 2, spread: 0.34, range: 480, kind: 'weak' },
+      { x: 595, y: 40, angle: Math.PI / 2, spread: 0.55, range: 470, kind: 'weak' },
+    ],
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'h', q: ['P'] }, { gate: 'z', q: ['P'] }] },
+      { id: 'T2', x: 392, y: 340, ops: [{ gate: 'h', q: ['A'] }, { gate: 'z', q: ['A'] }, { gate: 'h', q: ['B'] }, { gate: 'cz', q: ['A', 'B'] }] },
+    ],
+    door: { x: 900, y: 160, key: null, lock: [] },
+    shortest: 12,
+    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
+    goal: 'Raise P to reach the middle, then set A lowered and B raised to cross to the exit. Faulty lights hang over every platform: each superposition has only a few seconds.',
+    concept:
+      'Decoherence: a qubit cannot stay in superposition for ever, because its surroundings keep looking at it. The faulty lights here are slow, but every superposition you make has a deadline, even while you work at a terminal. CZ applies Z to one qubit when the other is 1.',
+    hints: [
+      'The faulty lights take a few seconds to collapse a superposition, but they always get there. Plan your gates, then apply them quickly.',
+      'At T1, H, Z, H on P is an X: three gates before the light catches P. (A lucky collapse to 1 also works.)',
+      'At T2, A must end lowered and B raised. B only flips through H, Z, H, and its Z can only come from CZ, which needs A in state 1.',
+      'The full recipe at T2: H, Z, H on A (now 1); H on B; CZ; H on B (now 1); H, Z, H on A (back to 0).',
+    ],
+    takeaway:
+      'Every superposition here had a deadline, set by the faulty lights. Real qubits have one too, called the decoherence time, and a quantum computer has to finish its gates inside it.',
+  },
 ];
 
 // A floor without `rooms` is a single room made of its own top-level fields.
@@ -1562,7 +1659,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2 }; // i: identity, which does nothing
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2, cz: 2 }; // i: identity, which does nothing
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -1627,11 +1724,22 @@ class Lab {
     return [name, qubits];
   }
 
-  // The gate itself, on the amplitudes. cx is [control, target].
+  // The gate itself, on the amplitudes. cx is [control, target]; cz is symmetric.
   _evolve(name, qubits) {
     if (name === 'i') return;
     const { re, im } = this;
     const size = 1 << this.n;
+    if (name === 'cz') {
+      // Z on one qubit when the other is 1: the |11> amplitudes change sign (it is symmetric).
+      const both = (1 << qubits[0]) | (1 << qubits[1]);
+      for (let i = 0; i < size; i += 1) {
+        if ((i & both) === both) {
+          re[i] = -re[i];
+          im[i] = -im[i];
+        }
+      }
+      return;
+    }
     const bit = 1 << qubits[qubits.length - 1];
     if (name === 'cx') {
       const ctrl = 1 << qubits[0];
@@ -2286,7 +2394,7 @@ function paintCanister(ctx, x, baseY, state) {
 // circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
 // (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
 // over the animation: in with a spring, hold, then out. `size` is the box width.
-const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf' };
+const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf', cz: '#ff8adf' };
 
 function gatePop(k, calm) {
   if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
@@ -3562,9 +3670,7 @@ function createRenderer(canvas) {
     const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: fx.tileQis.includes(part.qi) }));
     // A gate wholly on qubits in the canister view tile is drawn only there.
     if (at.every((a) => a.tile)) return;
-    const ctrl = at.find((a) => a.part.role === 'ctrl');
-    const targ = at.find((a) => a.part.role === 'targ');
-    if (ctrl && targ && ctrl.pos && targ.pos) paintGateLink(ctx, ctrl.pos, targ.pos, pop, 26);
+    if (at.length === 2 && at[0].pos && at[1].pos) paintGateLink(ctx, at[0].pos, at[1].pos, pop, 26); // a two-qubit gate's line
     for (const a of at) {
       if (!a.pos) continue;
       // The canister view tile shows a qubit's gate; on the player's back stays only a
@@ -4142,6 +4248,10 @@ function opSvg(op, x, yOf) {
   }
   if (op.kind === 'reset') return gateBox(x, y, KET[0], 'g-reset');
   const auto = op.kind === 'auto' ? ' g-auto' : '';
+  if (op.gate === 'cz') {
+    const ya = yOf(op.qubits[0]);
+    return `<g class="gate g-cx g-cz${auto}"><line x1="${x}" y1="${ya}" x2="${x}" y2="${y}"/><circle class="ctrl" cx="${x}" cy="${ya}" r="4.5"/><circle class="ctrl" cx="${x}" cy="${y}" r="4.5"/></g>`;
+  }
   if (op.gate === 'cx') {
     const yc = yOf(op.qubits[0]);
     return (
@@ -4160,6 +4270,7 @@ function opWords(op, labels) {
   if (op.kind === 'reset') return op.by === 'emergency' ? `Emergency light damped ${names[0]} to state 0` : `${names[0]} reset to state 0`;
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
+  if (op.gate === 'cz') return `${who}CZ on ${names[0]} and ${names[1]}`;
   return `${who}${op.gate.toUpperCase()} on ${names[0]}`;
 }
 
@@ -4459,9 +4570,7 @@ function createPanel(dom) {
     const pop = gatePop(gate.k, calm.matches);
     const size = 7.5 * zoom;
     const parts = gate.parts.filter((p) => middles[p.qi]);
-    const ctrl = parts.find((p) => p.role === 'ctrl');
-    const targ = parts.find((p) => p.role === 'targ');
-    if (ctrl && targ) paintGateLink(ctx, middles[ctrl.qi], middles[targ.qi], pop, size);
+    if (parts.length === 2) paintGateLink(ctx, middles[parts[0].qi], middles[parts[1].qi], pop, size);
     for (const part of parts) paintGate(ctx, middles[part.qi].x, middles[part.qi].y, part, pop, size);
   }
 
@@ -4653,6 +4762,7 @@ function createUI(dom, handlers) {
 
   function opLabel(op) {
     if (op.gate === 'cx') return `${op.q[0]} → ${op.q[1]}`;
+    if (op.gate === 'cz') return `${op.q[0]} · ${op.q[1]}`;
     return op.q.join(', ');
   }
 
@@ -4673,7 +4783,7 @@ function createUI(dom, handlers) {
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
         const locked = op.needsCanister && !carrying;
-        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : info.name;
+        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : op.gate === 'cz' ? 'phase if both are 1' : info.name;
         const on = op.gate === 'cx' ? `from ${op.q[0]} to ${op.q[1]}` : `on ${op.q.join(' and ')}`;
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
@@ -5298,9 +5408,12 @@ function startGame() {
           // A sideways platform keeps one height and moves between x0 and x1.
           const sideways = p.axis === 'x' ? { x: p.x0, y0: p.y, y1: p.y } : {};
           const built = { ...p, ...sideways, qi: G.qIndex[p.q], state: 0, p1: 0, flash: 0, exposure: 0, lightExposure: 0, lightKind: null, pending: false };
-          built.y = built.y0;
-          built.targetX = built.x;
-          built.targetY = built.y0;
+          // It starts where its starting state parks it (a qubit that starts as 1 does not glide over).
+          const start = slotRect(built, level.qubits[G.qIndex[p.q]].init === '1' ? 1 : 0);
+          built.x = start.x;
+          built.y = start.y;
+          built.targetX = start.x;
+          built.targetY = start.y;
           if (p.shuttle) Object.assign(built, { home: built.x, trip: null }); // trip: null | 'out' | 'there' | 'back'
           return built;
         }),
@@ -5501,7 +5614,7 @@ function startGame() {
   // Resolves at step 2, as the gate appears.
   const SPARK_SECONDS = 0.45;
   const GATE_SECONDS = 1;
-  const COLOR_OF = (gate) => (gate === 'cx' ? '#ff8adf' : '#5ee6ff');
+  const COLOR_OF = (gate) => (gate === 'cx' || gate === 'cz' ? '#ff8adf' : '#5ee6ff');
 
   function untilFx(fx, part, epoch) {
     return new Promise((resolve) => {
@@ -5515,7 +5628,7 @@ function startGame() {
     const from = center(screenRect(term));
     const target = qis[qis.length - 1];
     const aims = [target];
-    if (gate === 'cx' && G.canister && qis.includes(G.canister.qi) && G.canister.qi !== target) aims.push(G.canister.qi);
+    if (qis.length === 2 && G.canister && qis.includes(G.canister.qi) && G.canister.qi !== target) aims.push(G.canister.qi);
     let lead = null;
     for (const qi of aims) {
       const to = renderer.gateAnchor(G, qi);
@@ -5530,6 +5643,8 @@ function startGame() {
     const parts =
       gate === 'cx'
         ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
+        : gate === 'cz'
+        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'ctrl', gate }]
         : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
     const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
     G.fx.push(fx);
@@ -5621,7 +5736,7 @@ function startGame() {
     }
 
     const info = GATE_INFO[op.gate];
-    const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;
+    const what = op.gate === 'cx' ? `CNOT ${op.q[0]} to ${op.q[1]}` : op.gate === 'cz' ? `CZ on ${op.q[0]} and ${op.q[1]}` : `${info.symbol} on ${op.q[0]}`;
     let text = `${what}. ${stateSentence(res.state, target)}`;
     if (op.gate === 'z' && !nowDefinite) text = `${what}. The odds did not move, but the phase flipped. ${stateSentence(res.state, target)}`;
     if (op.gate === 'cx' && wasDefinite && nowDefinite && before.definite[target] === res.state.definite[target]) {
@@ -6594,10 +6709,8 @@ function startGame() {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
       for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
-      if (G.dev.instantResponse) {
-        movePlatforms(dt); // developer option: see each gate land at once
-        updateLights(dt);
-      }
+      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
+      updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
       updateTorch(dt);
       return;
     }

@@ -127,6 +127,7 @@ export function createUI(dom, handlers) {
 
   function opLabel(op) {
     if (op.gate === 'cx') return `${op.q[0]} → ${op.q[1]}`;
+    if (op.gate === 'cz') return `${op.q[0]} · ${op.q[1]}`;
     return op.q.join(', ');
   }
 
@@ -147,7 +148,7 @@ export function createUI(dom, handlers) {
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
         const locked = op.needsCanister && !carrying;
-        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : info.name;
+        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : op.gate === 'cz' ? 'phase if both are 1' : info.name;
         const on = op.gate === 'cx' ? `from ${op.q[0]} to ${op.q[1]}` : `on ${op.q.join(' and ')}`;
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +

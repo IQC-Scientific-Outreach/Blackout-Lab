@@ -63,6 +63,11 @@ export const GATE_INFO = {
     name: 'Controlled flip',
     text: 'Flips the target only when the control is in state 1. A control in superposition leaves the two entangled.',
   },
+  cz: {
+    symbol: 'CZ',
+    name: 'Controlled Z',
+    text: 'Applies Z to one qubit when the other is in state 1: a phase flip that only H makes visible. It works the same both ways round.',
+  },
   measure: {
     symbol: 'M',
     name: 'Measure',
@@ -504,6 +509,98 @@ export const BONUS_LEVELS = [
     ],
     takeaway:
       'The light in the middle was an eavesdropper. Looking at Q in transit collapsed it, and the far side\'s Z no longer combined with your H gates. With the channel shielded, the phase survived the trip.',
+  },
+  {
+    id: 'channel-emergency',
+    name: 'Emergency Channel',
+    tag: 'Bonus level 2',
+    gates: ['i', 'h', 'x', 'z'],
+    torchOff: true,
+    qubits: [
+      { id: 'Q', init: '0', role: 'platform' },
+      // The emergency light damps whatever is not certainly 0, so here the shield blocks
+      // the light in state 0, and starts in state 1, parked out of the light.
+      { id: 'S', init: '1', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 450 },
+    solids: [
+      { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 0, y: 270, w: 140, h: 14 },
+      { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+    ],
+    platforms: [
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1, shuttle: { to: 720, speed: 150, arrive: 'T2' } },
+      { q: 'S', axis: 'x', x0: 420, x1: 235, y: 230, w: 110, need: 0 },
+    ],
+    lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'emergency' }],
+    terminals: [
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'i', q: ['Q'] }, { gate: 'h', q: ['Q'] }, { gate: 'x', q: ['S'] }] },
+      { id: 'T2', x: 875, y: 450, auto: true, ops: [{ gate: 'z', q: ['Q'] }] },
+    ],
+    decor: [
+      { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
+      { type: 'sign', x: 846, y: 300, lines: ['BOB'] },
+    ],
+    door: { x: 60, y: 270, key: null, lock: [] },
+    shortest: 3,
+    bonus: {
+      sequences: [{ q: 'Q', gates: ['h', 'z', 'h'] }],
+      text: 'Built an X from H, Z, H with nothing seeing Q on the way',
+    },
+    goal: 'The same channel, but the backup light is an emergency one. Send platform Q across to the Z terminal and back so that it returns raised, then climb from it to the exit above.',
+    concept:
+      'An emergency light does not just look: it drains the qubit to its ground state, 0, whatever it was. That is amplitude damping, the way a real qubit loses its energy to its surroundings. An unshielded trip now always brings Q home lowered, so there is no getting lucky.',
+    hints: [
+      'Any gate on Q at T1 sends it across the room, where the terminal applies Z, and back again.',
+      'The red light damps Q to 0 on its way, even a Q that is certainly 1. X at T1 slides the shield S under the light. Keep your own flashlight off while Q is near you.',
+      'With the shield in place: H, wait for Q to come back, then H again. H, Z, H is an X, so Q returns raised.',
+    ],
+    takeaway:
+      'The emergency light was not an eavesdropper but a drain: it pulled Q down to 0 whatever it held. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',
+  },
+  {
+    id: 'decoherence',
+    name: 'Decoherence Time',
+    tag: 'Bonus level 3',
+    gates: ['h', 'z', 'cz'],
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 40, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 340, w: 110, h: 14 },
+      { kind: 'ground', x: 760, y: 160, w: 200, h: 380 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 505, y1: 395, need: 1 },
+      { q: 'A', x: 490, w: 80, y0: 340, y1: 220, need: 0 },
+      { q: 'B', x: 620, w: 80, y0: 430, y1: 250, need: 1 },
+    ],
+    lights: [
+      { x: 242, y: 70, angle: Math.PI / 2, spread: 0.34, range: 480, kind: 'weak' },
+      { x: 595, y: 40, angle: Math.PI / 2, spread: 0.55, range: 470, kind: 'weak' },
+    ],
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'h', q: ['P'] }, { gate: 'z', q: ['P'] }] },
+      { id: 'T2', x: 392, y: 340, ops: [{ gate: 'h', q: ['A'] }, { gate: 'z', q: ['A'] }, { gate: 'h', q: ['B'] }, { gate: 'cz', q: ['A', 'B'] }] },
+    ],
+    door: { x: 900, y: 160, key: null, lock: [] },
+    shortest: 12,
+    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
+    goal: 'Raise P to reach the middle, then set A lowered and B raised to cross to the exit. Faulty lights hang over every platform: each superposition has only a few seconds.',
+    concept:
+      'Decoherence: a qubit cannot stay in superposition for ever, because its surroundings keep looking at it. The faulty lights here are slow, but every superposition you make has a deadline, even while you work at a terminal. CZ applies Z to one qubit when the other is 1.',
+    hints: [
+      'The faulty lights take a few seconds to collapse a superposition, but they always get there. Plan your gates, then apply them quickly.',
+      'At T1, H, Z, H on P is an X: three gates before the light catches P. (A lucky collapse to 1 also works.)',
+      'At T2, A must end lowered and B raised. B only flips through H, Z, H, and its Z can only come from CZ, which needs A in state 1.',
+      'The full recipe at T2: H, Z, H on A (now 1); H on B; CZ; H on B (now 1); H, Z, H on A (back to 0).',
+    ],
+    takeaway:
+      'Every superposition here had a deadline, set by the faulty lights. Real qubits have one too, called the decoherence time, and a quantum computer has to finish its gates inside it.',
   },
 ];
 

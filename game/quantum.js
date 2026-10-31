@@ -24,7 +24,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { h: 1, x: 1, z: 1, cx: 2 };
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2 }; // i: identity, which does nothing
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -36,6 +36,7 @@ const MEASURED_BY = {
   machine: 'the machine measured',
   box: 'opening the box showed',
   touch: 'the player landed on',
+  light: 'the backup light observed',
 };
 
 function combinations(items, size) {
@@ -90,6 +91,7 @@ export class Lab {
 
   // The gate itself, on the amplitudes. cx is [control, target].
   _evolve(name, qubits) {
+    if (name === 'i') return;
     const { re, im } = this;
     const size = 1 << this.n;
     const bit = 1 << qubits[qubits.length - 1];
@@ -191,13 +193,15 @@ export class Lab {
   }
 
   // Return one qubit to |0> (measure it, then flip it back if it read 1).
-  reset(q) {
+  // `by` records what did it: '' for a lock clearing its lamps, 'emergency' for an
+  // emergency backup light (amplitude damping, all the way to |0>).
+  reset(q, by = '') {
     [q] = this._check([q]);
     const p1 = this.pOne(q);
     const outcome = p1 > EPS && p1 < 1 - EPS ? Number(this.random() < p1) : Number(p1 > 0.5);
     this._collapse(q, outcome);
     if (outcome) this._evolve('x', [q]);
-    this.meta.push({ kind: 'reset', gate: 'reset', qubits: [q] });
+    this.meta.push({ kind: 'reset', gate: 'reset', qubits: [q], by });
   }
 
   // -- read-outs --------------------------------------------------------
@@ -303,7 +307,11 @@ export class Lab {
   ops() {
     return this.meta
       .filter((m) => m.kind !== 'init')
-      .map((m) => (m.kind === 'measure' ? { kind: m.kind, gate: m.gate, qubits: m.qubits, result: m.result, by: m.by } : { kind: m.kind, gate: m.gate, qubits: m.qubits }));
+      .map((m) => {
+        if (m.kind === 'measure') return { kind: m.kind, gate: m.gate, qubits: m.qubits, result: m.result, by: m.by };
+        if (m.kind === 'reset') return { kind: m.kind, gate: m.gate, qubits: m.qubits, by: m.by };
+        return { kind: m.kind, gate: m.gate, qubits: m.qubits };
+      });
   }
 
   // The floor's circuit as Qiskit code a player can paste into a notebook and run.
@@ -318,9 +326,9 @@ export class Lab {
       const q = m.qubits;
       const label = this.labels[q[q.length - 1]];
       if (m.kind === 'measure') lines.push(`qc.measure(${q[0]}, ${q[0]})  # ${MEASURED_BY[m.by] || m.by} ${label}: read ${m.result}`);
-      else if (m.kind === 'reset') lines.push(`qc.reset(${q[0]})  # ${label} cleared to 0`);
+      else if (m.kind === 'reset') lines.push(`qc.reset(${q[0]})  # ${m.by === 'emergency' ? `emergency light: ${label} damped to 0` : `${label} cleared to 0`}`);
       else {
-        let call = `qc.${m.gate}(${q.join(', ')})`;
+        let call = `qc.${m.gate === 'i' ? 'id' : m.gate}(${q.join(', ')})`;
         if (m.kind === 'init') call += `  # ${label} starts in |${this.init[q[0]]}>`;
         else if (m.kind === 'auto') call += '  # done by the floor itself';
         lines.push(call);
@@ -409,9 +417,9 @@ export function createQuantum({ random = Math.random } = {}) {
         need().auto(ops);
         return { state: lab.snapshot() };
       }),
-    reset: (qubits) =>
+    reset: (qubits, by = '') =>
       reply(() => {
-        for (const q of qubits) need().reset(q);
+        for (const q of qubits) need().reset(q, by);
         return { state: lab.snapshot() };
       }),
   };

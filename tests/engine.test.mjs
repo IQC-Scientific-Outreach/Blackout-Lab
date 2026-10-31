@@ -279,3 +279,20 @@ test('auto gates re-prepare a key after a refused one', () => {
   assert.deepEqual(out.state.groups, [[0, 1]]);
   assert.equal(out.state.stats.gates, 0);
 });
+
+test('identity does nothing, and is listed as qc.id', () => {
+  const q = lab(['+']);
+  q.apply('i', [0]);
+  close(q.snapshot().p1[0], 0.5);
+  assert.equal(q.snapshot().bloch[0][0], 1);
+  assert.match(q.code(), /qc\.id\(0\)/);
+});
+
+test('an emergency light damps a qubit to 0, even a certain 1, and says so', () => {
+  const q = lab(['1', '+'], 3);
+  q.reset(0, 'emergency');
+  q.reset(1, 'emergency');
+  assert.deepEqual(q.snapshot().definite, [0, 0]);
+  assert.equal(q.snapshot().ops[0].by, 'emergency');
+  assert.match(q.code(), /emergency light: A damped to 0/);
+});

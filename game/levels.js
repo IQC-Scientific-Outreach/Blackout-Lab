@@ -10,25 +10,43 @@
 // A floor is one room, or several (`rooms`) joined by `portals`. A room has
 //   solids     ground blocks and fixed stands
 //   platforms  { q, x, w, y0, y1, need, half? }
-//   terminals  { id, x, y, ops, port?, sealed? }  op = { gate, q } with q = ids
+//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need }: state 0 parks it at
+//              x0, state 1 at x1, on one height (it can slide in and out of a light's path).
+//              shuttle: { to, speed, arrive }: any gate on it sends it across to x = to and
+//              back; on arrival the terminal named `arrive` (an `auto` one) applies its gates.
+//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q } with q = ids
+//              `auto: true` is out of the player's reach: it works by itself (see shuttle).
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
 //              Any op that touches the canister needs the canister in hand.
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
 //   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
+//   lights     backup lights: { x, y, angle, spread, range, kind }, a lamp shining a cone
+//              (angle and spread in radians). Like the flashlight, a light resting on a
+//              superposed platform measures it: 'normal' as fast as the flashlight, 'weak'
+//              (faulty, sparking) five times slower, and 'emergency' (red) damps it to 0,
+//              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
 //   bonus      an extra star: { sequences: [{ q, gates }], text } for applying one of those
 //              gate sequences to its qubit, or { seconds, text } for clearing the floor in time
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
+// `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
+// Bonus levels (BONUS_LEVELS, below) take the same fields; they are reached only from
+// "Skip to floor" and do not count towards the climb.
 
 export const WORLD = { w: 960, h: 540 };
 export const PLATFORM_H = 14;
 export const LIVES_PER_FLOOR = 3;
 
 export const GATE_INFO = {
+  i: {
+    symbol: 'I',
+    name: 'Identity',
+    text: 'Does nothing to the state. Applied to a shuttle platform, it just sends it on its way.',
+  },
   h: {
     symbol: 'H',
     name: 'Hadamard',
@@ -438,6 +456,56 @@ export const TERRACE = {
   concept: 'No qubits up here. Just the moon, a generator, and a building waiting for its lights.',
   takeaway: '',
 };
+
+// Bonus levels: only in "Skip to floor", after the climb's floors and the terrace.
+export const BONUS_LEVELS = [
+  {
+    id: 'channel',
+    name: 'Quantum Communication',
+    tag: 'Bonus level 1',
+    gates: ['i', 'h', 'x', 'z'],
+    torchOff: true,
+    qubits: [
+      { id: 'Q', init: '0', role: 'platform' },
+      { id: 'S', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 450 },
+    solids: [
+      { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 0, y: 270, w: 140, h: 14 },
+      { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+    ],
+    platforms: [
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1, shuttle: { to: 720, speed: 150, arrive: 'T2' } },
+      { q: 'S', axis: 'x', x0: 235, x1: 420, y: 230, w: 110, need: 1 },
+    ],
+    lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'normal' }],
+    terminals: [
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'i', q: ['Q'] }, { gate: 'h', q: ['Q'] }, { gate: 'x', q: ['S'] }] },
+      { id: 'T2', x: 875, y: 450, auto: true, ops: [{ gate: 'z', q: ['Q'] }] },
+    ],
+    decor: [
+      { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
+      { type: 'sign', x: 846, y: 300, lines: ['BOB'] },
+    ],
+    door: { x: 60, y: 270, key: null, lock: [] },
+    shortest: 3,
+    bonus: {
+      sequences: [{ q: 'Q', gates: ['h', 'z', 'h'] }],
+      text: 'Built an X from H, Z, H with nothing seeing Q on the way',
+    },
+    goal: 'Send platform Q across to the Z terminal and back so that it returns raised, then climb from it to the exit above.',
+    concept:
+      'Any light is a measurement, including the backup lights left on in the lab. A qubit sent across a lit channel arrives collapsed, which is how quantum key distribution notices an eavesdropper. H, then Z, then H adds up to an X, but only if nothing looks at the qubit in between.',
+    hints: [
+      'Any gate on Q at T1 sends it across the room. The terminal on the far side applies Z when it arrives, then Q comes back.',
+      'The backup light in the middle collapses Q on its way. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off while Q is near you.',
+      'With the shield in place: H, wait for Q to come back, then H again. H, Z, H is an X, so Q returns raised. Jump on, then up to the exit.',
+    ],
+    takeaway:
+      'The light in the middle was an eavesdropper. Looking at Q in transit collapsed it, and the far side\'s Z no longer combined with your H gates. With the channel shielded, the phase survived the trip.',
+  },
+];
 
 // A floor without `rooms` is a single room made of its own top-level fields.
 export function roomsOf(level) {

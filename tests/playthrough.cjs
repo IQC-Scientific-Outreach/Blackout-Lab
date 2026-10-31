@@ -259,7 +259,9 @@ async function main() {
   await page.evaluate(installBot);
   // In through "Skip to floor" this time; "Enter the building" is used after the ending.
   await page.click('#btn-floors');
-  const offered = await page.$$eval('#title-floors:not([hidden]) button', (els) => els.map((el) => el.textContent));
+  const offered = await page.$$eval('#title-floors:not([hidden]) button:not(.bonus)', (els) => els.map((el) => el.textContent));
+  const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus', (els) => els.map((el) => el.textContent));
+  if (!bonusOffered.length || !bonusOffered[0].startsWith('Bonus 1.')) throw new Error(`"Skip to floor" should list the bonus levels: ${JSON.stringify(bonusOffered)}`);
   if (offered.length !== 7 || offered[6] !== '7. Lights Out') throw new Error(`"Skip to floor" should list the seven floors: ${JSON.stringify(offered)}`);
   await page.click('#title-floors button[data-floor="0"]');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
@@ -658,7 +660,7 @@ async function main() {
     const expected = ['Professor: You restored power! Hurray!', 'Alice: Can we now test the cat teleportation protocol?', 'Cat: MEOW'];
     if (JSON.stringify(said) !== JSON.stringify(expected)) throw new Error(`unexpected lines: ${JSON.stringify(said)}`);
     const title = document.getElementById('win-h').textContent;
-    const floors = document.querySelectorAll('#win-floors button').length;
+    const floors = document.querySelectorAll('#win-floors button:not(.bonus)').length;
     if (title !== 'Thank you for playing.' || floors !== 7) throw new Error(`final screen: "${title}", ${floors} floor buttons`);
     return `ending played: ${said.join(' / ')}; then "${title}" with ${document.getElementById('win-stars').textContent}`;
   });
@@ -730,6 +732,52 @@ async function main() {
   await page.click('#btn-retry');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0 && window.blackoutLab.state.lives === 3);
   report.push('out of lives on floor 3 restarted the climb from floor 1 with three lives');
+
+  // Bonus level 1, Quantum Communication: a shuttle, a backup light, a sideways shield.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', { label: 'Bonus 1. Quantum Communication' });
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel');
+  await step('bonus level 1', async () => {
+    const g = bot.G();
+    const Q = bot.platform('Q');
+    const S = bot.platform('S');
+    if (g.torch.on) throw new Error('the flashlight should start switched off here');
+    if (document.getElementById('hud-floor').textContent !== 'Bonus level 1') throw new Error('the status bar should say Bonus level 1');
+    const home = () => bot.until(() => Q.trip === null && !Q.pending, 15000, 'Q to come home');
+    // Unshielded: the backup light measures Q on its way, before the far terminal's Z.
+    await bot.terminal('T1', [2]);
+    await bot.until(() => Q.trip === 'out', 2000, 'Q to set off');
+    await home();
+    const first = g.q.ops.map((op) => `${op.gate}${op.by ? `:${op.by}` : ''}`).join(' ');
+    if (first !== 'h measure:light z') throw new Error(`unshielded, the light should measure Q before the Z: ${first}`);
+    // Shielded: X slides S under the light, then H, the trip's Z, and H again make an X.
+    // (Unshielded, the light may have left Q raised by luck; carry on until the X is built.)
+    await bot.terminal('T1', [3]);
+    await bot.until(() => S.state === 1 && S.x === S.x1, 3000, 'the shield to slide in');
+    let trips = 0;
+    while (!(Q.state === 1 && g.bonusDone) && trips < 8) {
+      const before = g.q.ops.length;
+      await bot.terminal('T1', [2]);
+      await home();
+      trips += 1;
+      if (g.q.ops.slice(before).some((op) => op.by === 'light')) throw new Error('the shielded light still measured Q');
+    }
+    if (Q.state !== 1 || !g.bonusDone) throw new Error('H, Z, H should bring Q home raised');
+    await bot.hop(bot.slab('Q'));
+    await bot.hop(bot.solid(1));
+    await bot.exit();
+    const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
+    if (document.getElementById('complete-eyebrow').textContent !== 'Bonus level 1 cleared' || document.getElementById('btn-next').textContent !== 'Back to title') {
+      throw new Error('a bonus level should end with its own cleared screen');
+    }
+    return `bonus level 1: unshielded the light measured Q (${first}); shielded, ${trips} trips brought Q home raised; stars ${stars.join(', ')}`;
+  });
+  await shot('15b-bonus-cleared');
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
+  await page.click('#btn-start');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
 
   // The Main menu button, top right, goes back to the title from anywhere in a floor.
   if (!(await page.isDisabled('#btn-menu'))) {

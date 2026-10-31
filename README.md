@@ -77,6 +77,21 @@ The last exit leads up to the terrace. There are no qubits there: crank the gene
 
 Exit locks are made of qubit lamps, each labelled with the qubit behind it; those qubits are shown in yellow in the rack. A lock is read by flashlight or by pressing E beside it (E only on floor 6), and opens when the lamps match the key shown above them. A wrong key clears the lamps; on floor 6 it also uses up the teleported key, and a fresh one is prepared.
 
+## Bonus levels
+
+Bonus levels are reached only from "Skip to floor" (on the title screen and in the pause menu), under their own heading. They are not part of the climb: finishing one leads to the next bonus level or back to the title, running out of lives restarts it, and its stars do not count towards the ending.
+
+| Bonus level | What happens | What it teaches |
+| --- | --- | --- |
+| 1 Quantum Communication | Any gate on platform Q (I or H, at T1) sends it across the room to T2, which applies Z, and back. A backup light halfway collapses it on the way unless the shield S is slid under the light (X at T1). Only a raised Q reaches the exit, and the flashlight starts switched off. | Any light is a measurement, the way quantum key distribution spots an eavesdropper. H, Z, H makes an X only if nothing looks in between. |
+
+They bring new pieces, which any floor can use:
+
+- **Backup lights** shine a fixed cone. Solids and certain platforms cast shadows, so the lit area is traced around them. Like the flashlight, a light resting on a superposed platform measures it. A **normal** light is as quick as the flashlight; a **weak** (faulty) one, sparking at its lamp, takes five times as long; a red **emergency** light damps the qubit all the way to 0 (amplitude damping) in the flashlight's time, even from a certain 1. They stand in for decoherence: the environment watching your qubits.
+- **Shuttle platforms** travel across the room and back whenever a gate is applied to them; a terminal at the far end can apply its own gates on arrival.
+- **Sideways platforms** keep one height and slide between two positions for 0 and 1, to open a way through or to block a light.
+- **The I (identity) gate** does nothing to the state; on a shuttle it just sends it on its way. It is listed as `qc.id()` in the Qiskit code.
+
 ## Where the quantum computing is
 
 All quantum behaviour is computed in the browser by a small exact simulator, `game/quantum.js`. It models **ideal** quantum mechanics: no device parameters, no noise.
@@ -102,7 +117,7 @@ tools/build.mjs           generates dist/blackout-lab.html from the files above
 tests/                    engine and level-data tests, browser playthrough bot
 ```
 
-**Adding a floor** needs no code: append an object to `LEVELS` in `game/levels.js` with its qubits (`platform`, `canister`, `sealed`, `box` or `door`), platform positions for state 0 and 1, the gates each terminal or port offers, the exit key, and the hint texts. The comment at the top of that file lists every field. Characters and their lines go in `game/story.js`. Then run `npm test` (which also checks the new floor's data) and `npm run build` to refresh the single-file version.
+**Adding a floor** (or a bonus level, in `BONUS_LEVELS`) needs no code: append an object to `LEVELS` in `game/levels.js` with its qubits (`platform`, `canister`, `sealed`, `box` or `door`), platform positions for state 0 and 1, the gates each terminal or port offers, the exit key, and the hint texts. The comment at the top of that file lists every field. Characters and their lines go in `game/story.js`. Then run `npm test` (which also checks the new floor's data) and `npm run build` to refresh the single-file version.
 
 **The single file** is generated, not written by hand. `tools/build.mjs` places `main.css` in a `<style>` block and every JavaScript file, in dependency order, in one `<script>`, each in its own scope under a banner naming its source file, with nothing minified. It stays readable, and a quick fix can be made in it directly, but edits there are lost at the next build, so make lasting changes in the source files.
 

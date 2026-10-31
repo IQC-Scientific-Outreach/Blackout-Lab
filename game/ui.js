@@ -62,12 +62,16 @@ export function createUI(dom, handlers) {
 
   // While a menu screen shows (any but the title, whose About links stay in reach), the rest
   // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
-  // The live region that announces events is left alone.
+  // Left alone: the live region that announces events, and the page's heading.
+  function shield(el, on) {
+    if (el.hasAttribute('aria-live') || el.matches('h1')) return;
+    if (el.querySelector('h1')) for (const child of el.children) shield(child, on);
+    else el.inert = on;
+  }
+
   function setModal(on) {
     for (let node = dom.overlay; node && node !== dom.lab; node = node.parentElement) {
-      for (const other of node.parentElement.children) {
-        if (other !== node && !other.hasAttribute('aria-live')) other.inert = on;
-      }
+      for (const other of node.parentElement.children) if (other !== node) shield(other, on);
     }
   }
 
@@ -191,15 +195,16 @@ export function createUI(dom, handlers) {
     }
   }
 
-  function showComplete({ name, index, total, stars, of, earned, takeaway, stats, last }) {
-    dom.completeEyebrow.textContent = `Floor ${index + 1} of ${total} cleared`;
+  // `bonus`: { tag, more } for a bonus level (more: another bonus level follows), else null.
+  function showComplete({ name, index, total, stars, of, earned, takeaway, stats, last, bonus }) {
+    dom.completeEyebrow.textContent = bonus ? `${bonus.tag} cleared` : `Floor ${index + 1} of ${total} cleared`;
     dom.completeH.textContent = name;
     dom.completeStars.innerHTML = starsHtml(stars, of);
     dom.completeStars.setAttribute('aria-label', `${stars} of ${of} stars`);
     dom.completeStarList.innerHTML = earned.map((e) => `<li class="${e.got ? '' : 'missed'}">${esc(e.text)}</li>`).join('');
     dom.completeTakeaway.textContent = takeaway;
     dom.completeStats.textContent = stats;
-    dom.btnNext.textContent = last ? 'Up to the terrace' : 'Next floor';
+    dom.btnNext.textContent = bonus ? (bonus.more ? 'Next bonus level' : 'Back to title') : last ? 'Up to the terrace' : 'Next floor';
     showScreen('complete');
   }
 
@@ -348,11 +353,19 @@ export function createUI(dom, handlers) {
       dom.optLives.checked = lives;
       dom.optFloor.value = String(floor);
     },
-    setFloors(names, ending) {
-      dom.optFloor.innerHTML = [...names, ending].map((name, i) => `<option value="${i}">${esc(name)}</option>`).join('');
-      const buttons = names.map((name, i) => `<button type="button" class="key-btn" data-floor="${i}">${esc(name)}</button>`).join('');
-      dom.winFloors.innerHTML = buttons;
-      dom.titleFloors.innerHTML = buttons;
+    // names: the climb's floors; ending: the terrace; bonus: [{ name, index }], reached only from here.
+    setFloors(names, ending, bonus = []) {
+      const option = (name, i) => `<option value="${i}">${esc(name)}</option>`;
+      dom.optFloor.innerHTML =
+        [...names, ending].map(option).join('') +
+        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map((b) => option(b.name, b.index)).join('')}</optgroup>` : '');
+      const button = (name, i, cls) => `<button type="button" class="key-btn${cls}" data-floor="${i}">${esc(name)}</button>`;
+      const buttons = names.map((name, i) => button(name, i, '')).join('');
+      const extra = bonus.length
+        ? `<p class="bonus-head">Bonus levels</p>${bonus.map((b) => button(b.name, b.index, ' bonus')).join('')}`
+        : '';
+      dom.winFloors.innerHTML = buttons + extra;
+      dom.titleFloors.innerHTML = buttons + extra;
     },
     setNote(text) {
       dom.note.hidden = !text;

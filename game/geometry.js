@@ -6,9 +6,89 @@ import { PLATFORM_H } from './levels.js';
 export const TORCH = { range: 330, half: 0.33, dwell: 0.45 };
 export const PLAYER = { w: 18, h: 32 };
 
-// Rectangle of a platform parked in state 0 (lowered) or 1 (raised).
+// Rectangle of a platform parked in state 0 or 1: lowered or raised, or for a
+// sideways platform (axis 'x'), at x0 or x1 on one height.
 export function slotRect(p, state) {
+  if (p.axis === 'x') return { x: state ? p.x1 : p.x0, y: p.y, w: p.w, h: PLATFORM_H };
   return { x: p.x, y: state ? p.y1 : p.y0, w: p.w, h: PLATFORM_H };
+}
+
+// The middle of a platform's state: halfway between its two slots.
+export function slotMid(p) {
+  const a = slotRect(p, 0);
+  const b = slotRect(p, 1);
+  return { x: (a.x + b.x + p.w) / 2, y: (a.y + b.y + PLATFORM_H) / 2 };
+}
+
+// -- backup lights ----------------------------------------------------------------
+//
+// A backup light is a lamp that shines a cone: { x, y, angle, spread, range, kind }
+// (angle points the cone, spread is its half-width, both in radians). Solid things
+// cast shadows, so its lit area is traced ray by ray, each ray stopping at the first
+// rectangle it meets. The result is a polygon: the lamp, then the ends of the rays.
+// The same polygon is drawn and used to decide what the light sees.
+
+// How long a light must rest on a superposed platform to measure it, in seconds.
+// 'weak' (faulty) lights take five times as long as the flashlight; 'emergency'
+// lights damp the qubit to 0 in the flashlight's time.
+export const LIGHT_KINDS = {
+  normal: { dwell: TORCH.dwell },
+  weak: { dwell: TORCH.dwell * 5 },
+  emergency: { dwell: TORCH.dwell },
+};
+
+const RAYS = 72;
+
+// Where a ray from (ox, oy) heading (dx, dy) first meets rectangle r, as a distance, or Infinity.
+function rayHit(ox, oy, dx, dy, r) {
+  let near = -Infinity;
+  let far = Infinity;
+  for (const [o, d, lo, hi] of [
+    [ox, dx, r.x, r.x + r.w],
+    [oy, dy, r.y, r.y + r.h],
+  ]) {
+    if (Math.abs(d) < 1e-12) {
+      if (o < lo || o > hi) return Infinity;
+    } else {
+      let t1 = (lo - o) / d;
+      let t2 = (hi - o) / d;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      near = Math.max(near, t1);
+      far = Math.min(far, t2);
+    }
+  }
+  return near <= far && far > 0 ? Math.max(near, 0) : Infinity;
+}
+
+export function lightPolygon(light, blockers) {
+  const pts = [{ x: light.x, y: light.y }];
+  for (let i = 0; i <= RAYS; i += 1) {
+    const a = light.angle - light.spread + (2 * light.spread * i) / RAYS;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    let reach = light.range;
+    for (const r of blockers) reach = Math.min(reach, rayHit(light.x, light.y, dx, dy, r));
+    pts.push({ x: light.x + dx * reach, y: light.y + dy * reach });
+  }
+  return pts;
+}
+
+export function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+// Whether a light polygon reaches any part of a rectangle (its corners, edge middles and centre).
+export function rectInLight(r, poly) {
+  const xs = [r.x + 1, r.x + r.w / 2, r.x + r.w - 1];
+  const ys = [r.y + 1, r.y + r.h / 2, r.y + r.h - 1];
+  for (const x of xs) for (const y of ys) if (pointInPolygon({ x, y }, poly)) return true;
+  return false;
 }
 
 export function doorRect(door) {

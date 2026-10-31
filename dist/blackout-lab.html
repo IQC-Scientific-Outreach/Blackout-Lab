@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-CSGiS2XDRvukFdVffkBWq/xIogjAlIurUG3lUUoDzvY='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-nuAoLL5VXUFxUvZJNipc2lZHtQlHkQuDw5wBhCr/t5I='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -162,6 +162,7 @@ kbd {
 .replay { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
 .replay-h { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; }
 .replay-floors { display: flex; flex-wrap: wrap; gap: 6px; }
+.bonus-head { flex-basis: 100%; margin: 4px 0 0; font: 700 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 
 .options { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; margin: 0; }
 .options legend { font-family: var(--mono); font-size: 11px; color: var(--dim); padding: 0 6px; text-transform: uppercase; letter-spacing: 0.1em; }
@@ -660,25 +661,43 @@ const module_game_levels = (() => {
 // A floor is one room, or several (`rooms`) joined by `portals`. A room has
 //   solids     ground blocks and fixed stands
 //   platforms  { q, x, w, y0, y1, need, half? }
-//   terminals  { id, x, y, ops, port?, sealed? }  op = { gate, q } with q = ids
+//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need }: state 0 parks it at
+//              x0, state 1 at x1, on one height (it can slide in and out of a light's path).
+//              shuttle: { to, speed, arrive }: any gate on it sends it across to x = to and
+//              back; on arrival the terminal named `arrive` (an `auto` one) applies its gates.
+//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q } with q = ids
+//              `auto: true` is out of the player's reach: it works by itself (see shuttle).
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
 //              Any op that touches the canister needs the canister in hand.
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
 //   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
+//   lights     backup lights: { x, y, angle, spread, range, kind }, a lamp shining a cone
+//              (angle and spread in radians). Like the flashlight, a light resting on a
+//              superposed platform measures it: 'normal' as fast as the flashlight, 'weak'
+//              (faulty, sparking) five times slower, and 'emergency' (red) damps it to 0,
+//              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
 //   bonus      an extra star: { sequences: [{ q, gates }], text } for applying one of those
 //              gate sequences to its qubit, or { seconds, text } for clearing the floor in time
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
+// `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
+// Bonus levels (BONUS_LEVELS, below) take the same fields; they are reached only from
+// "Skip to floor" and do not count towards the climb.
 
 const WORLD = { w: 960, h: 540 };
 const PLATFORM_H = 14;
 const LIVES_PER_FLOOR = 3;
 
 const GATE_INFO = {
+  i: {
+    symbol: 'I',
+    name: 'Identity',
+    text: 'Does nothing to the state. Applied to a shuttle platform, it just sends it on its way.',
+  },
   h: {
     symbol: 'H',
     name: 'Hadamard',
@@ -1089,6 +1108,56 @@ const TERRACE = {
   takeaway: '',
 };
 
+// Bonus levels: only in "Skip to floor", after the climb's floors and the terrace.
+const BONUS_LEVELS = [
+  {
+    id: 'channel',
+    name: 'Quantum Communication',
+    tag: 'Bonus level 1',
+    gates: ['i', 'h', 'x', 'z'],
+    torchOff: true,
+    qubits: [
+      { id: 'Q', init: '0', role: 'platform' },
+      { id: 'S', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 450 },
+    solids: [
+      { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 0, y: 270, w: 140, h: 14 },
+      { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+    ],
+    platforms: [
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1, shuttle: { to: 720, speed: 150, arrive: 'T2' } },
+      { q: 'S', axis: 'x', x0: 235, x1: 420, y: 230, w: 110, need: 1 },
+    ],
+    lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'normal' }],
+    terminals: [
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'i', q: ['Q'] }, { gate: 'h', q: ['Q'] }, { gate: 'x', q: ['S'] }] },
+      { id: 'T2', x: 875, y: 450, auto: true, ops: [{ gate: 'z', q: ['Q'] }] },
+    ],
+    decor: [
+      { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
+      { type: 'sign', x: 846, y: 300, lines: ['BOB'] },
+    ],
+    door: { x: 60, y: 270, key: null, lock: [] },
+    shortest: 3,
+    bonus: {
+      sequences: [{ q: 'Q', gates: ['h', 'z', 'h'] }],
+      text: 'Built an X from H, Z, H with nothing seeing Q on the way',
+    },
+    goal: 'Send platform Q across to the Z terminal and back so that it returns raised, then climb from it to the exit above.',
+    concept:
+      'Any light is a measurement, including the backup lights left on in the lab. A qubit sent across a lit channel arrives collapsed, which is how quantum key distribution notices an eavesdropper. H, then Z, then H adds up to an X, but only if nothing looks at the qubit in between.',
+    hints: [
+      'Any gate on Q at T1 sends it across the room. The terminal on the far side applies Z when it arrives, then Q comes back.',
+      'The backup light in the middle collapses Q on its way. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off while Q is near you.',
+      'With the shield in place: H, wait for Q to come back, then H again. H, Z, H is an X, so Q returns raised. Jump on, then up to the exit.',
+    ],
+    takeaway:
+      'The light in the middle was an eavesdropper. Looking at Q in transit collapsed it, and the far side\'s Z no longer combined with your H gates. With the channel shielded, the phase survived the trip.',
+  },
+];
+
 // A floor without `rooms` is a single room made of its own top-level fields.
 function roomsOf(level) {
   return level.rooms || [{ id: 'main', name: level.name, ...level }];
@@ -1108,7 +1177,7 @@ const ROLE_WORDS = {
   box: ['alive', 'dead'],
 };
 
-return { WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, LEVELS, TERRACE, roomsOf, ROLE_NAME, ROLE_WORDS };
+return { WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, LEVELS, TERRACE, BONUS_LEVELS, roomsOf, ROLE_NAME, ROLE_WORDS };
 })();
 
 // ============================================================================
@@ -1124,9 +1193,89 @@ const { PLATFORM_H } = module_game_levels;
 const TORCH = { range: 330, half: 0.33, dwell: 0.45 };
 const PLAYER = { w: 18, h: 32 };
 
-// Rectangle of a platform parked in state 0 (lowered) or 1 (raised).
+// Rectangle of a platform parked in state 0 or 1: lowered or raised, or for a
+// sideways platform (axis 'x'), at x0 or x1 on one height.
 function slotRect(p, state) {
+  if (p.axis === 'x') return { x: state ? p.x1 : p.x0, y: p.y, w: p.w, h: PLATFORM_H };
   return { x: p.x, y: state ? p.y1 : p.y0, w: p.w, h: PLATFORM_H };
+}
+
+// The middle of a platform's state: halfway between its two slots.
+function slotMid(p) {
+  const a = slotRect(p, 0);
+  const b = slotRect(p, 1);
+  return { x: (a.x + b.x + p.w) / 2, y: (a.y + b.y + PLATFORM_H) / 2 };
+}
+
+// -- backup lights ----------------------------------------------------------------
+//
+// A backup light is a lamp that shines a cone: { x, y, angle, spread, range, kind }
+// (angle points the cone, spread is its half-width, both in radians). Solid things
+// cast shadows, so its lit area is traced ray by ray, each ray stopping at the first
+// rectangle it meets. The result is a polygon: the lamp, then the ends of the rays.
+// The same polygon is drawn and used to decide what the light sees.
+
+// How long a light must rest on a superposed platform to measure it, in seconds.
+// 'weak' (faulty) lights take five times as long as the flashlight; 'emergency'
+// lights damp the qubit to 0 in the flashlight's time.
+const LIGHT_KINDS = {
+  normal: { dwell: TORCH.dwell },
+  weak: { dwell: TORCH.dwell * 5 },
+  emergency: { dwell: TORCH.dwell },
+};
+
+const RAYS = 72;
+
+// Where a ray from (ox, oy) heading (dx, dy) first meets rectangle r, as a distance, or Infinity.
+function rayHit(ox, oy, dx, dy, r) {
+  let near = -Infinity;
+  let far = Infinity;
+  for (const [o, d, lo, hi] of [
+    [ox, dx, r.x, r.x + r.w],
+    [oy, dy, r.y, r.y + r.h],
+  ]) {
+    if (Math.abs(d) < 1e-12) {
+      if (o < lo || o > hi) return Infinity;
+    } else {
+      let t1 = (lo - o) / d;
+      let t2 = (hi - o) / d;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      near = Math.max(near, t1);
+      far = Math.min(far, t2);
+    }
+  }
+  return near <= far && far > 0 ? Math.max(near, 0) : Infinity;
+}
+
+function lightPolygon(light, blockers) {
+  const pts = [{ x: light.x, y: light.y }];
+  for (let i = 0; i <= RAYS; i += 1) {
+    const a = light.angle - light.spread + (2 * light.spread * i) / RAYS;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    let reach = light.range;
+    for (const r of blockers) reach = Math.min(reach, rayHit(light.x, light.y, dx, dy, r));
+    pts.push({ x: light.x + dx * reach, y: light.y + dy * reach });
+  }
+  return pts;
+}
+
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+// Whether a light polygon reaches any part of a rectangle (its corners, edge middles and centre).
+function rectInLight(r, poly) {
+  const xs = [r.x + 1, r.x + r.w / 2, r.x + r.w - 1];
+  const ys = [r.y + 1, r.y + r.h / 2, r.y + r.h - 1];
+  for (const x of xs) for (const y of ys) if (pointInPolygon({ x, y }, poly)) return true;
+  return false;
 }
 
 function doorRect(door) {
@@ -1208,7 +1357,7 @@ function rectLit(hand, angle, r) {
   return hits >= 2;
 }
 
-return { TORCH, PLAYER, slotRect, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, pointLit, rectLit };
+return { TORCH, PLAYER, slotRect, slotMid, LIGHT_KINDS, lightPolygon, pointInPolygon, rectInLight, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, pointLit, rectLit };
 })();
 
 // ============================================================================
@@ -1413,7 +1562,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { h: 1, x: 1, z: 1, cx: 2 };
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2 }; // i: identity, which does nothing
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -1425,6 +1574,7 @@ const MEASURED_BY = {
   machine: 'the machine measured',
   box: 'opening the box showed',
   touch: 'the player landed on',
+  light: 'the backup light observed',
 };
 
 function combinations(items, size) {
@@ -1479,6 +1629,7 @@ class Lab {
 
   // The gate itself, on the amplitudes. cx is [control, target].
   _evolve(name, qubits) {
+    if (name === 'i') return;
     const { re, im } = this;
     const size = 1 << this.n;
     const bit = 1 << qubits[qubits.length - 1];
@@ -1580,13 +1731,15 @@ class Lab {
   }
 
   // Return one qubit to |0> (measure it, then flip it back if it read 1).
-  reset(q) {
+  // `by` records what did it: '' for a lock clearing its lamps, 'emergency' for an
+  // emergency backup light (amplitude damping, all the way to |0>).
+  reset(q, by = '') {
     [q] = this._check([q]);
     const p1 = this.pOne(q);
     const outcome = p1 > EPS && p1 < 1 - EPS ? Number(this.random() < p1) : Number(p1 > 0.5);
     this._collapse(q, outcome);
     if (outcome) this._evolve('x', [q]);
-    this.meta.push({ kind: 'reset', gate: 'reset', qubits: [q] });
+    this.meta.push({ kind: 'reset', gate: 'reset', qubits: [q], by });
   }
 
   // -- read-outs --------------------------------------------------------
@@ -1692,7 +1845,11 @@ class Lab {
   ops() {
     return this.meta
       .filter((m) => m.kind !== 'init')
-      .map((m) => (m.kind === 'measure' ? { kind: m.kind, gate: m.gate, qubits: m.qubits, result: m.result, by: m.by } : { kind: m.kind, gate: m.gate, qubits: m.qubits }));
+      .map((m) => {
+        if (m.kind === 'measure') return { kind: m.kind, gate: m.gate, qubits: m.qubits, result: m.result, by: m.by };
+        if (m.kind === 'reset') return { kind: m.kind, gate: m.gate, qubits: m.qubits, by: m.by };
+        return { kind: m.kind, gate: m.gate, qubits: m.qubits };
+      });
   }
 
   // The floor's circuit as Qiskit code a player can paste into a notebook and run.
@@ -1707,9 +1864,9 @@ class Lab {
       const q = m.qubits;
       const label = this.labels[q[q.length - 1]];
       if (m.kind === 'measure') lines.push(`qc.measure(${q[0]}, ${q[0]})  # ${MEASURED_BY[m.by] || m.by} ${label}: read ${m.result}`);
-      else if (m.kind === 'reset') lines.push(`qc.reset(${q[0]})  # ${label} cleared to 0`);
+      else if (m.kind === 'reset') lines.push(`qc.reset(${q[0]})  # ${m.by === 'emergency' ? `emergency light: ${label} damped to 0` : `${label} cleared to 0`}`);
       else {
-        let call = `qc.${m.gate}(${q.join(', ')})`;
+        let call = `qc.${m.gate === 'i' ? 'id' : m.gate}(${q.join(', ')})`;
         if (m.kind === 'init') call += `  # ${label} starts in |${this.init[q[0]]}>`;
         else if (m.kind === 'auto') call += '  # done by the floor itself';
         lines.push(call);
@@ -1798,9 +1955,9 @@ function createQuantum({ random = Math.random } = {}) {
         need().auto(ops);
         return { state: lab.snapshot() };
       }),
-    reset: (qubits) =>
+    reset: (qubits, by = '') =>
       reply(() => {
-        for (const q of qubits) need().reset(q);
+        for (const q of qubits) need().reset(q, by);
         return { state: lab.snapshot() };
       }),
   };
@@ -2034,7 +2191,7 @@ return { createAudio };
 // ============================================================================
 const module_game_render = (() => {
 const { WORLD, PLATFORM_H } = module_game_levels;
-const { TORCH, PLAYER, slotRect, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf } = module_game_geometry;
+const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS } = module_game_geometry;
 
 // Canvas renderer. The room is drawn fully lit, then covered by a darkness
 // mask with holes cut for the flashlight beam and for anything that glows. Things
@@ -2361,10 +2518,11 @@ function createRenderer(canvas) {
     ctx.font = `800 150px ${SIGN_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(String(G.levelIndex + 1).padStart(2, '0'), 250, 200);
+    const bonus = /^Bonus level (\d+)/.exec(G.level.tag || ''); // a bonus level is painted B1, B2, ...
+    ctx.fillText(bonus ? `B${bonus[1]}` : String(G.levelIndex + 1).padStart(2, '0'), 250, 200);
     ctx.font = `700 22px ${SIGN_FONT}`;
     ctx.fillStyle = 'rgba(219,231,245,0.24)';
-    ctx.fillText('FLOOR', 254, 78);
+    ctx.fillText(bonus ? 'BONUS' : 'FLOOR', 254, 78);
     ctx.restore();
 
     ctx.fillStyle = '#22314c';
@@ -2468,6 +2626,25 @@ function createRenderer(canvas) {
   function drawRails(p) {
     ctx.strokeStyle = '#2a3a58';
     ctx.lineWidth = 3;
+    if (p.axis === 'x') {
+      // A sideways platform runs along a track under both of its slots.
+      const y = p.y + PLATFORM_H + 4;
+      ctx.beginPath();
+      ctx.moveTo(Math.min(p.x0, p.x1) - 8, y);
+      ctx.lineTo(Math.max(p.x0, p.x1) + p.w + 8, y);
+      ctx.stroke();
+      ctx.fillStyle = '#3a4d72';
+      for (const x of [p.x0, p.x1]) ctx.fillRect(x + p.w / 2 - 5, y - 1, 10, 3);
+      return;
+    }
+    if (p.shuttle) {
+      // A shuttle's lift rides a track across the room, low under its lowered slot.
+      const y = p.y0 + PLATFORM_H + 14;
+      ctx.beginPath();
+      ctx.moveTo(Math.min(p.home, p.shuttle.to) - 6, y);
+      ctx.lineTo(Math.max(p.home, p.shuttle.to) + p.w + 6, y);
+      ctx.stroke();
+    }
     ctx.beginPath();
     for (const x of [p.x + 9, p.x + p.w - 9]) {
       ctx.moveTo(x, p.y1 - 14);
@@ -2904,6 +3081,19 @@ function createRenderer(canvas) {
       const c = center(doorRect(room.door));
       hole(c.x, c.y - 26, room.door.open ? 96 : 64, room.door.open ? 0.85 : 0.5);
     }
+    // Backup lights cut their traced cones (shadows included) out of the dark.
+    for (const light of room.lights || []) {
+      if (!light.poly) continue;
+      const g = mctx.createRadialGradient(light.x, light.y, 6, light.x, light.y, light.range);
+      const strength = light.kind === 'weak' ? 0.62 : 0.92;
+      g.addColorStop(0, `rgba(0,0,0,${strength})`);
+      g.addColorStop(0.7, `rgba(0,0,0,${strength * 0.75})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      mctx.fillStyle = g;
+      polyPath(mctx, light.poly);
+      mctx.fill();
+      hole(light.x, light.y, 26, 0.7); // the lamp itself
+    }
 
     if (G.torch.active) {
       const hand = handOf(p);
@@ -2953,27 +3143,36 @@ function createRenderer(canvas) {
     tag(`${state} · ${percent}%`, r.x + r.w / 2, r.y - 12, C.qubit);
   }
 
+  // How far a light has got towards measuring a platform: a ring filling up.
+  function exposureRing(x, y, part, color) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, part));
+    ctx.stroke();
+  }
+
+  const LIGHT_RING = { normal: '#ffe9b0', weak: '#ffe9b0', emergency: '#ff6b6b' };
+
   function drawPlatformGlow(G, p) {
+    const lightPart = p.lightKind ? p.lightExposure / LIGHT_KINDS[p.lightKind].dwell : 0;
     if (p.state === null) {
       const p1 = p.p1;
       const one = Math.round(p1 * 100);
-      drawGhost(G, p, 0, 1 - p1, p.exposure > 0, 100 - one);
-      drawGhost(G, p, 1, p1, p.exposure > 0, one);
-      const mid = { x: p.x + p.w / 2, y: (p.y0 + p.y1 + PLATFORM_H) / 2 };
-      if (p.exposure > 0) {
-        ctx.strokeStyle = 'rgba(255,217,138,0.25)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(mid.x, mid.y, 13, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = C.torch;
-        ctx.beginPath();
-        ctx.arc(mid.x, mid.y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, p.exposure / TORCH.dwell));
-        ctx.stroke();
-      }
-      tag(p.q, mid.x, mid.y + (p.exposure > 0 ? 26 : 0), C.qubit);
+      const seen = p.exposure > 0 || lightPart > 0;
+      drawGhost(G, p, 0, 1 - p1, seen, 100 - one);
+      drawGhost(G, p, 1, p1, seen, one);
+      const mid = slotMid(p);
+      if (p.exposure > 0) exposureRing(mid.x, mid.y, p.exposure / TORCH.dwell, C.torch);
+      else if (lightPart > 0) exposureRing(mid.x, mid.y, lightPart, LIGHT_RING[p.lightKind]);
+      tag(p.q, mid.x - (seen ? 30 : 0), mid.y, C.qubit); // beside the ring while a light works on it
       return;
     }
+    if (lightPart > 0) exposureRing(p.x + p.w / 2, p.y - 16, lightPart, LIGHT_RING[p.lightKind]); // an emergency light at work
     const flash = Math.max(0, p.flash);
     ctx.fillStyle = flash > 0 ? `rgba(255,255,255,${0.35 + 0.65 * flash})` : p.state ? 'rgba(255,217,138,0.75)' : 'rgba(143,179,255,0.75)';
     ctx.fillRect(p.x + 7, p.y + 1, p.w - 14, 2);
@@ -3203,6 +3402,64 @@ function createRenderer(canvas) {
     }
   }
 
+  function polyPath(c, poly) {
+    c.beginPath();
+    c.moveTo(poly[0].x, poly[0].y);
+    for (let i = 1; i < poly.length; i += 1) c.lineTo(poly[i].x, poly[i].y);
+    c.closePath();
+  }
+
+  const LIGHT_TINT = { normal: '255,236,190', weak: '255,226,160', emergency: '255,70,70' };
+
+  // Backup lights: the tint of each cone, then the lamp hanging at its top. A faulty
+  // (weak) lamp sparks at its wiring; an emergency lamp glows red.
+  function drawLights(G) {
+    for (const light of G.room.lights || []) {
+      if (!light.poly) continue;
+      const tint = LIGHT_TINT[light.kind] || LIGHT_TINT.normal;
+      const g = ctx.createRadialGradient(light.x, light.y, 4, light.x, light.y, light.range);
+      g.addColorStop(0, `rgba(${tint},${light.kind === 'emergency' ? 0.3 : 0.2})`);
+      g.addColorStop(1, `rgba(${tint},0)`);
+      ctx.fillStyle = g;
+      polyPath(ctx, light.poly);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(light.x, light.y);
+      ctx.rotate(light.angle - Math.PI / 2);
+      ctx.fillStyle = '#2c3a55'; // cable and housing
+      ctx.fillRect(-1, -60, 2, 52);
+      ctx.beginPath();
+      ctx.moveTo(-14, -2);
+      ctx.lineTo(14, -2);
+      ctx.lineTo(8, -12);
+      ctx.lineTo(-8, -12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = light.kind === 'emergency' ? '#ff5a5a' : light.kind === 'weak' ? '#e9d79a' : '#fff4d0';
+      ctx.fillRect(-11, -3, 22, 3);
+      if (light.kind === 'weak') {
+        // A faulty circuit: a few short sparks by the housing, changing several times a
+        // second. Small and local, so not a flashing hazard (the cone itself is steady).
+        const tick = Math.floor(G.t * 8);
+        ctx.strokeStyle = '#fff2a8';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let k = 0; k < 3; k += 1) {
+          const r = Math.sin((tick + 1) * 12.9898 + k * 78.233) * 43758.5453;
+          const u = r - Math.floor(r);
+          if (u < 0.35) continue;
+          const sx = -10 + u * 20;
+          const sy = -8 - u * 6;
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + (u - 0.5) * 8, sy - 3);
+          ctx.lineTo(sx + (u - 0.5) * 3, sy - 6);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   function drawDecorGlow(G) {
     for (const d of G.room.decor) {
       if (d.type === 'candle') {
@@ -3249,8 +3506,7 @@ function createRenderer(canvas) {
     const room = G.room;
     for (const p of room.platforms) {
       if (p.qi === qi) {
-        const y = p.state === null ? (p.y0 + p.y1 + PLATFORM_H) / 2 : p.y + PLATFORM_H / 2;
-        return { x: p.x + p.w / 2, y };
+        return p.state === null ? slotMid(p) : { x: p.x + p.w / 2, y: p.y + PLATFORM_H / 2 };
       }
     }
     if (G.canister && G.canister.qi === qi) return canisterAnchor(G);
@@ -3297,7 +3553,7 @@ function createRenderer(canvas) {
   // A canister held in the canister view shows its part in that tile instead.
   function gateAnchor(G, qi) {
     const p = G.room.platforms.find((pl) => pl.qi === qi);
-    if (p) return { x: p.x + p.w / 2, y: (p.y0 + p.y1 + PLATFORM_H) / 2 };
+    if (p) return slotMid(p);
     return anchorOf(G, qi);
   }
 
@@ -3775,6 +4031,7 @@ function createRenderer(canvas) {
     drawPickupGlow(G);
     drawDoorGlow(G);
     drawDecorGlow(G);
+    drawLights(G);
     drawFx(G);
     drawSpeech(G);
     ctx.restore();
@@ -3895,12 +4152,12 @@ function opSvg(op, x, yOf) {
   return gateBox(x, y, op.gate.toUpperCase(), `g-${op.gate}${auto}`);
 }
 
-const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on', touch: 'Player landed on' };
+const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', machine: 'Machine measured', box: 'Box opened on', touch: 'Player landed on', light: 'Backup light observed' };
 
 function opWords(op, labels) {
   const names = op.qubits.map((q) => labels[q]);
   if (op.kind === 'measure') return `${MEASURED_BY[op.by] || 'Measured'} ${names[0]}: found in state ${op.result}`;
-  if (op.kind === 'reset') return `${names[0]} reset to state 0`;
+  if (op.kind === 'reset') return op.by === 'emergency' ? `Emergency light damped ${names[0]} to state 0` : `${names[0]} reset to state 0`;
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
   return `${who}${op.gate.toUpperCase()} on ${names[0]}`;
@@ -4331,12 +4588,16 @@ function createUI(dom, handlers) {
 
   // While a menu screen shows (any but the title, whose About links stay in reach), the rest
   // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
-  // The live region that announces events is left alone.
+  // Left alone: the live region that announces events, and the page's heading.
+  function shield(el, on) {
+    if (el.hasAttribute('aria-live') || el.matches('h1')) return;
+    if (el.querySelector('h1')) for (const child of el.children) shield(child, on);
+    else el.inert = on;
+  }
+
   function setModal(on) {
     for (let node = dom.overlay; node && node !== dom.lab; node = node.parentElement) {
-      for (const other of node.parentElement.children) {
-        if (other !== node && !other.hasAttribute('aria-live')) other.inert = on;
-      }
+      for (const other of node.parentElement.children) if (other !== node) shield(other, on);
     }
   }
 
@@ -4460,15 +4721,16 @@ function createUI(dom, handlers) {
     }
   }
 
-  function showComplete({ name, index, total, stars, of, earned, takeaway, stats, last }) {
-    dom.completeEyebrow.textContent = `Floor ${index + 1} of ${total} cleared`;
+  // `bonus`: { tag, more } for a bonus level (more: another bonus level follows), else null.
+  function showComplete({ name, index, total, stars, of, earned, takeaway, stats, last, bonus }) {
+    dom.completeEyebrow.textContent = bonus ? `${bonus.tag} cleared` : `Floor ${index + 1} of ${total} cleared`;
     dom.completeH.textContent = name;
     dom.completeStars.innerHTML = starsHtml(stars, of);
     dom.completeStars.setAttribute('aria-label', `${stars} of ${of} stars`);
     dom.completeStarList.innerHTML = earned.map((e) => `<li class="${e.got ? '' : 'missed'}">${esc(e.text)}</li>`).join('');
     dom.completeTakeaway.textContent = takeaway;
     dom.completeStats.textContent = stats;
-    dom.btnNext.textContent = last ? 'Up to the terrace' : 'Next floor';
+    dom.btnNext.textContent = bonus ? (bonus.more ? 'Next bonus level' : 'Back to title') : last ? 'Up to the terrace' : 'Next floor';
     showScreen('complete');
   }
 
@@ -4617,11 +4879,19 @@ function createUI(dom, handlers) {
       dom.optLives.checked = lives;
       dom.optFloor.value = String(floor);
     },
-    setFloors(names, ending) {
-      dom.optFloor.innerHTML = [...names, ending].map((name, i) => `<option value="${i}">${esc(name)}</option>`).join('');
-      const buttons = names.map((name, i) => `<button type="button" class="key-btn" data-floor="${i}">${esc(name)}</button>`).join('');
-      dom.winFloors.innerHTML = buttons;
-      dom.titleFloors.innerHTML = buttons;
+    // names: the climb's floors; ending: the terrace; bonus: [{ name, index }], reached only from here.
+    setFloors(names, ending, bonus = []) {
+      const option = (name, i) => `<option value="${i}">${esc(name)}</option>`;
+      dom.optFloor.innerHTML =
+        [...names, ending].map(option).join('') +
+        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map((b) => option(b.name, b.index)).join('')}</optgroup>` : '');
+      const button = (name, i, cls) => `<button type="button" class="key-btn${cls}" data-floor="${i}">${esc(name)}</button>`;
+      const buttons = names.map((name, i) => button(name, i, '')).join('');
+      const extra = bonus.length
+        ? `<p class="bonus-head">Bonus levels</p>${bonus.map((b) => button(b.name, b.index, ' bonus')).join('')}`
+        : '';
+      dom.winFloors.innerHTML = buttons + extra;
+      dom.titleFloors.innerHTML = buttons + extra;
     },
     setNote(text) {
       dom.note.hidden = !text;
@@ -4646,8 +4916,8 @@ return { grabDom, createUI };
 // game/game.js
 // ============================================================================
 const module_game_game = (() => {
-const { LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } = module_game_levels;
-const { TORCH, PLAYER, slotRect, doorRect, lockRect, screenRect, center, handOf, rectLit } = module_game_geometry;
+const { LEVELS, BONUS_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } = module_game_levels;
+const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS } = module_game_geometry;
 const { STORY } = module_game_story;
 const { createQuantum } = module_game_quantum;
 const { createInput } = module_game_input;
@@ -4723,6 +4993,12 @@ function saveDev(dev) {
     // private windows and blocked storage: the options last until the page closes
   }
 }
+
+// Level numbers: the climb's floors (0 to 6), then the terrace, then the bonus levels,
+// which are reached only from "Skip to floor" and are not part of the climb.
+const BONUS_FROM = LEVELS.length + 1;
+const isBonus = (index) => index >= BONUS_FROM;
+const levelAt = (index) => (index < LEVELS.length ? LEVELS[index] : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null);
 
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -4812,7 +5088,11 @@ function startGame() {
       input.setHeld(action, false);
     },
   });
-  ui.setFloors(LEVELS.map((level, i) => `${i + 1}. ${level.name}`), `Ending: ${TERRACE.name}`);
+  ui.setFloors(
+    LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
+    `Ending: ${TERRACE.name}`,
+    BONUS_LEVELS.map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i }))
+  );
 
   // -- small helpers --------------------------------------------------------
 
@@ -5014,17 +5294,17 @@ function startGame() {
         spawn: room.spawn,
         solids: room.solids,
         decor: room.decor || [],
-        platforms: (room.platforms || []).map((p) => ({
-          ...p,
-          qi: G.qIndex[p.q],
-          state: 0,
-          p1: 0,
-          y: p.y0,
-          targetY: p.y0,
-          flash: 0,
-          exposure: 0,
-          pending: false,
-        })),
+        platforms: (room.platforms || []).map((p) => {
+          // A sideways platform keeps one height and moves between x0 and x1.
+          const sideways = p.axis === 'x' ? { x: p.x0, y0: p.y, y1: p.y } : {};
+          const built = { ...p, ...sideways, qi: G.qIndex[p.q], state: 0, p1: 0, flash: 0, exposure: 0, lightExposure: 0, lightKind: null, pending: false };
+          built.y = built.y0;
+          built.targetX = built.x;
+          built.targetY = built.y0;
+          if (p.shuttle) Object.assign(built, { home: built.x, trip: null }); // trip: null | 'out' | 'there' | 'back'
+          return built;
+        }),
+        lights: (room.lights || []).map((l) => ({ ...l, poly: null })),
         terminals: (room.terminals || []).map((t) => {
           const surface = room.solids.find((s) => t.x >= s.x && t.x <= s.x + s.w && Math.abs(s.y - t.y) < 1);
           const fitsRight = surface ? t.x + 40 <= surface.x + surface.w : true;
@@ -5074,7 +5354,7 @@ function startGame() {
     G.bonusDone = false;
     G.scene = null;
     G.hasKey = false;
-    G.torch.on = true;
+    G.torch.on = !level.torchOff;
     G.torch.tilt = 0.15;
     G.torch.battery = level.torch || 'ok';
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
@@ -5085,8 +5365,9 @@ function startGame() {
   }
 
   async function loadLevel(index, opts) {
-    if (index >= LEVELS.length) return loadTerrace();
-    const level = LEVELS[index];
+    if (index === LEVELS.length) return loadTerrace();
+    const level = levelAt(index);
+    if (!level) return toTitle();
     const epoch = (G.epoch += 1);
     const backdrop = !!(opts && opts.backdrop);
     const carry = opts && opts.carry;
@@ -5109,7 +5390,7 @@ function startGame() {
       G.hints = 0;
     }
     if (!backdrop) ui.setAbout(false);
-    panel.setLevel(level, index, LEVELS.length);
+    panel.setLevel(level, isBonus(index) ? index - BONUS_FROM : index, isBonus(index) ? BONUS_LEVELS.length : LEVELS.length);
     panel.setHints(G.hints);
     applySnapshot(res.state);
     updateHud();
@@ -5121,7 +5402,7 @@ function startGame() {
     } else if (carry === 'restart') {
       say('Floor restarted: platforms and circuit are back to their starting states.', 'info', true);
     } else {
-      say(`Floor ${index + 1}: ${level.name}. ${level.goal}`, 'info');
+      say(`${isBonus(index) ? level.tag : `Floor ${index + 1}`}: ${level.name}. ${level.goal}`, 'info');
     }
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
@@ -5137,12 +5418,15 @@ function startGame() {
         if (p.state !== null) p.exposure = 0;
         p.state = null;
       } else {
+        const slot = slotRect(p, now);
         if (p.state === null) {
-          p.y = now ? p.y1 : p.y0; // it materialises where it collapsed
+          p.x = slot.x; // it materialises where it collapsed
+          p.y = slot.y;
           p.flash = 1;
         }
         p.state = now;
-        p.targetY = now ? p.y1 : p.y0;
+        p.targetX = slot.x;
+        p.targetY = slot.y;
       }
     }
     panel.render(snap);
@@ -5280,7 +5564,7 @@ function startGame() {
 
   function endsWith(snap, qi, gates) {
     const last = snap.ops.filter((op) => op.qubits.includes(qi)).slice(-gates.length);
-    return last.length === gates.length && snap.definite[qi] !== null && last.every((op, i) => op.kind === 'gate' && op.gate === gates[i]);
+    return last.length === gates.length && snap.definite[qi] !== null && last.every((op, i) => (op.kind === 'gate' || op.kind === 'auto') && op.gate === gates[i]);
   }
 
   async function applyOp(i) {
@@ -5293,6 +5577,11 @@ function startGame() {
     }
     if (op.gate === 'measure') {
       await machineMeasure(term, op);
+      return;
+    }
+    const away = G.platforms.find((p) => p.shuttle && p.trip && op.qi.includes(p.qi));
+    if (away) {
+      ui.setTerminalStatus(`${away.q} is on its way. Wait for it to come back.`, 'bad');
       return;
     }
     const qis = op.qi;
@@ -5315,6 +5604,13 @@ function startGame() {
     }
     G.stats.gates += 1;
     applySnapshot(res.state);
+    // A gate on a shuttle sends it off across the room.
+    for (const p of G.platforms) {
+      if (p.shuttle && !p.trip && qis.includes(p.qi)) {
+        p.trip = 'out';
+        say(`${p.q} sets off towards ${p.shuttle.arrive}.`, 'info');
+      }
+    }
     const bonus = G.level.bonus;
     if (bonus && bonus.sequences && bonus.sequences.some((s) => target === G.qIndex[s.q] && endsWith(res.state, target, s.gates))) G.bonusDone = true;
 
@@ -5354,6 +5650,7 @@ function startGame() {
       if (e.by === 'torch') text = `Flashlight on ${e.label}: it collapsed to ${value}.`;
       if (e.by === 'lock') text = `The lock observed ${e.label}: it collapsed to ${value}.`;
       if (e.by === 'touch') text = `You landed on ${e.label} without looking: it collapsed to ${value}.`;
+      if (e.by === 'light') text = `The backup light observed ${e.label}: it collapsed to ${value}.`;
       const partners = [];
       for (let q = 0; q < snap.definite.length; q += 1) {
         if (!seen.has(q) && before.definite[q] === null && snap.definite[q] !== null) {
@@ -5578,7 +5875,7 @@ function startGame() {
       const d = Math.abs(cx - x);
       if (d < reach && (!best || d < best.d)) best = { type, obj, d };
     };
-    for (const t of room.terminals) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
+    for (const t of room.terminals) if (!t.auto) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
     for (const n of room.npcs) offer('npc', n, n.x, n.y, 34);
     for (const p of room.portals) offer('portal', p, p.x, p.y, 22);
     const d = room.door;
@@ -5642,15 +5939,125 @@ function startGame() {
   }
 
   // Definite platforms glide to the height their state says, carrying the player.
+  // Certain platforms glide to the slot their state says, carrying the player; a
+  // shuttle travels along its route whatever its state.
   function movePlatforms(dt) {
     const pl = G.player;
     for (const p of G.platforms) {
-      if (p.state === null) continue;
-      const before = p.y;
-      const gap = p.targetY - p.y;
-      p.y += Math.sign(gap) * Math.min(Math.abs(gap), 300 * dt);
-      if (pl.standing === p) pl.y += p.y - before;
+      const bx = p.x;
+      const by = p.y;
+      if (p.shuttle) moveShuttle(p, dt);
+      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), 240 * dt);
+      if (p.state !== null) p.y += Math.sign(p.targetY - p.y) * Math.min(Math.abs(p.targetY - p.y), 300 * dt);
+      if (pl.standing === p) {
+        pl.x += p.x - bx;
+        pl.y += p.y - by;
+      }
     }
+  }
+
+  // A shuttle: out to `to`, a stop while the far terminal works, then home again.
+  function moveShuttle(p, dt) {
+    if (p.trip !== 'out' && p.trip !== 'back') return;
+    const goal = p.trip === 'out' ? p.shuttle.to : p.home;
+    p.x += Math.sign(goal - p.x) * Math.min(Math.abs(goal - p.x), p.shuttle.speed * dt);
+    if (p.x !== goal) return;
+    if (p.trip === 'back') {
+      p.trip = null;
+      say(`${p.q} is back.`, 'info');
+      return;
+    }
+    p.trip = 'there';
+    shuttleArrives(p);
+  }
+
+  // The far terminal applies its gates to the shuttle, then sends it home.
+  async function shuttleArrives(p) {
+    const epoch = G.epoch;
+    const term = G.room.terminals.find((t) => t.id === p.shuttle.arrive);
+    if (term) {
+      for (const op of term.ops) {
+        const before = G.q;
+        if (G.dev.showGates) await throwGate(term, op.gate, op.qi, 'gate', epoch);
+        else {
+          const to = renderer.anchorOf(G, op.qi[op.qi.length - 1]);
+          if (to) G.fx.push({ type: 'spark', from: center(screenRect(term)), to, t: 0, dur: SPARK_SECONDS, color: COLOR_OF(op.gate) });
+          audio.play('gate');
+        }
+        if (epoch !== G.epoch) return;
+        const res = await Q.auto([{ gate: op.gate, qubits: op.qi }]);
+        if (epoch !== G.epoch || !res.ok) return;
+        applySnapshot(res.state);
+        const target = op.qi[op.qi.length - 1];
+        const changed = before.definite[target] === null && op.gate === 'z';
+        say(`${term.id} applied ${GATE_INFO[op.gate].symbol} to ${p.q} as it arrived. ${changed ? 'The odds did not move, but the phase flipped. ' : ''}${stateSentence(res.state, target)}`, res.state.definite[target] === null ? 'quantum' : 'info');
+      }
+    }
+    if (epoch === G.epoch) p.trip = 'back';
+  }
+
+  // Backup lights: each traces its lit area around the shadows of solids and certain
+  // platforms, and measures (or, for an emergency light, damps to 0) a platform it
+  // rests on for long enough. The flashlight's rule, without the player.
+  const certainRects = (room) => room.platforms.filter((p) => p.state !== null).map((p) => ({ p, r: { x: p.x, y: p.y, w: p.w, h: PLATFORM_H } }));
+
+  // Every frame, in any mode: the lit area of each light, for drawing and for updateLights.
+  function traceLights() {
+    const room = G.room;
+    if (!room || !room.lights || !room.lights.length) return;
+    const blockers = [...room.solids, ...certainRects(room).map((c) => c.r)];
+    for (const light of room.lights) light.poly = lightPolygon(light, blockers);
+  }
+
+  function updateLights(dt) {
+    const room = G.room;
+    if (!room.lights.length || !G.q) return;
+    const solids = room.solids;
+    const certain = certainRects(room);
+    for (const p of room.platforms) {
+      if (p.pending) continue;
+      // What a light acts on: a superposed platform, and for an emergency light anything not certainly 0.
+      let kind = null;
+      for (const light of room.lights) {
+        const acts = light.kind === 'emergency' ? p.state !== 0 : p.state === null;
+        if (!acts) continue;
+        // A certain platform does not shade itself.
+        const own = p.state === null ? light.poly : lightPolygon(light, [...solids, ...certain.filter((c) => c.p !== p).map((c) => c.r)]);
+        const seen = p.state === null ? rectInLight(slotRect(p, 0), own) || rectInLight(slotRect(p, 1), own) : rectInLight({ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }, own);
+        if (seen && (!kind || LIGHT_KINDS[light.kind].dwell < LIGHT_KINDS[kind].dwell || light.kind === 'emergency')) kind = light.kind;
+      }
+      if (!kind) {
+        p.lightExposure = 0;
+        p.lightKind = null;
+        continue;
+      }
+      if (kind !== p.lightKind) p.lightExposure = 0;
+      p.lightKind = kind;
+      p.lightExposure += dt;
+      if (p.lightExposure >= LIGHT_KINDS[kind].dwell) {
+        p.lightExposure = 0;
+        if (kind === 'emergency') dampToZero(p);
+        else observe([p], 'light');
+      }
+    }
+  }
+
+  // An emergency light: amplitude damping, all the way, so the qubit ends in |0>.
+  async function dampToZero(p) {
+    const epoch = G.epoch;
+    const before = G.q;
+    p.pending = true;
+    const res = await Q.reset([p.qi], 'emergency');
+    if (epoch !== G.epoch) return;
+    p.pending = false;
+    if (!res.ok) return;
+    applySnapshot(res.state);
+    const pt = renderer.anchorOf(G, p.qi);
+    addRing(pt, '#ff6b6b', 52);
+    addFloater(pt, `${p.q} → 0`, '#ff8585');
+    audio.play('collapse0');
+    const partners = res.state.definite.map((d, q) => (q !== p.qi && before.definite[q] === null && d !== null ? `${res.state.labels[q]} = ${d}` : null)).filter(Boolean);
+    say(`The emergency light damped ${p.q} to ${valueWords(p.qi, 0)}.${partners.length ? ` Entangled partner${partners.length > 1 ? 's' : ''} settled with it: ${list(partners)}.` : ''}`, 'quantum');
   }
 
   function physicsStep(dt) {
@@ -5751,6 +6158,12 @@ function startGame() {
   }
 
   function afterFall() {
+    if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
+      // A bonus level is not part of the climb: out of lives, it simply starts over.
+      loadLevel(G.levelIndex);
+      say('Out of lives: the bonus level starts over with three.', 'bad', true);
+      return;
+    }
     if (G.lives <= 0 && !G.infinite) {
       setMode('over');
       ui.showScreen('over');
@@ -5775,7 +6188,8 @@ function startGame() {
     if (bonus) earned.push({ got: bonus.seconds ? G.floorTime <= bonus.seconds : G.bonusDone, text: bonus.text });
     const stars = earned.filter((e) => e.got).length;
     const of = earned.length;
-    G.results[G.levelIndex] = { stars, of, ...s, hints: G.hints };
+    const bonusLevel = isBonus(G.levelIndex);
+    if (!bonusLevel) G.results[G.levelIndex] = { stars, of, ...s, hints: G.hints }; // bonus levels are not part of the climb
     const last = G.levelIndex === LEVELS.length - 1;
     setMode('complete');
     audio.play(last ? 'win' : 'unlock');
@@ -5792,6 +6206,7 @@ function startGame() {
       name: level.name,
       index: G.levelIndex,
       total: LEVELS.length,
+      bonus: bonusLevel ? { tag: level.tag, more: !!levelAt(G.levelIndex + 1) } : null,
       stars,
       of,
       earned,
@@ -5799,11 +6214,12 @@ function startGame() {
       stats: `${parts.join(' · ')}.`,
       last,
     });
-    ui.announce(`Floor ${G.levelIndex + 1} cleared with ${stars} of ${of} stars. ${level.takeaway}`);
+    ui.announce(`${bonusLevel ? level.tag : `Floor ${G.levelIndex + 1}`} cleared with ${stars} of ${of} stars. ${level.takeaway}`);
   }
 
   function nextFloor() {
-    loadLevel(G.levelIndex + 1);
+    if (isBonus(G.levelIndex) && !levelAt(G.levelIndex + 1)) toTitle(); // after the last bonus level
+    else loadLevel(G.levelIndex + 1);
   }
 
   // -- the terrace: an epilogue with no qubits ---------------------------------
@@ -6124,11 +6540,14 @@ function startGame() {
     const orAct = act ? ` ${act}` : '';
     const station = G.room.battery;
     panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
+    const shuttle = G.room.platforms.find((p) => p.shuttle && p.trip);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
+    else if (shuttle) ui.setPrompt(`<b>${shuttle.q}</b> is on its way ${shuttle.trip === 'back' ? 'back to you' : `to ${esc(shuttle.shuttle.arrive)}`}.${orAct}`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
+    else if (ghost && !G.torch.on && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
     else if (ghost && !G.torch.on) ui.setPrompt(`<b>${ghost.q}</b> is in superposition and your flashlight is off. <b>F</b> switches it on.${orAct}`);
     else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Aim the flashlight at a dotted outline to observe it (mouse, or <b>I</b> / <b>K</b>).${orAct}`);
     else if (d && d.item && !d.open && G.player.x > d.x - 220) ui.setPrompt('The exit is locked, and this lock takes an ordinary key.');
@@ -6160,6 +6579,7 @@ function startGame() {
     for (const p of G.platforms) p.flash = Math.max(0, p.flash - dt * 2.2);
 
     if (input.take('mute')) toggleSound();
+    traceLights();
 
     if (G.mode === 'falling') {
       G.fallT -= dt;
@@ -6174,7 +6594,10 @@ function startGame() {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
       for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
-      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
+      if (G.dev.instantResponse) {
+        movePlatforms(dt); // developer option: see each gate land at once
+        updateLights(dt);
+      }
       updateTorch(dt);
       return;
     }
@@ -6207,6 +6630,7 @@ function startGame() {
       left -= step;
     }
 
+    updateLights(dt);
     pickUps();
     const hit = findInteract();
     updatePassive(hit);

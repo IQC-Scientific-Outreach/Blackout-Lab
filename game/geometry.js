@@ -1,7 +1,7 @@
 // Shapes shared by the game logic and the renderer, so that what the flashlight
 // "sees" is exactly what is drawn.
 
-import { PLATFORM_H } from './levels.js';
+import { PLATFORM_H, WORLD } from './levels.js';
 
 export const TORCH = { range: 330, half: 0.33, dwell: 0.45 };
 export const PLAYER = { w: 18, h: 32 };
@@ -168,4 +168,29 @@ export function rectLit(hand, angle, r) {
     if (pointLit(hand, angle, x, y)) hits += 1;
   }
   return hits >= 2;
+}
+
+// -- cavities (Rabi drive) ---------------------------------------------------------
+//
+// A cavity is an emitter at height y sending a band of waves straight down or up:
+// { x, w, y, dir: 'down' | 'up', rate } (rate: radians of Ry per second). Each column of
+// the band runs until the first blocker in its way, and drives what it reaches.
+
+// Where the wave column at x stops: the first blocker's near edge, or the room's edge.
+export function cavityStop(cavity, x, blockers) {
+  let stop = cavity.dir === 'up' ? 0 : WORLD.h;
+  for (const r of blockers) {
+    if (x < r.x || x > r.x + r.w) continue;
+    if (cavity.dir === 'up' && r.y + r.h <= cavity.y) stop = Math.max(stop, r.y + r.h);
+    if (cavity.dir !== 'up' && r.y >= cavity.y) stop = Math.min(stop, r.y);
+  }
+  return stop;
+}
+
+// Whether the band reaches a rectangle, through its middle column.
+export function cavityReaches(cavity, r, blockers) {
+  const x = r.x + r.w / 2;
+  if (x < cavity.x || x > cavity.x + cavity.w) return false;
+  const stop = cavityStop(cavity, x, blockers);
+  return cavity.dir === 'up' ? r.y < cavity.y && r.y + r.h > stop : r.y + r.h > cavity.y && r.y < stop;
 }

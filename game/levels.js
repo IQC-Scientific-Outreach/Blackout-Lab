@@ -10,11 +10,14 @@
 // A floor is one room, or several (`rooms`) joined by `portals`. A room has
 //   solids     ground blocks and fixed stands
 //   platforms  { q, x, w, y0, y1, need, half? }
-//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need }: state 0 parks it at
-//              x0, state 1 at x1, on one height (it can slide in and out of a light's path).
+//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need, speed? }: state 0 parks it
+//              at x0, state 1 at x1, on one height (it can slide in and out of a light's path);
+//              speed in pixels a second, 240 if not given. `steady: true`: cavities do not
+//              turn it (a shield that blocks their waves).
 //              shuttle: { to, speed, arrive }: any gate on it sends it across to x = to and
 //              back; on arrival the terminal named `arrive` (an `auto` one) applies its gates.
-//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q } with q = ids
+//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q, angle? } with q = ids
+//              (angle, in radians, for ry)
 //              `auto: true` is out of the player's reach: it works by itself (see shuttle).
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
@@ -22,6 +25,10 @@
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
 //   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
+//   cavities   Rabi drives: { x, w, y, dir: 'down' | 'up', rate }, an emitter sending a band of
+//              waves that rotates every platform it reaches (Ry, `rate` radians a second):
+//              0, +, 1, - and round again. Watched platforms (lit, or stood on) hold still.
+//              Solids and certain platforms block the waves.
 //   lights     backup lights: { x, y, angle, spread, range, kind }, a lamp shining a cone
 //              (angle and spread in radians). Like the flashlight, a light resting on a
 //              superposed platform measures it: 'normal' as fast as the flashlight, 'weak'
@@ -62,6 +69,11 @@ export const GATE_INFO = {
     symbol: 'CNOT',
     name: 'Controlled flip',
     text: 'Flips the target only when the control is in state 1. A control in superposition leaves the two entangled.',
+  },
+  ry: {
+    symbol: 'RY',
+    name: 'Y rotation',
+    text: 'Turns the state part of the way round, 0 towards + towards 1. A quarter turn (pi/2) is the same step a cavity takes in a quarter of its cycle.',
   },
   cz: {
     symbol: 'CZ',
@@ -601,6 +613,53 @@ export const BONUS_LEVELS = [
     ],
     takeaway:
       'Every superposition here had a deadline, set by the faulty lights. Real qubits have one too, called the decoherence time, and a quantum computer has to finish its gates inside it.',
+  },
+  {
+    id: 'rabi',
+    name: 'The Watched Qubit',
+    tag: 'Bonus level 4',
+    gates: ['ry', 'x'],
+    torchOff: true,
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'S', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 40, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 360, w: 110, h: 14 },
+      { kind: 'ground', x: 760, y: 180, w: 200, h: 360 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 445, y1: 320, need: 0 },
+      { q: 'A', x: 490, w: 80, y0: 360, y1: 240, need: 0 },
+      { q: 'B', x: 620, w: 80, y0: 450, y1: 270, need: 1 },
+      // The shield: parked out of the way, and fast, so that it cuts A's and B's waves together.
+      { q: 'S', axis: 'x', x0: 240, x1: 478, y: 150, w: 234, need: 1, speed: 1000, steady: true },
+    ],
+    cavities: [
+      { x: 192, w: 100, y: 530, dir: 'up', rate: Math.PI / 2 },
+      { x: 482, w: 226, y: 40, dir: 'down', rate: Math.PI / 2 },
+    ],
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'ry', q: ['B'], angle: Math.PI / 2 }] },
+      { id: 'T2', x: 392, y: 360, ops: [{ gate: 'x', q: ['S'] }] },
+    ],
+    door: { x: 900, y: 180, key: null, lock: [] },
+    shortest: 3,
+    bonus: { seconds: 120, text: 'Cleared within two minutes' },
+    goal: 'Freeze P lowered and climb on, then get A lowered and B raised at the same moment to cross to the exit.',
+    concept:
+      'Rabi oscillation: the waves from a cavity turn a qubit round and round, 0, then +, then 1, then -, then 0 again. Watching stops it, the quantum watchdog (or Zeno) effect: a qubit that is lit, or stood on, is being measured all the time, so it cannot turn. Look away and it carries on from where it was.',
+    hints: [
+      'P never stops turning while nothing watches it. Switch the flashlight on (F) as P comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
+      'A and B turn together, so they would freeze as 0 0 or 1 1. Before you cross, Ry(pi/2) twice at T1 puts B half a turn ahead of A: whenever A is 0, B is 1.',
+      'At T2, X slides the shield into the waves and freezes A and B together. Do it as A comes down to lowered, then light them up and cross.',
+    ],
+    takeaway:
+      'The cavity kept the qubits turning, and only being watched stopped them. Measured often enough, a qubit cannot change at all: physicists call that the quantum Zeno effect, after the arrow paradox.',
   },
 ];
 

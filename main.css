@@ -262,6 +262,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .g-h rect { stroke: var(--qubit); } .g-h text { fill: var(--qubit); }
 .g-x rect { stroke: var(--torch); } .g-x text { fill: var(--torch); }
 .g-z rect { stroke: var(--zero); } .g-z text { fill: var(--zero); }
+.g-ry rect { stroke: #c39bff; } .g-ry text { fill: #c39bff; font-size: 10px; } .g-drive rect { stroke-dasharray: 3 2; }
 .g-cx line { stroke: var(--link); } .g-cx .ctrl { fill: var(--link); } .g-cx .targ { fill: var(--panel-2); stroke: var(--link); stroke-width: 1.5; }
 .g-measure rect { stroke: var(--ink); } .g-measure .result { fill: var(--torch); } .g-measure .result-text { fill: #1c1403; font-size: 10px; }
 .g-reset rect { stroke: var(--dim); stroke-dasharray: 3 2; } .g-reset text { fill: var(--dim); font-size: 10px; }

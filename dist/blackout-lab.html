@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-LbozaKhLkCf88UzYv/fNDOS3twuSHewQKxpYlVgWvj8='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Wf3PkaGm1MA5AGQcbr9MAES2DKKm/+Xx/PcoqhQObdo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -278,6 +278,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .g-h rect { stroke: var(--qubit); } .g-h text { fill: var(--qubit); }
 .g-x rect { stroke: var(--torch); } .g-x text { fill: var(--torch); }
 .g-z rect { stroke: var(--zero); } .g-z text { fill: var(--zero); }
+.g-ry rect { stroke: #c39bff; } .g-ry text { fill: #c39bff; font-size: 10px; } .g-drive rect { stroke-dasharray: 3 2; }
 .g-cx line { stroke: var(--link); } .g-cx .ctrl { fill: var(--link); } .g-cx .targ { fill: var(--panel-2); stroke: var(--link); stroke-width: 1.5; }
 .g-measure rect { stroke: var(--ink); } .g-measure .result { fill: var(--torch); } .g-measure .result-text { fill: #1c1403; font-size: 10px; }
 .g-reset rect { stroke: var(--dim); stroke-dasharray: 3 2; } .g-reset text { fill: var(--dim); font-size: 10px; }
@@ -661,11 +662,14 @@ const module_game_levels = (() => {
 // A floor is one room, or several (`rooms`) joined by `portals`. A room has
 //   solids     ground blocks and fixed stands
 //   platforms  { q, x, w, y0, y1, need, half? }
-//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need }: state 0 parks it at
-//              x0, state 1 at x1, on one height (it can slide in and out of a light's path).
+//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need, speed? }: state 0 parks it
+//              at x0, state 1 at x1, on one height (it can slide in and out of a light's path);
+//              speed in pixels a second, 240 if not given. `steady: true`: cavities do not
+//              turn it (a shield that blocks their waves).
 //              shuttle: { to, speed, arrive }: any gate on it sends it across to x = to and
 //              back; on arrival the terminal named `arrive` (an `auto` one) applies its gates.
-//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q } with q = ids
+//   terminals  { id, x, y, ops, port?, sealed?, auto? }  op = { gate, q, angle? } with q = ids
+//              (angle, in radians, for ry)
 //              `auto: true` is out of the player's reach: it works by itself (see shuttle).
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
@@ -673,6 +677,10 @@ const module_game_levels = (() => {
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
 //   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
+//   cavities   Rabi drives: { x, w, y, dir: 'down' | 'up', rate }, an emitter sending a band of
+//              waves that rotates every platform it reaches (Ry, `rate` radians a second):
+//              0, +, 1, - and round again. Watched platforms (lit, or stood on) hold still.
+//              Solids and certain platforms block the waves.
 //   lights     backup lights: { x, y, angle, spread, range, kind }, a lamp shining a cone
 //              (angle and spread in radians). Like the flashlight, a light resting on a
 //              superposed platform measures it: 'normal' as fast as the flashlight, 'weak'
@@ -713,6 +721,11 @@ const GATE_INFO = {
     symbol: 'CNOT',
     name: 'Controlled flip',
     text: 'Flips the target only when the control is in state 1. A control in superposition leaves the two entangled.',
+  },
+  ry: {
+    symbol: 'RY',
+    name: 'Y rotation',
+    text: 'Turns the state part of the way round, 0 towards + towards 1. A quarter turn (pi/2) is the same step a cavity takes in a quarter of its cycle.',
   },
   cz: {
     symbol: 'CZ',
@@ -1253,6 +1266,53 @@ const BONUS_LEVELS = [
     takeaway:
       'Every superposition here had a deadline, set by the faulty lights. Real qubits have one too, called the decoherence time, and a quantum computer has to finish its gates inside it.',
   },
+  {
+    id: 'rabi',
+    name: 'The Watched Qubit',
+    tag: 'Bonus level 4',
+    gates: ['ry', 'x'],
+    torchOff: true,
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'S', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 40, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 360, w: 110, h: 14 },
+      { kind: 'ground', x: 760, y: 180, w: 200, h: 360 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 445, y1: 320, need: 0 },
+      { q: 'A', x: 490, w: 80, y0: 360, y1: 240, need: 0 },
+      { q: 'B', x: 620, w: 80, y0: 450, y1: 270, need: 1 },
+      // The shield: parked out of the way, and fast, so that it cuts A's and B's waves together.
+      { q: 'S', axis: 'x', x0: 240, x1: 478, y: 150, w: 234, need: 1, speed: 1000, steady: true },
+    ],
+    cavities: [
+      { x: 192, w: 100, y: 530, dir: 'up', rate: Math.PI / 2 },
+      { x: 482, w: 226, y: 40, dir: 'down', rate: Math.PI / 2 },
+    ],
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'ry', q: ['B'], angle: Math.PI / 2 }] },
+      { id: 'T2', x: 392, y: 360, ops: [{ gate: 'x', q: ['S'] }] },
+    ],
+    door: { x: 900, y: 180, key: null, lock: [] },
+    shortest: 3,
+    bonus: { seconds: 120, text: 'Cleared within two minutes' },
+    goal: 'Freeze P lowered and climb on, then get A lowered and B raised at the same moment to cross to the exit.',
+    concept:
+      'Rabi oscillation: the waves from a cavity turn a qubit round and round, 0, then +, then 1, then -, then 0 again. Watching stops it, the quantum watchdog (or Zeno) effect: a qubit that is lit, or stood on, is being measured all the time, so it cannot turn. Look away and it carries on from where it was.',
+    hints: [
+      'P never stops turning while nothing watches it. Switch the flashlight on (F) as P comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
+      'A and B turn together, so they would freeze as 0 0 or 1 1. Before you cross, Ry(pi/2) twice at T1 puts B half a turn ahead of A: whenever A is 0, B is 1.',
+      'At T2, X slides the shield into the waves and freezes A and B together. Do it as A comes down to lowered, then light them up and cross.',
+    ],
+    takeaway:
+      'The cavity kept the qubits turning, and only being watched stopped them. Measured often enough, a qubit cannot change at all: physicists call that the quantum Zeno effect, after the arrow paradox.',
+  },
 ];
 
 // A floor without `rooms` is a single room made of its own top-level fields.
@@ -1281,7 +1341,7 @@ return { WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, LEVELS, TERRACE, BONUS_L
 // game/geometry.js
 // ============================================================================
 const module_game_geometry = (() => {
-const { PLATFORM_H } = module_game_levels;
+const { PLATFORM_H, WORLD } = module_game_levels;
 
 // Shapes shared by the game logic and the renderer, so that what the flashlight
 // "sees" is exactly what is drawn.
@@ -1454,7 +1514,32 @@ function rectLit(hand, angle, r) {
   return hits >= 2;
 }
 
-return { TORCH, PLAYER, slotRect, slotMid, LIGHT_KINDS, lightPolygon, pointInPolygon, rectInLight, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, pointLit, rectLit };
+// -- cavities (Rabi drive) ---------------------------------------------------------
+//
+// A cavity is an emitter at height y sending a band of waves straight down or up:
+// { x, w, y, dir: 'down' | 'up', rate } (rate: radians of Ry per second). Each column of
+// the band runs until the first blocker in its way, and drives what it reaches.
+
+// Where the wave column at x stops: the first blocker's near edge, or the room's edge.
+function cavityStop(cavity, x, blockers) {
+  let stop = cavity.dir === 'up' ? 0 : WORLD.h;
+  for (const r of blockers) {
+    if (x < r.x || x > r.x + r.w) continue;
+    if (cavity.dir === 'up' && r.y + r.h <= cavity.y) stop = Math.max(stop, r.y + r.h);
+    if (cavity.dir !== 'up' && r.y >= cavity.y) stop = Math.min(stop, r.y);
+  }
+  return stop;
+}
+
+// Whether the band reaches a rectangle, through its middle column.
+function cavityReaches(cavity, r, blockers) {
+  const x = r.x + r.w / 2;
+  if (x < cavity.x || x > cavity.x + cavity.w) return false;
+  const stop = cavityStop(cavity, x, blockers);
+  return cavity.dir === 'up' ? r.y < cavity.y && r.y + r.h > stop : r.y + r.h > cavity.y && r.y < stop;
+}
+
+return { TORCH, PLAYER, slotRect, slotMid, LIGHT_KINDS, lightPolygon, pointInPolygon, rectInLight, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, pointLit, rectLit, cavityStop, cavityReaches };
 })();
 
 // ============================================================================
@@ -1659,7 +1744,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2, cz: 2 }; // i: identity, which does nothing
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, ry: 1, cx: 2, cz: 2 }; // i: identity, which does nothing; ry takes an angle
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -1725,10 +1810,23 @@ class Lab {
   }
 
   // The gate itself, on the amplitudes. cx is [control, target]; cz is symmetric.
-  _evolve(name, qubits) {
+  _evolve(name, qubits, angle = 0) {
     if (name === 'i') return;
     const { re, im } = this;
     const size = 1 << this.n;
+    if (name === 'ry') {
+      // A rotation about Y by `angle`: Qiskit's RYGate, real, so |0> turns into |+>, |1>, |->.
+      const c = Math.cos(angle / 2);
+      const s = Math.sin(angle / 2);
+      const bit = 1 << qubits[0];
+      for (let i = 0; i < size; i += 1) {
+        if (i & bit) continue;
+        const j = i | bit;
+        [re[i], re[j]] = [c * re[i] - s * re[j], s * re[i] + c * re[j]];
+        [im[i], im[j]] = [c * im[i] - s * im[j], s * im[i] + c * im[j]];
+      }
+      return;
+    }
     if (name === 'cz') {
       // Z on one qubit when the other is 1: the |11> amplitudes change sign (it is symmetric).
       const both = (1 << qubits[0]) | (1 << qubits[1]);
@@ -1776,9 +1874,15 @@ class Lab {
     }
   }
 
-  _gate(name, qubits, kind) {
-    this._evolve(name, qubits);
-    this.meta.push({ kind, gate: name, qubits: qubits.slice() });
+  _gate(name, qubits, kind, angle) {
+    this._evolve(name, qubits, angle);
+    this.meta.push(name === 'ry' ? { kind, gate: name, qubits: qubits.slice(), angle } : { kind, gate: name, qubits: qubits.slice() });
+  }
+
+  _angle(name, angle) {
+    if (name !== 'ry') return undefined;
+    if (!Number.isFinite(angle)) throw new Error('ry needs an angle');
+    return angle;
   }
 
   // Gates the floor applies by itself: a starting entanglement, a lock's own check.
@@ -1786,14 +1890,32 @@ class Lab {
   auto(ops) {
     for (const op of ops || []) {
       const [name, qubits] = this._valid(op.gate, op.qubits);
-      this._gate(name, qubits, 'auto');
+      this._gate(name, qubits, 'auto', this._angle(name, op.angle));
     }
   }
 
   // A gate chosen at a terminal.
-  apply(name, qubits) {
+  apply(name, qubits, angle) {
     [name, qubits] = this._valid(name, qubits);
-    this._gate(name, qubits, 'gate');
+    this._gate(name, qubits, 'gate', this._angle(name, angle));
+  }
+
+  // A continuous drive (a cavity's Rabi oscillation): Ry by a small angle, frame after
+  // frame. A stretch of driving is one entry in the circuit, grown while nothing else
+  // happens to that qubit (gates on other qubits commute with it).
+  drive(q, angle) {
+    [q] = this._check([q]);
+    this._evolve('ry', [q], angle);
+    for (let k = this.meta.length - 1; k >= 0; k -= 1) {
+      const m = this.meta[k];
+      if (!m.qubits.includes(q)) continue;
+      if (m.kind === 'drive') {
+        m.angle += angle;
+        return;
+      }
+      break;
+    }
+    this.meta.push({ kind: 'drive', gate: 'ry', qubits: [q], angle });
   }
 
   // Probability that measuring qubit q gives 1.
@@ -1956,6 +2078,7 @@ class Lab {
       .map((m) => {
         if (m.kind === 'measure') return { kind: m.kind, gate: m.gate, qubits: m.qubits, result: m.result, by: m.by };
         if (m.kind === 'reset') return { kind: m.kind, gate: m.gate, qubits: m.qubits, by: m.by };
+        if (m.gate === 'ry') return { kind: m.kind, gate: m.gate, qubits: m.qubits, angle: m.angle };
         return { kind: m.kind, gate: m.gate, qubits: m.qubits };
       });
   }
@@ -1974,9 +2097,10 @@ class Lab {
       if (m.kind === 'measure') lines.push(`qc.measure(${q[0]}, ${q[0]})  # ${MEASURED_BY[m.by] || m.by} ${label}: read ${m.result}`);
       else if (m.kind === 'reset') lines.push(`qc.reset(${q[0]})  # ${m.by === 'emergency' ? `emergency light: ${label} damped to 0` : `${label} cleared to 0`}`);
       else {
-        let call = `qc.${m.gate === 'i' ? 'id' : m.gate}(${q.join(', ')})`;
+        let call = m.gate === 'ry' ? `qc.ry(${Number(m.angle.toFixed(6))}, ${q[0]})` : `qc.${m.gate === 'i' ? 'id' : m.gate}(${q.join(', ')})`;
         if (m.kind === 'init') call += `  # ${label} starts in |${this.init[q[0]]}>`;
         else if (m.kind === 'auto') call += '  # done by the floor itself';
+        else if (m.kind === 'drive') call += `  # cavity drive on ${label}`;
         lines.push(call);
       }
     }
@@ -2045,9 +2169,15 @@ function createQuantum({ random = Math.random } = {}) {
         lab = new Lab(spec.qubits, { prep: spec.prep, random });
         return { state: lab.snapshot() };
       }),
-    apply: (gate, qubits) =>
+    apply: (gate, qubits, angle) =>
       reply(() => {
-        need().apply(gate, qubits);
+        need().apply(gate, qubits, angle);
+        return { state: lab.snapshot() };
+      }),
+    // Cavity drives for this frame: [[qubit, angle], ...].
+    drive: (pairs) =>
+      reply(() => {
+        for (const [q, angle] of pairs) need().drive(q, angle);
         return { state: lab.snapshot() };
       }),
     // Measures the qubits one by one; a partner already settled by an earlier one is skipped.
@@ -2299,7 +2429,7 @@ return { createAudio };
 // ============================================================================
 const module_game_render = (() => {
 const { WORLD, PLATFORM_H } = module_game_levels;
-const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS } = module_game_geometry;
+const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS, cavityStop } = module_game_geometry;
 
 // Canvas renderer. The room is drawn fully lit, then covered by a darkness
 // mask with holes cut for the flashlight beam and for anything that glows. Things
@@ -2394,7 +2524,7 @@ function paintCanister(ctx, x, baseY, state) {
 // circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
 // (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
 // over the animation: in with a spring, hold, then out. `size` is the box width.
-const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf', cz: '#ff8adf' };
+const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', ry: '#c39bff', cx: '#ff8adf', cz: '#ff8adf' };
 
 function gatePop(k, calm) {
   if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
@@ -3234,11 +3364,12 @@ function createRenderer(canvas) {
 
   // -- things that glow -----------------------------------------------------
 
-  function drawGhost(G, p, state, prob, lit, percent) {
+  // `fade` (0 to 1) thins the outline for a state close to 0 or 1 (see drawPlatformGlow).
+  function drawGhost(G, p, state, prob, lit, percent, fade = 1) {
     const r = slotRect(p, state);
     const jitter = Math.sin(G.t * 9 + p.x + state * 2) * 1.2;
     ctx.save();
-    ctx.globalAlpha = 0.3 + 0.7 * prob;
+    ctx.globalAlpha = (0.3 + 0.7 * prob) * fade;
     ctx.fillStyle = 'rgba(94,230,255,0.10)';
     platformPath(p, r.x, r.y + jitter);
     ctx.fill();
@@ -3272,8 +3403,20 @@ function createRenderer(canvas) {
       const p1 = p.p1;
       const one = Math.round(p1 * 100);
       const seen = p.exposure > 0 || lightPart > 0;
-      drawGhost(G, p, 0, 1 - p1, seen, 100 - one);
-      drawGhost(G, p, 1, p1, seen, one);
+      // A state part way between certain and 50/50 (a cavity's rotation) is drawn as both
+      // at once: the platform at its likelier slot, as solid as the state is close to it,
+      // over the 50/50 outlines, as faint as it is far from them.
+      const near = Math.abs(1 - 2 * p1);
+      if (near > 0.02) {
+        const slot = slotRect(p, p1 > 0.5 ? 1 : 0);
+        ctx.save();
+        ctx.globalAlpha = near * 0.85;
+        drawPlatformBody({ ...p, x: slot.x, y: slot.y });
+        ctx.restore();
+      }
+      const fade = Math.max(0.2, 1 - near);
+      drawGhost(G, p, 0, near > 0.02 ? 0.5 : 1 - p1, seen, 100 - one, fade);
+      drawGhost(G, p, 1, near > 0.02 ? 0.5 : p1, seen, one, fade);
       const mid = slotMid(p);
       if (p.exposure > 0) exposureRing(mid.x, mid.y, p.exposure / TORCH.dwell, C.torch);
       else if (lightPart > 0) exposureRing(mid.x, mid.y, lightPart, LIGHT_RING[p.lightKind]);
@@ -3518,6 +3661,37 @@ function createRenderer(canvas) {
   }
 
   const LIGHT_TINT = { normal: '255,236,190', weak: '255,226,160', emergency: '255,70,70' };
+
+  // Cavities: the emitter, and wave columns running from it until something blocks them.
+  function drawCavities(G) {
+    const room = G.room;
+    if (!room.cavities || !room.cavities.length) return;
+    const blockers = [...room.solids, ...room.platforms.filter((p) => p.state !== null).map((p) => ({ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }))];
+    const drift = calm.matches ? 0 : G.t * 40; // the waves travel away from the emitter
+    for (const c of room.cavities) {
+      const sign = c.dir === 'up' ? -1 : 1;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(195,155,255,0.38)';
+      ctx.lineWidth = 1.6;
+      for (let x = c.x + 9; x <= c.x + c.w - 9; x += 18) {
+        const stop = cavityStop(c, x, blockers);
+        const length = Math.abs(stop - c.y);
+        ctx.beginPath();
+        for (let d = 0; d <= length; d += 4) {
+          const wx = x + Math.sin((d - drift) / 9) * 3.5;
+          if (d === 0) ctx.moveTo(wx, c.y + sign * d);
+          else ctx.lineTo(wx, c.y + sign * d);
+        }
+        ctx.stroke();
+      }
+      // The emitter: a slab with a glowing slit facing the waves.
+      ctx.fillStyle = '#2c3a55';
+      ctx.fillRect(c.x - 6, c.y - (c.dir === 'up' ? 0 : 12), c.w + 12, 12);
+      ctx.fillStyle = '#c39bff';
+      ctx.fillRect(c.x, c.dir === 'up' ? c.y : c.y - 3, c.w, 3);
+      ctx.restore();
+    }
+  }
 
   // Backup lights: the tint of each cone, then the lamp hanging at its top. A faulty
   // (weak) lamp sparks at its wiring; an emergency lamp glows red.
@@ -4137,6 +4311,7 @@ function createRenderer(canvas) {
     drawPickupGlow(G);
     drawDoorGlow(G);
     drawDecorGlow(G);
+    drawCavities(G);
     drawLights(G);
     drawFx(G);
     drawSpeech(G);
@@ -4247,6 +4422,7 @@ function opSvg(op, x, yOf) {
     );
   }
   if (op.kind === 'reset') return gateBox(x, y, KET[0], 'g-reset');
+  if (op.gate === 'ry') return gateBox(x, y, 'RY', op.kind === 'drive' ? 'g-ry g-drive' : 'g-ry');
   const auto = op.kind === 'auto' ? ' g-auto' : '';
   if (op.gate === 'cz') {
     const ya = yOf(op.qubits[0]);
@@ -4267,6 +4443,7 @@ const MEASURED_BY = { torch: 'Flashlight observed', lock: 'Door lock read', mach
 function opWords(op, labels) {
   const names = op.qubits.map((q) => labels[q]);
   if (op.kind === 'measure') return `${MEASURED_BY[op.by] || 'Measured'} ${names[0]}: found in state ${op.result}`;
+  if (op.gate === 'ry') return `${op.kind === 'drive' ? 'Cavity drive: ' : ''}Y rotation by ${(op.angle / Math.PI).toFixed(2)} pi on ${names[0]}`;
   if (op.kind === 'reset') return op.by === 'emergency' ? `Emergency light damped ${names[0]} to state 0` : `${names[0]} reset to state 0`;
   const who = op.kind === 'auto' ? 'The floor applied ' : '';
   if (op.gate === 'cx') return `${who}CNOT, control ${names[0]}, target ${names[1]}`;
@@ -4763,6 +4940,7 @@ function createUI(dom, handlers) {
   function opLabel(op) {
     if (op.gate === 'cx') return `${op.q[0]} → ${op.q[1]}`;
     if (op.gate === 'cz') return `${op.q[0]} · ${op.q[1]}`;
+    if (op.gate === 'ry') return `${op.q[0]}, ${Math.round((op.angle / Math.PI) * 100) / 100 === 0.5 ? 'π/2' : `${(op.angle / Math.PI).toFixed(2)}π`}`;
     return op.q.join(', ');
   }
 
@@ -5027,7 +5205,7 @@ return { grabDom, createUI };
 // ============================================================================
 const module_game_game = (() => {
 const { LEVELS, BONUS_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } = module_game_levels;
-const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS } = module_game_geometry;
+const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityReaches } = module_game_geometry;
 const { STORY } = module_game_story;
 const { createQuantum } = module_game_quantum;
 const { createInput } = module_game_input;
@@ -5418,6 +5596,7 @@ function startGame() {
           return built;
         }),
         lights: (room.lights || []).map((l) => ({ ...l, poly: null })),
+        cavities: (room.cavities || []).map((c) => ({ ...c })),
         terminals: (room.terminals || []).map((t) => {
           const surface = room.solids.find((s) => t.x >= s.x && t.x <= s.x + s.w && Math.abs(s.y - t.y) < 1);
           const fitsRight = surface ? t.x + 40 <= surface.x + surface.w : true;
@@ -5522,7 +5701,8 @@ function startGame() {
     return true;
   }
 
-  function applySnapshot(snap) {
+  // `quiet`: a cavity's drive, every frame; the rack is then redrawn ten times a second.
+  function applySnapshot(snap, quiet) {
     G.q = snap;
     for (const p of G.platforms) {
       const now = snap.definite[p.qi];
@@ -5542,7 +5722,11 @@ function startGame() {
         p.targetY = slot.y;
       }
     }
-    panel.render(snap);
+    if (!quiet || snap.ops.length !== G.drawnOps || G.t - G.drawnAt > 0.1) {
+      panel.render(snap);
+      G.drawnOps = snap.ops.length;
+      G.drawnAt = G.t;
+    }
   }
 
   function enterRoom(portal) {
@@ -5705,7 +5889,7 @@ function startGame() {
     const before = G.q;
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
-    const res = await Q.apply(op.gate, qis);
+    const res = await Q.apply(op.gate, qis, op.angle);
     const wasDefinite = before.definite[target] !== null;
     const nowDefinite = res.ok && res.state.definite[target] !== null;
     const pop = wasDefinite && !nowDefinite ? 'superpose' : 'gate';
@@ -6062,7 +6246,7 @@ function startGame() {
       const bx = p.x;
       const by = p.y;
       if (p.shuttle) moveShuttle(p, dt);
-      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), 240 * dt);
+      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), (p.speed || 240) * dt);
       if (p.state !== null) p.y += Math.sign(p.targetY - p.y) * Math.min(Math.abs(p.targetY - p.y), 300 * dt);
       if (pl.standing === p) {
         pl.x += p.x - bx;
@@ -6155,6 +6339,44 @@ function startGame() {
         else observe([p], 'light');
       }
     }
+  }
+
+  // Whether anything is watching a platform: the flashlight or a backup light on it, or
+  // the player standing on it. Watched, a driven platform does not evolve (the quantum
+  // watchdog, or Zeno, effect): it holds where it is, and a measurement collapses it.
+  function watched(p) {
+    if (G.player.standing === p) return true;
+    const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
+    const t = G.torch;
+    if (t.active && rects.some((r) => rectLit(handOf(G.player), t.angle, r))) return true;
+    return G.room.lights.some((light) => light.poly && rects.some((r) => rectInLight(r, light.poly)));
+  }
+
+  // Cavities: the waves rotate every platform they reach (Ry, a Rabi oscillation),
+  // 0 to + to 1 to - and round again, unless something is watching it. Blocked waves
+  // drive nothing beyond the blocker.
+  function updateCavities(dt) {
+    const room = G.room;
+    if (!room || !room.cavities.length || !G.q) return;
+    const certain = certainRects(room);
+    const pairs = [];
+    for (const p of room.platforms) {
+      p.driven = false;
+      if (p.pending || p.steady) continue;
+      const blockers = [...room.solids, ...certain.filter((c) => c.p !== p).map((c) => c.r)];
+      const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
+      const cavity = room.cavities.find((c) => rects.some((r) => cavityReaches(c, r, blockers)));
+      if (!cavity) continue;
+      if (watched(p)) {
+        p.driven = 'held';
+        continue;
+      }
+      p.driven = true;
+      pairs.push([p.qi, cavity.rate * dt]);
+    }
+    if (!pairs.length) return;
+    const res = Q.drive(pairs);
+    if (res.ok) applySnapshot(res.state, true);
   }
 
   // An emergency light: amplitude damping, all the way, so the qubit ends in |0>.
@@ -6709,8 +6931,12 @@ function startGame() {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
       for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
-      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
+      // Platforms wait until you leave the terminal, except with the instant response developer
+      // option, or in a room with a cavity, where timing is the whole puzzle (a shield cutting
+      // the waves has to do so the moment you apply its gate).
+      if (G.dev.instantResponse || G.room.cavities.length) movePlatforms(dt);
       updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
+      updateCavities(dt); // nor does a cavity's drive
       updateTorch(dt);
       return;
     }
@@ -6744,6 +6970,7 @@ function startGame() {
     }
 
     updateLights(dt);
+    updateCavities(dt);
     pickUps();
     const hit = findInteract();
     updatePassive(hit);

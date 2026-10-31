@@ -27,3 +27,16 @@ test('sideways platforms park at x0 and x1 on one height', () => {
   const lift = { x: 10, y0: 300, y1: 200, w: 60 };
   assert.deepEqual(slotMid(lift), { x: 40, y: 257 });
 });
+
+test('a cavity drives what is in its band, unless something blocks the way', async () => {
+  const { cavityReaches } = await import('../game/geometry.js');
+  const down = { x: 100, w: 100, y: 20, dir: 'down' };
+  const target = { x: 120, y: 300, w: 60, h: 14 };
+  assert.ok(cavityReaches(down, target, []));
+  assert.ok(!cavityReaches(down, { x: 300, y: 300, w: 60, h: 14 }, []), 'outside the band');
+  assert.ok(!cavityReaches(down, target, [{ x: 90, y: 150, w: 130, h: 14 }]), 'a shield above it');
+  assert.ok(cavityReaches(down, target, [{ x: 90, y: 400, w: 130, h: 14 }]), 'a block below it does not matter');
+  const up = { x: 100, w: 100, y: 530, dir: 'up' };
+  assert.ok(cavityReaches(up, target, []));
+  assert.ok(!cavityReaches(up, target, [{ x: 90, y: 450, w: 130, h: 14 }]), 'a block between the pit and it');
+});

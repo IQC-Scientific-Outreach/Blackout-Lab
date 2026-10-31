@@ -320,3 +320,34 @@ test('bonus level 3, stage 2: A ends 0 and B ends 1 with H, Z on A, H on B and C
   for (const [g, w] of [['h', 0], ['z', 0], ['h', 0], ['h', 1], ['cz', 0], ['h', 1], ['h', 0], ['z', 0], ['h', 0]]) q.apply(g, g === 'cz' ? [0, 1] : [w]);
   assert.deepEqual(q.snapshot().definite, [0, 1]);
 });
+
+test('Ry turns 0 into +, then 1, then -, then back', () => {
+  const q = lab(['0']);
+  q.apply('ry', [0], Math.PI / 2);
+  close(q.snapshot().p1[0], 0.5);
+  close(q.snapshot().bloch[0][0], 1, 'the + side of the Bloch sphere');
+  q.apply('ry', [0], Math.PI / 2);
+  assert.deepEqual(q.snapshot().definite, [1]);
+  q.apply('ry', [0], Math.PI / 2);
+  close(q.snapshot().bloch[0][0], -1, 'the - side');
+  q.apply('ry', [0], Math.PI / 2);
+  assert.deepEqual(q.snapshot().definite, [0]);
+  assert.throws(() => q.apply('ry', [0]), /needs an angle/);
+  assert.match(q.code(), /qc\.ry\(1\.570796, 0\)/);
+});
+
+test('a cavity drive is one growing circuit entry per stretch, cut by anything else on that qubit', () => {
+  const q = lab(['0', '0'], 2);
+  for (let k = 0; k < 30; k += 1) q.drive(0, Math.PI / 30);
+  q.apply('h', [1]); // other qubits do not cut the stretch
+  for (let k = 0; k < 30; k += 1) q.drive(0, Math.PI / 30);
+  let ops = q.snapshot().ops;
+  assert.equal(ops.filter((op) => op.kind === 'drive').length, 1);
+  close(ops[0].angle, 2 * Math.PI);
+  assert.deepEqual([q.snapshot().definite[0]], [0], 'a full Rabi cycle returns to 0');
+  q.measure(0, true, 'torch');
+  q.drive(0, 0.1);
+  ops = q.snapshot().ops;
+  assert.equal(ops.filter((op) => op.kind === 'drive').length, 2, 'a measurement starts a new stretch');
+  assert.match(q.code(), /qc\.ry\(6\.283185, 0\) {2}# cavity drive on A/);
+});

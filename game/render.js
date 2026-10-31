@@ -4,7 +4,7 @@
 // signs, speech bubbles) are drawn again on top, so they stay readable in the dark.
 
 import { WORLD, PLATFORM_H } from './levels.js';
-import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS, cavityStop } from './geometry.js';
 
 const C = {
   wallTop: '#1a2942',
@@ -92,7 +92,7 @@ export function paintCanister(ctx, x, baseY, state) {
 // circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
 // (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
 // over the animation: in with a spring, hold, then out. `size` is the box width.
-export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', cx: '#ff8adf', cz: '#ff8adf' };
+export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', ry: '#c39bff', cx: '#ff8adf', cz: '#ff8adf' };
 
 export function gatePop(k, calm) {
   if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
@@ -932,11 +932,12 @@ export function createRenderer(canvas) {
 
   // -- things that glow -----------------------------------------------------
 
-  function drawGhost(G, p, state, prob, lit, percent) {
+  // `fade` (0 to 1) thins the outline for a state close to 0 or 1 (see drawPlatformGlow).
+  function drawGhost(G, p, state, prob, lit, percent, fade = 1) {
     const r = slotRect(p, state);
     const jitter = Math.sin(G.t * 9 + p.x + state * 2) * 1.2;
     ctx.save();
-    ctx.globalAlpha = 0.3 + 0.7 * prob;
+    ctx.globalAlpha = (0.3 + 0.7 * prob) * fade;
     ctx.fillStyle = 'rgba(94,230,255,0.10)';
     platformPath(p, r.x, r.y + jitter);
     ctx.fill();
@@ -970,8 +971,20 @@ export function createRenderer(canvas) {
       const p1 = p.p1;
       const one = Math.round(p1 * 100);
       const seen = p.exposure > 0 || lightPart > 0;
-      drawGhost(G, p, 0, 1 - p1, seen, 100 - one);
-      drawGhost(G, p, 1, p1, seen, one);
+      // A state part way between certain and 50/50 (a cavity's rotation) is drawn as both
+      // at once: the platform at its likelier slot, as solid as the state is close to it,
+      // over the 50/50 outlines, as faint as it is far from them.
+      const near = Math.abs(1 - 2 * p1);
+      if (near > 0.02) {
+        const slot = slotRect(p, p1 > 0.5 ? 1 : 0);
+        ctx.save();
+        ctx.globalAlpha = near * 0.85;
+        drawPlatformBody({ ...p, x: slot.x, y: slot.y });
+        ctx.restore();
+      }
+      const fade = Math.max(0.2, 1 - near);
+      drawGhost(G, p, 0, near > 0.02 ? 0.5 : 1 - p1, seen, 100 - one, fade);
+      drawGhost(G, p, 1, near > 0.02 ? 0.5 : p1, seen, one, fade);
       const mid = slotMid(p);
       if (p.exposure > 0) exposureRing(mid.x, mid.y, p.exposure / TORCH.dwell, C.torch);
       else if (lightPart > 0) exposureRing(mid.x, mid.y, lightPart, LIGHT_RING[p.lightKind]);
@@ -1216,6 +1229,37 @@ export function createRenderer(canvas) {
   }
 
   const LIGHT_TINT = { normal: '255,236,190', weak: '255,226,160', emergency: '255,70,70' };
+
+  // Cavities: the emitter, and wave columns running from it until something blocks them.
+  function drawCavities(G) {
+    const room = G.room;
+    if (!room.cavities || !room.cavities.length) return;
+    const blockers = [...room.solids, ...room.platforms.filter((p) => p.state !== null).map((p) => ({ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }))];
+    const drift = calm.matches ? 0 : G.t * 40; // the waves travel away from the emitter
+    for (const c of room.cavities) {
+      const sign = c.dir === 'up' ? -1 : 1;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(195,155,255,0.38)';
+      ctx.lineWidth = 1.6;
+      for (let x = c.x + 9; x <= c.x + c.w - 9; x += 18) {
+        const stop = cavityStop(c, x, blockers);
+        const length = Math.abs(stop - c.y);
+        ctx.beginPath();
+        for (let d = 0; d <= length; d += 4) {
+          const wx = x + Math.sin((d - drift) / 9) * 3.5;
+          if (d === 0) ctx.moveTo(wx, c.y + sign * d);
+          else ctx.lineTo(wx, c.y + sign * d);
+        }
+        ctx.stroke();
+      }
+      // The emitter: a slab with a glowing slit facing the waves.
+      ctx.fillStyle = '#2c3a55';
+      ctx.fillRect(c.x - 6, c.y - (c.dir === 'up' ? 0 : 12), c.w + 12, 12);
+      ctx.fillStyle = '#c39bff';
+      ctx.fillRect(c.x, c.dir === 'up' ? c.y : c.y - 3, c.w, 3);
+      ctx.restore();
+    }
+  }
 
   // Backup lights: the tint of each cone, then the lamp hanging at its top. A faulty
   // (weak) lamp sparks at its wiring; an emergency lamp glows red.
@@ -1835,6 +1879,7 @@ export function createRenderer(canvas) {
     drawPickupGlow(G);
     drawDoorGlow(G);
     drawDecorGlow(G);
+    drawCavities(G);
     drawLights(G);
     drawFx(G);
     drawSpeech(G);

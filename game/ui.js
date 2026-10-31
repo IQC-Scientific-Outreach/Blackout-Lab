@@ -128,6 +128,7 @@ export function createUI(dom, handlers) {
   function opLabel(op) {
     if (op.gate === 'cx') return `${op.q[0]} → ${op.q[1]}`;
     if (op.gate === 'cz') return `${op.q[0]} · ${op.q[1]}`;
+    if (op.gate === 'ry') return `${op.q[0]}, ${Math.round((op.angle / Math.PI) * 100) / 100 === 0.5 ? 'π/2' : `${(op.angle / Math.PI).toFixed(2)}π`}`;
     return op.q.join(', ');
   }
 

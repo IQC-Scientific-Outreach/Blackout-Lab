@@ -24,7 +24,7 @@ const EPS = 1e-9;
 const R = Math.SQRT1_2;
 
 // Gates a terminal may offer, with the number of qubits each acts on.
-const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, cx: 2, cz: 2 }; // i: identity, which does nothing
+const GATE_QUBITS = { i: 1, h: 1, x: 1, z: 1, ry: 1, cx: 2, cz: 2 }; // i: identity, which does nothing; ry takes an angle
 
 // How a floor's starting states are prepared from |0>.
 const INIT_GATES = { 0: [], 1: ['x'], '+': ['h'], '-': ['x', 'h'] };
@@ -90,10 +90,23 @@ export class Lab {
   }
 
   // The gate itself, on the amplitudes. cx is [control, target]; cz is symmetric.
-  _evolve(name, qubits) {
+  _evolve(name, qubits, angle = 0) {
     if (name === 'i') return;
     const { re, im } = this;
     const size = 1 << this.n;
+    if (name === 'ry') {
+      // A rotation about Y by `angle`: Qiskit's RYGate, real, so |0> turns into |+>, |1>, |->.
+      const c = Math.cos(angle / 2);
+      const s = Math.sin(angle / 2);
+      const bit = 1 << qubits[0];
+      for (let i = 0; i < size; i += 1) {
+        if (i & bit) continue;
+        const j = i | bit;
+        [re[i], re[j]] = [c * re[i] - s * re[j], s * re[i] + c * re[j]];
+        [im[i], im[j]] = [c * im[i] - s * im[j], s * im[i] + c * im[j]];
+      }
+      return;
+    }
     if (name === 'cz') {
       // Z on one qubit when the other is 1: the |11> amplitudes change sign (it is symmetric).
       const both = (1 << qubits[0]) | (1 << qubits[1]);
@@ -141,9 +154,15 @@ export class Lab {
     }
   }
 
-  _gate(name, qubits, kind) {
-    this._evolve(name, qubits);
-    this.meta.push({ kind, gate: name, qubits: qubits.slice() });
+  _gate(name, qubits, kind, angle) {
+    this._evolve(name, qubits, angle);
+    this.meta.push(name === 'ry' ? { kind, gate: name, qubits: qubits.slice(), angle } : { kind, gate: name, qubits: qubits.slice() });
+  }
+
+  _angle(name, angle) {
+    if (name !== 'ry') return undefined;
+    if (!Number.isFinite(angle)) throw new Error('ry needs an angle');
+    return angle;
   }
 
   // Gates the floor applies by itself: a starting entanglement, a lock's own check.
@@ -151,14 +170,32 @@ export class Lab {
   auto(ops) {
     for (const op of ops || []) {
       const [name, qubits] = this._valid(op.gate, op.qubits);
-      this._gate(name, qubits, 'auto');
+      this._gate(name, qubits, 'auto', this._angle(name, op.angle));
     }
   }
 
   // A gate chosen at a terminal.
-  apply(name, qubits) {
+  apply(name, qubits, angle) {
     [name, qubits] = this._valid(name, qubits);
-    this._gate(name, qubits, 'gate');
+    this._gate(name, qubits, 'gate', this._angle(name, angle));
+  }
+
+  // A continuous drive (a cavity's Rabi oscillation): Ry by a small angle, frame after
+  // frame. A stretch of driving is one entry in the circuit, grown while nothing else
+  // happens to that qubit (gates on other qubits commute with it).
+  drive(q, angle) {
+    [q] = this._check([q]);
+    this._evolve('ry', [q], angle);
+    for (let k = this.meta.length - 1; k >= 0; k -= 1) {
+      const m = this.meta[k];
+      if (!m.qubits.includes(q)) continue;
+      if (m.kind === 'drive') {
+        m.angle += angle;
+        return;
+      }
+      break;
+    }
+    this.meta.push({ kind: 'drive', gate: 'ry', qubits: [q], angle });
   }
 
   // Probability that measuring qubit q gives 1.
@@ -321,6 +358,7 @@ export class Lab {
       .map((m) => {
         if (m.kind === 'measure') return { kind: m.kind, gate: m.gate, qubits: m.qubits, result: m.result, by: m.by };
         if (m.kind === 'reset') return { kind: m.kind, gate: m.gate, qubits: m.qubits, by: m.by };
+        if (m.gate === 'ry') return { kind: m.kind, gate: m.gate, qubits: m.qubits, angle: m.angle };
         return { kind: m.kind, gate: m.gate, qubits: m.qubits };
       });
   }
@@ -339,9 +377,10 @@ export class Lab {
       if (m.kind === 'measure') lines.push(`qc.measure(${q[0]}, ${q[0]})  # ${MEASURED_BY[m.by] || m.by} ${label}: read ${m.result}`);
       else if (m.kind === 'reset') lines.push(`qc.reset(${q[0]})  # ${m.by === 'emergency' ? `emergency light: ${label} damped to 0` : `${label} cleared to 0`}`);
       else {
-        let call = `qc.${m.gate === 'i' ? 'id' : m.gate}(${q.join(', ')})`;
+        let call = m.gate === 'ry' ? `qc.ry(${Number(m.angle.toFixed(6))}, ${q[0]})` : `qc.${m.gate === 'i' ? 'id' : m.gate}(${q.join(', ')})`;
         if (m.kind === 'init') call += `  # ${label} starts in |${this.init[q[0]]}>`;
         else if (m.kind === 'auto') call += '  # done by the floor itself';
+        else if (m.kind === 'drive') call += `  # cavity drive on ${label}`;
         lines.push(call);
       }
     }
@@ -410,9 +449,15 @@ export function createQuantum({ random = Math.random } = {}) {
         lab = new Lab(spec.qubits, { prep: spec.prep, random });
         return { state: lab.snapshot() };
       }),
-    apply: (gate, qubits) =>
+    apply: (gate, qubits, angle) =>
       reply(() => {
-        need().apply(gate, qubits);
+        need().apply(gate, qubits, angle);
+        return { state: lab.snapshot() };
+      }),
+    // Cavity drives for this frame: [[qubit, angle], ...].
+    drive: (pairs) =>
+      reply(() => {
+        for (const [q, angle] of pairs) need().drive(q, angle);
         return { state: lab.snapshot() };
       }),
     // Measures the qubits one by one; a partner already settled by an earlier one is skipped.

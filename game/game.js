@@ -6,7 +6,7 @@
 // platforms to wherever the returned snapshot says they are.
 
 import { LEVELS, BONUS_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
-import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityReaches } from './geometry.js';
 import { STORY } from './story.js';
 import { createQuantum } from './quantum.js';
 import { createInput } from './input.js';
@@ -381,6 +381,7 @@ export function startGame() {
           return built;
         }),
         lights: (room.lights || []).map((l) => ({ ...l, poly: null })),
+        cavities: (room.cavities || []).map((c) => ({ ...c })),
         terminals: (room.terminals || []).map((t) => {
           const surface = room.solids.find((s) => t.x >= s.x && t.x <= s.x + s.w && Math.abs(s.y - t.y) < 1);
           const fitsRight = surface ? t.x + 40 <= surface.x + surface.w : true;
@@ -485,7 +486,8 @@ export function startGame() {
     return true;
   }
 
-  function applySnapshot(snap) {
+  // `quiet`: a cavity's drive, every frame; the rack is then redrawn ten times a second.
+  function applySnapshot(snap, quiet) {
     G.q = snap;
     for (const p of G.platforms) {
       const now = snap.definite[p.qi];
@@ -505,7 +507,11 @@ export function startGame() {
         p.targetY = slot.y;
       }
     }
-    panel.render(snap);
+    if (!quiet || snap.ops.length !== G.drawnOps || G.t - G.drawnAt > 0.1) {
+      panel.render(snap);
+      G.drawnOps = snap.ops.length;
+      G.drawnAt = G.t;
+    }
   }
 
   function enterRoom(portal) {
@@ -668,7 +674,7 @@ export function startGame() {
     const before = G.q;
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
-    const res = await Q.apply(op.gate, qis);
+    const res = await Q.apply(op.gate, qis, op.angle);
     const wasDefinite = before.definite[target] !== null;
     const nowDefinite = res.ok && res.state.definite[target] !== null;
     const pop = wasDefinite && !nowDefinite ? 'superpose' : 'gate';
@@ -1025,7 +1031,7 @@ export function startGame() {
       const bx = p.x;
       const by = p.y;
       if (p.shuttle) moveShuttle(p, dt);
-      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), 240 * dt);
+      else if (p.state !== null && p.axis === 'x') p.x += Math.sign(p.targetX - p.x) * Math.min(Math.abs(p.targetX - p.x), (p.speed || 240) * dt);
       if (p.state !== null) p.y += Math.sign(p.targetY - p.y) * Math.min(Math.abs(p.targetY - p.y), 300 * dt);
       if (pl.standing === p) {
         pl.x += p.x - bx;
@@ -1118,6 +1124,44 @@ export function startGame() {
         else observe([p], 'light');
       }
     }
+  }
+
+  // Whether anything is watching a platform: the flashlight or a backup light on it, or
+  // the player standing on it. Watched, a driven platform does not evolve (the quantum
+  // watchdog, or Zeno, effect): it holds where it is, and a measurement collapses it.
+  function watched(p) {
+    if (G.player.standing === p) return true;
+    const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
+    const t = G.torch;
+    if (t.active && rects.some((r) => rectLit(handOf(G.player), t.angle, r))) return true;
+    return G.room.lights.some((light) => light.poly && rects.some((r) => rectInLight(r, light.poly)));
+  }
+
+  // Cavities: the waves rotate every platform they reach (Ry, a Rabi oscillation),
+  // 0 to + to 1 to - and round again, unless something is watching it. Blocked waves
+  // drive nothing beyond the blocker.
+  function updateCavities(dt) {
+    const room = G.room;
+    if (!room || !room.cavities.length || !G.q) return;
+    const certain = certainRects(room);
+    const pairs = [];
+    for (const p of room.platforms) {
+      p.driven = false;
+      if (p.pending || p.steady) continue;
+      const blockers = [...room.solids, ...certain.filter((c) => c.p !== p).map((c) => c.r)];
+      const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
+      const cavity = room.cavities.find((c) => rects.some((r) => cavityReaches(c, r, blockers)));
+      if (!cavity) continue;
+      if (watched(p)) {
+        p.driven = 'held';
+        continue;
+      }
+      p.driven = true;
+      pairs.push([p.qi, cavity.rate * dt]);
+    }
+    if (!pairs.length) return;
+    const res = Q.drive(pairs);
+    if (res.ok) applySnapshot(res.state, true);
   }
 
   // An emergency light: amplitude damping, all the way, so the qubit ends in |0>.
@@ -1672,8 +1716,12 @@ export function startGame() {
       if (input.take('use')) closeTerminal();
       input.take('pause'); // only E leaves a terminal
       for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
-      if (G.dev.instantResponse) movePlatforms(dt); // developer option: see each gate land at once
+      // Platforms wait until you leave the terminal, except with the instant response developer
+      // option, or in a room with a cavity, where timing is the whole puzzle (a shield cutting
+      // the waves has to do so the moment you apply its gate).
+      if (G.dev.instantResponse || G.room.cavities.length) movePlatforms(dt);
       updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
+      updateCavities(dt); // nor does a cavity's drive
       updateTorch(dt);
       return;
     }
@@ -1707,6 +1755,7 @@ export function startGame() {
     }
 
     updateLights(dt);
+    updateCavities(dt);
     pickUps();
     const hit = findInteract();
     updatePassive(hit);

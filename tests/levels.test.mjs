@@ -48,7 +48,13 @@ for (const [where0, level] of ALL) {
         assert.ok(light.kind in LIGHT_KINDS, where(`unknown light kind ${light.kind}`));
         assert.ok([light.x, light.y, light.angle, light.spread, light.range].every(Number.isFinite), where('a light needs x, y, angle, spread and range'));
       }
-      for (const t of room.terminals || []) gateOps(t.ops, where(`terminal ${t.id}`));
+      for (const c of room.cavities || []) {
+        assert.ok([c.x, c.w, c.y, c.rate].every(Number.isFinite) && ['up', 'down'].includes(c.dir), where('a cavity needs x, w, y, rate and dir up or down'));
+      }
+      for (const t of room.terminals || []) {
+        gateOps(t.ops, where(`terminal ${t.id}`));
+        for (const op of t.ops) if (op.gate === 'ry') assert.ok(Number.isFinite(op.angle), where(`terminal ${t.id}: ry needs an angle`));
+      }
       if (room.canister) known(room.canister.q, where('canister'));
       if (room.door) {
         const { key, lock } = room.door;

@@ -860,8 +860,82 @@ async function main() {
     await bot.hop(bot.slab('B'));
     await bot.hop(bot.solid(2));
     await bot.exit();
-    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
     return `bonus level 3: left in superposition at T1, P was measured by the weak light after ${caughtAfter.toFixed(2)} s; P raised after ${tries} more try at T1; A=0, B=1 after ${rounds} round(s) at T2; crossed to the exit in ${Math.round(g.floorTime)} s`;
+  });
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'rabi');
+
+  // Bonus level 4: Rabi oscillation and the watchdog effect.
+  await step('bonus level 4', async () => {
+    const g = bot.G();
+    const P = bot.platform('P');
+    const A = bot.platform('A');
+    const B = bot.platform('B');
+    const S = bot.platform('S');
+    // Unwatched, P turns round: its chance of 1 sweeps up and down.
+    let lo = 1;
+    let hi = 0;
+    const end = performance.now() + 4200;
+    while (performance.now() < end) {
+      lo = Math.min(lo, P.p1);
+      hi = Math.max(hi, P.p1);
+      await bot.frame();
+    }
+    if (lo > 0.05 || hi < 0.95) throw new Error(`P should swing between 0 and 1 by itself: ${lo} to ${hi}`);
+    // T1: Ry(pi/2) twice puts B half a turn ahead of A.
+    await bot.terminal('T1', [1, 1]);
+    // Freeze P lowered with the flashlight (switched off to start with), as it comes down to 0.
+    let freezes = 0;
+    while (P.state !== 0 && freezes < 6) {
+      if (g.torch.on) await bot.tap('KeyF');
+      bot.aim(P.x + P.w / 2, P.y0 + 6);
+      await bot.until(() => P.p1 < 0.05, 6000, 'P to come round to 0');
+      await bot.tap('KeyF');
+      await bot.until(() => P.state !== null, 3000, 'P to collapse');
+      freezes += 1;
+    }
+    if (P.state !== 0 || P.driven !== 'held') throw new Error(`P should be frozen lowered: ${P.state} ${P.driven}`);
+    await bot.hop(bot.slab('P'));
+    if (g.player.standing !== P || P.driven !== 'held') throw new Error('standing on P should keep it frozen');
+    const heldAt = g.q.ops.length;
+    bot.aim(60, 120); // look away: only standing on P holds it now
+    for (let k = 0; k < 40; k += 1) await bot.frame();
+    if (P.state !== 0 || g.q.ops.length !== heldAt) throw new Error('P should stay frozen while the player stands on it');
+    await bot.hop(bot.solid(1));
+    // T2: slide the shield in as A comes round to 0 (B is then at 1), then light both up.
+    let rounds = 0;
+    while (!(A.state === 0 && B.state === 1) && rounds < 6) {
+      const t2 = g.room.terminals.find((t) => t.id === 'T2');
+      await bot.walkTo(t2.x);
+      await bot.until(() => t2.near, 2000, 'stand at T2');
+      await bot.tap('KeyE');
+      await bot.until(() => g.mode === 'terminal', 2000, 'T2 to open');
+      if (S.state === 1) {
+        document.querySelector('#term-ops button[data-op="0"]').click(); // shield out: A and B turn again
+        await bot.until(() => S.state === 0, 1000, 'the shield to go');
+        for (let k = 0; k < 30; k += 1) await bot.frame();
+      }
+      await bot.until(() => A.p1 < 0.03, 6000, 'A to come round to 0');
+      document.querySelector('#term-ops button[data-op="0"]').click();
+      await bot.until(() => S.state === 1 && S.x === S.x1, 1000, 'the shield to cut the waves');
+      const frozen = [A.p1, B.p1];
+      for (let k = 0; k < 20; k += 1) await bot.frame();
+      if (Math.abs(A.p1 - frozen[0]) > 1e-6 || Math.abs(B.p1 - frozen[1]) > 1e-6) throw new Error('behind the shield, A and B should stop turning');
+      await bot.tap('KeyE');
+      await bot.until(() => g.mode === 'play', 2000, 'T2 to close');
+      bot.aim(600, 330);
+      await bot.until(() => A.state !== null && B.state !== null, 4000, 'A and B to collapse');
+      rounds += 1;
+    }
+    if (A.state !== 0 || B.state !== 1) throw new Error(`A should be 0 and B 1: ${A.state} ${B.state}`);
+    await bot.settle('A');
+    await bot.settle('B');
+    await bot.hop(bot.slab('A'));
+    await bot.hop(bot.slab('B'));
+    await bot.hop(bot.solid(2));
+    await bot.exit();
+    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
+    return `bonus level 4: P swung between ${lo.toFixed(2)} and ${hi.toFixed(2)} unwatched; frozen lowered after ${freezes} flashlight try, held while stood on; A=0, B=1 after ${rounds} shield round(s)`;
   });
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');

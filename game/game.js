@@ -43,7 +43,7 @@ const DEV_DEFAULTS = {
   instantResponse: false,
   passiveTerminal: false,
   canisterView: false,
-  swapDelay: 1, // seconds between choosing SWAP and the platforms setting off (1 to 5)
+  swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   showGates: false,
   panel: 'right',
   circuitRight: false,
@@ -54,7 +54,7 @@ function loadDev() {
     const saved = JSON.parse(localStorage.getItem(DEV_KEY) || '{}');
     const dev = { ...DEV_DEFAULTS };
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
-    dev.swapDelay = Math.min(5, Math.max(1, Number(dev.swapDelay) || 1));
+    dev.swapDelay = Math.min(5, Math.max(1, Math.round(Number(dev.swapDelay) || 3)));
     return dev;
   } catch (err) {
     return { ...DEV_DEFAULTS };
@@ -673,14 +673,28 @@ export function startGame() {
   // places, each carrying its old state to the other's place: the platform setting off
   // for R's place now shows R's qubit, which holds what was Q's. The other gates wait.
   const SWAP_SPEED = 260;
+
+  // A swap's countdown: a tick for each new number.
+  function countDown(dt) {
+    const sw = G.swap;
+    if (!sw) return;
+    if (sw.go > 0) sw.go -= dt;
+    if (sw.travel) return;
+    sw.wait -= dt;
+    const count = Math.max(1, Math.ceil(sw.wait - 1e-9));
+    if (count < sw.count && sw.wait > 0) audio.play('tick');
+    sw.count = count;
+  }
   async function swapPlatforms(term, op) {
     const epoch = G.epoch;
     const [pa, pb] = op.qi.map((qi) => G.platforms.find((p) => p.qi === qi));
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
     audio.play('switch');
-    G.swap = { a: pa, b: pb, wait: G.dev.swapDelay, delay: G.dev.swapDelay };
-    say(`SWAP ${pa.q} and ${pb.q}: in ${G.dev.swapDelay} s the platforms trade places.`, 'info');
+    // A countdown, one number a second (3, 2, 1, SWAP! by default), set by the swap delay.
+    G.swap = { a: pa, b: pb, wait: G.dev.swapDelay, delay: G.dev.swapDelay, count: G.dev.swapDelay, go: 0 };
+    audio.play('tick');
+    say(`SWAP ${pa.q} and ${pb.q}: the platforms trade places in ${G.dev.swapDelay}.`, 'info');
     await new Promise((resolve) => {
       const tick = () => (epoch !== G.epoch || G.swap.wait <= 0 ? resolve() : requestAnimationFrame(tick));
       tick();
@@ -695,6 +709,8 @@ export function startGame() {
       ui.setTerminalStatus(`That gate did not go through. ${res.error}`, 'bad');
       return;
     }
+    G.swap.go = 0.7; // SWAP! on screen as they set off
+    audio.play('tickGo');
     if (G.dev.showGates) await throwGate(term, 'swap', op.qi, 'gate', epoch);
     else audio.play('gate');
     if (epoch !== G.epoch) return;
@@ -1687,7 +1703,7 @@ export function startGame() {
     const station = G.room.battery;
     panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
-    else if (G.swap && !G.swap.travel) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are about to trade places: jump on or off now.`);
+    else if (G.swap && !G.swap.travel) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> trade places in <b>${G.swap.count}</b>: jump on or off now.`);
     else if (G.swap) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are trading places.`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
@@ -1744,7 +1760,7 @@ export function startGame() {
       // option, or in a room with a cavity, where timing is the whole puzzle (a shield cutting
       // the waves has to do so the moment you apply its gate).
       if (G.dev.instantResponse || G.room.cavities.length || G.swap) movePlatforms(dt); // a swap does not wait either
-      if (G.swap) G.swap.wait -= dt;
+      countDown(dt);
       updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
       updateCavities(dt); // nor does a cavity's drive
       updateTorch(dt);
@@ -1781,7 +1797,7 @@ export function startGame() {
 
     updateLights(dt);
     updateCavities(dt);
-    if (G.swap) G.swap.wait -= dt;
+    countDown(dt);
     pickUps();
     const hit = findInteract();
     updatePassive(hit);

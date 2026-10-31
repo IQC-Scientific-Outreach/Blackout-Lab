@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Ls6U9rOZEvlbHs8KsCFI9laRj5+XsfEWgd9Vxk6Evy4='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-xzY7yxKstB0zMsaLwQz8rud6fIdt0pARh2YJEBKKq8w='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -431,8 +431,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
                   <input type="checkbox" role="switch" id="dev-show-gates"> <b>Show gates</b>
                   <span class="dev-hint">each gate pops up over its qubits</span></label>
                 <label class="dev-opt dev-range" title="How long SWAP waits, with arrows showing where the platforms will go, before they set off.">
-                  <b>Swap delay</b> <input type="range" id="dev-swap-delay" min="1" max="5" step="0.5" value="1">
-                  <span class="dev-hint" id="dev-swap-delay-text">1 s</span></label>
+                  <b>Swap delay</b> <input type="range" id="dev-swap-delay" min="1" max="5" step="1" value="3">
+                  <span class="dev-hint" id="dev-swap-delay-text">3 s</span></label>
                 <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
                   <b id="dev-panel-name">Panel position</b>
                   <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
@@ -2404,6 +2404,12 @@ function createAudio() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.3, 'triangle', 0.07));
     },
     click: () => tone(880, 0, 0.04, 'square', 0.025),
+    // A swap's countdown: a short tick for each number, a higher one for SWAP!
+    tick: () => tone(660, 0, 0.07, 'square', 0.03),
+    tickGo: () => {
+      tone(990, 0, 0.09, 'square', 0.035);
+      tone(1320, 0.08, 0.16, 'square', 0.03);
+    },
     // A heavy switch thrown, "chun-chunk": two low metallic thuds, the second deeper and longer.
     switch: () => {
       tone(320, 0, 0.018, 'square', 0.03, 180); // the lever's bite
@@ -3786,7 +3792,31 @@ function createRenderer(canvas) {
   // where it is about to go.
   function drawSwapArrows(G) {
     const sw = G.swap;
-    if (!sw || sw.travel) return;
+    if (!sw) return;
+    // The countdown, big, between the two platforms: 3, 2, 1, then SWAP! as they set off.
+    if (!sw.travel || sw.go > 0) {
+      const a = slotMid(sw.a);
+      const b = slotMid(sw.b);
+      const text = sw.travel ? 'SWAP!' : String(sw.count);
+      const phase = sw.travel ? 1 - sw.go / 0.7 : 1 - (sw.wait - Math.floor(sw.wait - 1e-9)); // 0 to 1 through each second
+      const pop = calm.matches ? 1 : 1 + 0.35 * Math.max(0, 1 - phase * 4);
+      ctx.save();
+      ctx.translate((a.x + b.x) / 2, Math.min(a.y, b.y) - 70);
+      ctx.scale(pop, pop);
+      ctx.globalAlpha = sw.travel ? Math.min(1, sw.go / 0.3) : 1;
+      ctx.font = `800 ${sw.travel ? 46 : 64}px ${SIGN_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(7,11,20,0.85)';
+      ctx.strokeText(text, 0, 0);
+      ctx.shadowColor = sw.travel ? 'rgba(125,255,168,0.9)' : 'rgba(255,217,138,0.9)';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = sw.travel ? '#7dffa8' : '#ffd98a';
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    if (sw.travel) return;
     const pulse = calm.matches ? 1 : 0.65 + 0.35 * Math.sin(G.t * 9);
     for (const [p, other] of [[sw.a, sw.b], [sw.b, sw.a]]) {
       const mid = slotMid(p);
@@ -5389,7 +5419,7 @@ const DEV_DEFAULTS = {
   instantResponse: false,
   passiveTerminal: false,
   canisterView: false,
-  swapDelay: 1, // seconds between choosing SWAP and the platforms setting off (1 to 5)
+  swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   showGates: false,
   panel: 'right',
   circuitRight: false,
@@ -5400,7 +5430,7 @@ function loadDev() {
     const saved = JSON.parse(localStorage.getItem(DEV_KEY) || '{}');
     const dev = { ...DEV_DEFAULTS };
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
-    dev.swapDelay = Math.min(5, Math.max(1, Number(dev.swapDelay) || 1));
+    dev.swapDelay = Math.min(5, Math.max(1, Math.round(Number(dev.swapDelay) || 3)));
     return dev;
   } catch (err) {
     return { ...DEV_DEFAULTS };
@@ -6019,14 +6049,28 @@ function startGame() {
   // places, each carrying its old state to the other's place: the platform setting off
   // for R's place now shows R's qubit, which holds what was Q's. The other gates wait.
   const SWAP_SPEED = 260;
+
+  // A swap's countdown: a tick for each new number.
+  function countDown(dt) {
+    const sw = G.swap;
+    if (!sw) return;
+    if (sw.go > 0) sw.go -= dt;
+    if (sw.travel) return;
+    sw.wait -= dt;
+    const count = Math.max(1, Math.ceil(sw.wait - 1e-9));
+    if (count < sw.count && sw.wait > 0) audio.play('tick');
+    sw.count = count;
+  }
   async function swapPlatforms(term, op) {
     const epoch = G.epoch;
     const [pa, pb] = op.qi.map((qi) => G.platforms.find((p) => p.qi === qi));
     G.busy = true;
     ui.setTerminalBusy(true, carrying());
     audio.play('switch');
-    G.swap = { a: pa, b: pb, wait: G.dev.swapDelay, delay: G.dev.swapDelay };
-    say(`SWAP ${pa.q} and ${pb.q}: in ${G.dev.swapDelay} s the platforms trade places.`, 'info');
+    // A countdown, one number a second (3, 2, 1, SWAP! by default), set by the swap delay.
+    G.swap = { a: pa, b: pb, wait: G.dev.swapDelay, delay: G.dev.swapDelay, count: G.dev.swapDelay, go: 0 };
+    audio.play('tick');
+    say(`SWAP ${pa.q} and ${pb.q}: the platforms trade places in ${G.dev.swapDelay}.`, 'info');
     await new Promise((resolve) => {
       const tick = () => (epoch !== G.epoch || G.swap.wait <= 0 ? resolve() : requestAnimationFrame(tick));
       tick();
@@ -6041,6 +6085,8 @@ function startGame() {
       ui.setTerminalStatus(`That gate did not go through. ${res.error}`, 'bad');
       return;
     }
+    G.swap.go = 0.7; // SWAP! on screen as they set off
+    audio.play('tickGo');
     if (G.dev.showGates) await throwGate(term, 'swap', op.qi, 'gate', epoch);
     else audio.play('gate');
     if (epoch !== G.epoch) return;
@@ -7033,7 +7079,7 @@ function startGame() {
     const station = G.room.battery;
     panel.setGoal(station && station.taken && G.level.goalAfterBattery ? G.level.goalAfterBattery : G.level.goal);
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
-    else if (G.swap && !G.swap.travel) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are about to trade places: jump on or off now.`);
+    else if (G.swap && !G.swap.travel) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> trade places in <b>${G.swap.count}</b>: jump on or off now.`);
     else if (G.swap) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are trading places.`);
     else if (station && !station.taken && G.torch.battery === 'dead') {
       ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
@@ -7090,7 +7136,7 @@ function startGame() {
       // option, or in a room with a cavity, where timing is the whole puzzle (a shield cutting
       // the waves has to do so the moment you apply its gate).
       if (G.dev.instantResponse || G.room.cavities.length || G.swap) movePlatforms(dt); // a swap does not wait either
-      if (G.swap) G.swap.wait -= dt;
+      countDown(dt);
       updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
       updateCavities(dt); // nor does a cavity's drive
       updateTorch(dt);
@@ -7127,7 +7173,7 @@ function startGame() {
 
     updateLights(dt);
     updateCavities(dt);
-    if (G.swap) G.swap.wait -= dt;
+    countDown(dt);
     pickUps();
     const hit = findInteract();
     updatePassive(hit);

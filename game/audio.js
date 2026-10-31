@@ -68,6 +68,12 @@ export function createAudio() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.3, 'triangle', 0.07));
     },
     click: () => tone(880, 0, 0.04, 'square', 0.025),
+    // A swap's countdown: a short tick for each number, a higher one for SWAP!
+    tick: () => tone(660, 0, 0.07, 'square', 0.03),
+    tickGo: () => {
+      tone(990, 0, 0.09, 'square', 0.035);
+      tone(1320, 0.08, 0.16, 'square', 0.03);
+    },
     // A heavy switch thrown, "chun-chunk": two low metallic thuds, the second deeper and longer.
     switch: () => {
       tone(320, 0, 0.018, 'square', 0.03, 180); // the lever's bite

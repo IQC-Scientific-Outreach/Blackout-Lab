@@ -738,13 +738,18 @@ async function main() {
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', { label: 'Bonus 1. Quantum Communication' });
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel');
-  // The ride at the end of bonus levels 1 and 2 needs time to jump on: the swap delay
-  // developer option gives the bot 2.5 s (the default is 1 s).
-  await page.evaluate(() => {
+  // The swap delay developer option: 3 s by default, counted down; the slider changes it.
+  const delays = await page.evaluate(() => {
     const range = document.getElementById('dev-swap-delay');
-    range.value = '2.5';
+    const before = window.blackoutLab.state.dev.swapDelay;
+    range.value = '5';
     range.dispatchEvent(new Event('input'));
+    const changed = [window.blackoutLab.state.dev.swapDelay, document.getElementById('dev-swap-delay-text').textContent];
+    range.value = '3';
+    range.dispatchEvent(new Event('input'));
+    return { before, changed };
   });
+  if (delays.before !== 3 || delays.changed[0] !== 5 || delays.changed[1] !== '5 s') throw new Error(`swap delay option: ${JSON.stringify(delays)}`);
   const channel = async (level) => {
     const g = bot.G();
     const S = bot.platform('S');
@@ -771,6 +776,7 @@ async function main() {
     document.querySelector('#term-ops button[data-op="1"]').click();
     await bot.frame();
     if (!g.swap || [...document.querySelectorAll('#term-ops button')].some((b) => !b.disabled)) throw new Error('during a swap every gate should be greyed out');
+    if (g.swap.count !== 3) throw new Error(`the countdown should start at 3: ${g.swap.count}`);
     await bot.tap('KeyE');
     await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
     const ride = bot.platform('Q');

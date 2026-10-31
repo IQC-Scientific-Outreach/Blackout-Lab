@@ -1326,7 +1326,31 @@ export function createRenderer(canvas) {
   // where it is about to go.
   function drawSwapArrows(G) {
     const sw = G.swap;
-    if (!sw || sw.travel) return;
+    if (!sw) return;
+    // The countdown, big, between the two platforms: 3, 2, 1, then SWAP! as they set off.
+    if (!sw.travel || sw.go > 0) {
+      const a = slotMid(sw.a);
+      const b = slotMid(sw.b);
+      const text = sw.travel ? 'SWAP!' : String(sw.count);
+      const phase = sw.travel ? 1 - sw.go / 0.7 : 1 - (sw.wait - Math.floor(sw.wait - 1e-9)); // 0 to 1 through each second
+      const pop = calm.matches ? 1 : 1 + 0.35 * Math.max(0, 1 - phase * 4);
+      ctx.save();
+      ctx.translate((a.x + b.x) / 2, Math.min(a.y, b.y) - 70);
+      ctx.scale(pop, pop);
+      ctx.globalAlpha = sw.travel ? Math.min(1, sw.go / 0.3) : 1;
+      ctx.font = `800 ${sw.travel ? 46 : 64}px ${SIGN_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(7,11,20,0.85)';
+      ctx.strokeText(text, 0, 0);
+      ctx.shadowColor = sw.travel ? 'rgba(125,255,168,0.9)' : 'rgba(255,217,138,0.9)';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = sw.travel ? '#7dffa8' : '#ffd98a';
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    if (sw.travel) return;
     const pulse = calm.matches ? 1 : 0.65 + 0.35 * Math.sin(G.t * 9);
     for (const [p, other] of [[sw.a, sw.b], [sw.b, sw.a]]) {
       const mid = slotMid(p);

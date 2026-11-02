@@ -733,11 +733,114 @@ async function main() {
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0 && window.blackoutLab.state.lives === 3);
   report.push('out of lives on floor 3 restarted the climb from floor 1 with three lives');
 
-  // Bonus level 1, Quantum Communication: a shuttle, a backup light, a sideways shield.
+  // Bonus level 1, Broken Terminal: two terminals stuck in loops, a dead flashlight, a weak spare.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
-  await page.selectOption('#opt-floor', { label: 'Bonus 1. Quantum Communication' });
+  await page.selectOption('#opt-floor', { label: 'Bonus 1. Broken Terminal' });
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'broken');
+  await step('bonus level 1', async () => {
+    const g = bot.G();
+    const P = bot.platform('P');
+    const A = bot.platform('A');
+    const B = bot.platform('B');
+    const [t1, t2] = g.room.terminals;
+    if (g.torch.battery !== 'dead') throw new Error('the flashlight should start dead');
+    // T1 cannot be used: no E, and the prompt says it is broken. It turns P by itself.
+    await bot.walkTo(t1.x);
+    if (t1.near || !document.getElementById('prompt').textContent.includes('T1 is broken')) throw new Error(`T1 should be broken: ${document.getElementById('prompt').textContent}`);
+    await bot.tap('KeyE');
+    if (g.mode !== 'play') throw new Error('E at a broken terminal should do nothing');
+    const turns = () => g.q.ops.filter((op) => op.kind === 'auto' && op.gate === 'ry').length;
+    await bot.until(() => turns() >= 2, 3000, 'T1 to turn P by itself');
+    const ticks = turns();
+    // Ride P: from the edge of the ground, jump as it turns up to 1, run across it and jump to the ledge before it turns on.
+    const { key, until, frame } = bot;
+    const pl = g.player;
+    const jump = async () => {
+      key('Space', true);
+      await frame();
+      key('Space', false);
+      await until(() => !pl.onGround, 1000, 'leave the ground');
+    };
+    let rides = 0;
+    while (!(pl.onGround && Math.abs(pl.y + 32 - 340) < 2) && rides < 4) {
+      rides += 1;
+      if (g.mode !== 'play') await until(() => g.mode === 'play', 6000, 'back on the floor');
+      await bot.walkTo(140);
+      await until(() => P.state === 1 && t1.clock < 0.1, 6000, 'P to turn up to 1');
+      key('ArrowRight', true);
+      await jump();
+      await until(() => pl.onGround || g.mode !== 'play', 3000, 'land on P');
+      if (pl.standing !== P) {
+        key('ArrowRight', false);
+        continue;
+      }
+      await until(() => pl.x + 18 >= 282, 2000, 'the end of P');
+      await jump();
+      await until(() => pl.onGround || g.mode !== 'play', 3000, 'land on the ledge');
+      key('ArrowRight', false);
+    }
+    if (Math.abs(pl.y + 32 - 340) > 2) throw new Error('P should have carried the player up to the ledge');
+    // The spare battery: weak, so the beam reaches A and not B.
+    await bot.walkTo(g.room.battery.x);
+    await until(() => g.torch.battery === 'ok', 2000, 'the battery');
+    if (g.torch.range !== 170 || !g.torch.on) throw new Error(`the spare should be weak: range ${g.torch.range}`);
+    // Look at A until it reads 1 (a 0 is turned back into a superposition by the loop).
+    await bot.walkTo(436);
+    bot.aim(A.x + A.w / 2, A.y1 + 30);
+    await until(() => A.state === 1, 20000, 'A to read 1');
+    bot.aim(pl.x, 20);
+    const lookedAtB = g.q.ops.some((op) => op.kind === 'measure' && op.qubits.includes(B.qi));
+    if (lookedAtB) throw new Error('the weak beam should not have reached B');
+    // With A a certain 1, the loop raises B for a second after each H. Jump onto A just after the H,
+    // run to its end, and jump to B as it rises; then run on to the exit before it drops.
+    await until(() => A.state === 1 && t2.step === 1 && t2.clock < 0.1, 8000, 'the H that leaves A at 1');
+    key('ArrowRight', true);
+    await jump();
+    await until(() => pl.onGround || g.mode !== 'play', 3000, 'land on A');
+    if (pl.standing !== A) throw new Error(`should have landed on A: ${A.state}`);
+    await until(() => pl.x + 18 >= 578, 2000, 'the end of A');
+    if (t2.clock < 0.45) {
+      key('ArrowRight', false);
+      await until(() => t2.clock >= 0.45, 1000, 'B about to rise');
+      key('ArrowRight', true);
+    }
+    await jump();
+    await until(() => pl.onGround || g.mode !== 'play', 3000, 'land on B');
+    if (pl.standing !== B || B.state !== 1) throw new Error('should have landed on raised B');
+    await until(() => pl.x > 725, 2000, 'onto the exit ledge');
+    key('ArrowRight', false);
+    await bot.exit();
+    const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
+    return `bonus level 1: T1 turned P by itself (${ticks} tick(s) seen), ridden up in ${rides} try; spare battery range ${g.torch.range}; A read 1, then B rose and the player crossed in ${Math.round(g.floorTime)} s; stars ${stars.join(', ')}`;
+  });
+  await shot('15b-bonus-cleared');
+  if ((await page.textContent('#btn-next')) !== 'Next bonus level') throw new Error('bonus level 1 should lead on to the next bonus level');
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'shuffle');
+
+  // Bonus level 2, SWAP Shuffle: 000 to 011 with X on A and two instant SWAPs.
+  await step('bonus level 2', async () => {
+    const g = bot.G();
+    await bot.terminal('T1', [1, 2, 1, 3, 2]);
+    const bits = ['A', 'B', 'C'].map((q) => g.q.definite[bot.platform(q).qi]).join('');
+    if (bits !== '011') throw new Error(`X, SWAP A B, X, SWAP B C, SWAP A B should give 011: ${bits}`);
+    await bot.settle('A');
+    await bot.settle('B');
+    await bot.settle('C');
+    await bot.hop(bot.slab('A'));
+    await bot.hop(bot.slab('B'));
+    await bot.hop(bot.slab('C'));
+    await bot.hop(bot.solid(1));
+    await bot.exit();
+    const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
+    if (!stars.some((t) => t.startsWith('+Crossed with the fewest'))) throw new Error(`five gates should earn the fewest-gates star: ${stars.join(', ')}`);
+    return `bonus level 2: X SWAP X SWAP SWAP gave 011 with no countdowns, and the player crossed; stars ${stars.join(', ')}`;
+  });
+  await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel');
+
+  // Bonus level 3, Quantum Communication: a shuttle, a backup light, a sideways shield.
   // The swap delay developer option: 3 s by default, counted down; the slider changes it.
   const delays = await page.evaluate(() => {
     const range = document.getElementById('dev-swap-delay');
@@ -757,7 +860,7 @@ async function main() {
     // Unshielded: H, then SWAP sends the superposition across, and the light sees it on the way.
     await bot.terminal('T1', [1, 2]);
     const first = g.q.ops.map((op) => `${op.gate}${op.by ? `:${op.by}` : ''}`).join(' ');
-    const seen = level === 2 ? 'reset:emergency' : 'measure:light';
+    const seen = level === 4 ? 'reset:emergency' : 'measure:light';
     if (!first.startsWith('h swap') || !first.includes(seen)) throw new Error(`unshielded, the light should catch the crossing: ${first}`);
     document.getElementById('btn-restart').click();
     await bot.until(() => g.mode === 'play' && g.q.ops.length === 0, 4000, 'the restart');
@@ -789,17 +892,15 @@ async function main() {
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
     return `bonus level ${level}: unshielded the light caught the crossing (${first}); shielded, X H SWAP Z SWAP H made Q a certain 1, and the last SWAP carried the player across; stars ${stars.join(', ')}`;
   };
-  await step('bonus level 1', channel, 1);
-  await shot('15b-bonus-cleared');
-  if ((await page.textContent('#btn-next')) !== 'Next bonus level') throw new Error('bonus level 1 should lead on to the next bonus level');
+  await step('bonus level 3', channel, 3);
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'channel-emergency');
-  await step('bonus level 2', channel, 2);
+  await step('bonus level 4', channel, 4);
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'decoherence');
 
-  // Bonus level 3: weak lights over every platform; a timed H Z H, then A = 0 and B = 1 through CZ.
-  await step('bonus level 3', async () => {
+  // Bonus level 5: weak lights over every platform; a timed H Z H, then A = 0 and B = 1 through CZ.
+  await step('bonus level 5', async () => {
     const g = bot.G();
     const P = bot.platform('P');
     const A = bot.platform('A');
@@ -851,13 +952,13 @@ async function main() {
     await bot.hop(bot.slab('B'));
     await bot.hop(bot.solid(2));
     await bot.exit();
-    return `bonus level 3: left in superposition at T1, P was measured by the weak light after ${caughtAfter.toFixed(2)} s; P raised after ${tries} more try at T1; A=0, B=1 after ${rounds} round(s) at T2; crossed to the exit in ${Math.round(g.floorTime)} s`;
+    return `bonus level 5: left in superposition at T1, P was measured by the weak light after ${caughtAfter.toFixed(2)} s; P raised after ${tries} more try at T1; A=0, B=1 after ${rounds} round(s) at T2; crossed to the exit in ${Math.round(g.floorTime)} s`;
   });
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'rabi');
 
-  // Bonus level 4: Rabi oscillation and the watchdog effect.
-  await step('bonus level 4', async () => {
+  // Bonus level 6: Rabi oscillation and the watchdog effect.
+  await step('bonus level 6', async () => {
     const g = bot.G();
     const P = bot.platform('P');
     const A = bot.platform('A');
@@ -926,7 +1027,7 @@ async function main() {
     await bot.hop(bot.solid(2));
     await bot.exit();
     if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
-    return `bonus level 4: P swung between ${lo.toFixed(2)} and ${hi.toFixed(2)} unwatched; frozen lowered after ${freezes} flashlight try, held while stood on; A=0, B=1 after ${rounds} shield round(s)`;
+    return `bonus level 6: P swung between ${lo.toFixed(2)} and ${hi.toFixed(2)} unwatched; frozen lowered after ${freezes} flashlight try, held while stood on; A=0, B=1 after ${rounds} shield round(s)`;
   });
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');

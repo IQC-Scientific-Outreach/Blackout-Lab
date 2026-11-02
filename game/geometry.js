@@ -145,18 +145,19 @@ function angleGap(a, b) {
   return Math.abs(d);
 }
 
-export function pointLit(hand, angle, x, y) {
+// `range`: how far the beam reaches (a spare battery can be weaker than a new one).
+export function pointLit(hand, angle, x, y, range = TORCH.range) {
   const dx = x - hand.x;
   const dy = y - hand.y;
   const dist = Math.hypot(dx, dy);
-  if (dist > TORCH.range) return false;
+  if (dist > range) return false;
   if (dist < 14) return true;
   return angleGap(Math.atan2(dy, dx), angle) <= TORCH.half;
 }
 
 // A rectangle counts as lit when its centre, or any two of its corners, are in the beam.
-export function rectLit(hand, angle, r) {
-  if (pointLit(hand, angle, r.x + r.w / 2, r.y + r.h / 2)) return true;
+export function rectLit(hand, angle, r, range = TORCH.range) {
+  if (pointLit(hand, angle, r.x + r.w / 2, r.y + r.h / 2, range)) return true;
   const inset = 3;
   let hits = 0;
   for (const [x, y] of [
@@ -165,7 +166,7 @@ export function rectLit(hand, angle, r) {
     [r.x + inset, r.y + r.h - inset],
     [r.x + r.w - inset, r.y + r.h - inset],
   ]) {
-    if (pointLit(hand, angle, x, y)) hits += 1;
+    if (pointLit(hand, angle, x, y, range)) hits += 1;
   }
   return hits >= 2;
 }

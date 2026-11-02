@@ -909,13 +909,13 @@ export function createRenderer(canvas) {
 
     if (G.torch.active) {
       const hand = handOf(p);
-      const g = mctx.createRadialGradient(hand.x, hand.y, 8, hand.x, hand.y, TORCH.range);
+      const g = mctx.createRadialGradient(hand.x, hand.y, 8, hand.x, hand.y, G.torch.range);
       g.addColorStop(0, 'rgba(0,0,0,1)');
       g.addColorStop(0.55, 'rgba(0,0,0,0.92)');
       g.addColorStop(0.9, 'rgba(0,0,0,0.45)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       mctx.fillStyle = g;
-      beamPath(mctx, hand, G.torch.angle, TORCH.range); // its edge is softened by the stretch below
+      beamPath(mctx, hand, G.torch.angle, G.torch.range); // its edge is softened by the stretch below
       mctx.fill();
     }
 
@@ -927,11 +927,11 @@ export function createRenderer(canvas) {
 
     if (G.torch.active) {
       const hand = handOf(p);
-      const g = ctx.createRadialGradient(hand.x, hand.y, 4, hand.x, hand.y, TORCH.range);
+      const g = ctx.createRadialGradient(hand.x, hand.y, 4, hand.x, hand.y, G.torch.range);
       g.addColorStop(0, 'rgba(255,217,138,0.20)');
       g.addColorStop(1, 'rgba(255,217,138,0)');
       ctx.fillStyle = g;
-      beamPath(ctx, hand, G.torch.angle, TORCH.range);
+      beamPath(ctx, hand, G.torch.angle, G.torch.range);
       ctx.fill();
     }
   }
@@ -1021,6 +1021,31 @@ export function createRenderer(canvas) {
     return definite;
   }
 
+  // A broken terminal: a cracked, flickering screen stuck on its loop. It shows the gate it
+  // applies next and, along the bottom, how long until it does.
+  const BROKEN_SYMBOL = { cx: 'CX', cz: 'CZ', swap: 'SW', ry: 'RY' };
+  function drawBrokenScreen(G, term, s) {
+    const b = term.broken;
+    const op = b.ops[term.step];
+    const flicker = 0.75 + 0.25 * Math.sin(G.t * 23 + term.x) * Math.sin(G.t * 7);
+    ctx.fillStyle = '#2a1410';
+    rr(ctx, s.x, s.y, s.w, s.h, 2);
+    ctx.fill();
+    ctx.globalAlpha = flicker;
+    label(`${BROKEN_SYMBOL[op.gate] || op.gate.toUpperCase()} ${op.q.join('')}`, s.x + s.w / 2, s.y + 8, '#ffb070', 8);
+    ctx.fillStyle = '#ff8a4a';
+    ctx.fillRect(s.x + 3, s.y + s.h - 5, (s.w - 6) * Math.min(1, term.clock / b.every), 2);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,220,200,0.55)'; // the crack
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(s.x + s.w - 4, s.y + 1);
+    ctx.lineTo(s.x + s.w - 10, s.y + 7);
+    ctx.lineTo(s.x + s.w - 7, s.y + 11);
+    ctx.lineTo(s.x + s.w - 14, s.y + s.h - 1);
+    ctx.stroke();
+  }
+
   function drawTerminalGlow(G, term) {
     const carrying = !!(G.canister && G.canister.carried);
     const s = screenRect(term);
@@ -1036,6 +1061,8 @@ export function createRenderer(canvas) {
       ctx.globalAlpha = 1;
       const qi = G.level.qubits.findIndex((q) => q.role === 'box');
       if (qi >= 0 && !G.flags.opened) sealedTag(G, G.level.qubits[qi].id, qi, r.x + r.w / 2, r.y - 12);
+    } else if (term.broken) {
+      drawBrokenScreen(G, term, s);
     } else if (term.port) {
       ctx.fillStyle = '#1a1014';
       rr(ctx, s.x, s.y, s.w, s.h, 2);

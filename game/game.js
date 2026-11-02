@@ -103,7 +103,7 @@ export function startGame() {
     door: null,
     canister: null,
     player: { x: 0, y: 0, vx: 0, vy: 0, facing: 1, onGround: false, coyote: 0, buffer: 0, anim: 0, standing: null, visible: true },
-    torch: { on: true, active: false, lowered: false, angle: 0, tilt: 0.15, useMouse: false, battery: 'ok', flickT: 3, flickLeft: 0 },
+    torch: { on: true, active: false, lowered: false, angle: 0, tilt: 0.15, useMouse: false, battery: 'ok', range: TORCH.range, flickT: 3, flickLeft: 0 },
     dialogue: null,
     bubbles: [],
     fx: [],
@@ -390,6 +390,10 @@ export function startGame() {
           return {
             ...t,
             ops: t.ops.map((op) => ({ ...op, qi: op.q.map((id) => G.qIndex[id]), needsCanister: !!canQubit && op.q.includes(canQubit.id) })),
+            broken: t.broken ? { ...t.broken, ops: t.broken.ops.map((op) => ({ ...op, qi: op.q.map((id) => G.qIndex[id]) })) } : null,
+            clock: 0, // a broken terminal: time since its last gate
+            step: 0, // and which of its gates comes next
+            thrown: false,
             sealedQi: t.sealed ? G.qIndex[t.sealed] : -1,
             cryoSide: fitsRight ? 1 : -1,
             near: false,
@@ -436,6 +440,7 @@ export function startGame() {
     G.torch.on = !level.torchOff;
     G.torch.tilt = 0.15;
     G.torch.battery = level.torch || 'ok';
+    G.torch.range = TORCH.range;
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
     G.torch.flickLeft = 0;
     G.terminal = null;
@@ -611,18 +616,50 @@ export function startGame() {
     }
     if (lead) await untilFx(lead, 1, epoch);
     if (epoch !== G.epoch) return;
-    const tileQis = tileItems().map((it) => it.qi);
-    const parts =
-      gate === 'cx'
-        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }]
-        : gate === 'cz'
-        ? [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'ctrl', gate }]
-        : gate === 'swap'
-        ? [{ qi: qis[0], role: 'swap', gate }, { qi: qis[1], role: 'swap', gate }]
-        : [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
-    const fx = { type: 'gate', parts, tileQis, t: 0, dur: GATE_SECONDS };
-    G.fx.push(fx);
+    G.fx.push({ type: 'gate', parts: gateParts(gate, qis), tileQis: tileItems().map((it) => it.qi), t: 0, dur: GATE_SECONDS });
     audio.play(pop);
+  }
+
+  function gateParts(gate, qis) {
+    if (gate === 'cx') return [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'targ', gate }];
+    if (gate === 'cz') return [{ qi: qis[0], role: 'ctrl', gate }, { qi: qis[1], role: 'ctrl', gate }];
+    if (gate === 'swap') return [{ qi: qis[0], role: 'swap', gate }, { qi: qis[1], role: 'swap', gate }];
+    return [{ qi: qis[0], role: 'box', gate, symbol: GATE_INFO[gate].symbol }];
+  }
+
+  // Broken terminals: stuck in a loop, applying their gates one after another, one every
+  // `every` seconds, whatever anyone does, and nobody can use them. A spark leaves the
+  // screen just before each gate so that it lands as the gate takes effect.
+  const BROKEN_SPARK = 0.3;
+  function updateBroken(dt) {
+    const room = G.room;
+    if (!room || !G.q) return;
+    for (const t of room.terminals) {
+      const b = t.broken;
+      if (!b) continue;
+      t.clock += dt;
+      const op = b.ops[t.step];
+      if (!t.thrown && t.clock >= b.every - BROKEN_SPARK) {
+        t.thrown = true;
+        const to = renderer.gateAnchor(G, op.qi[op.qi.length - 1]);
+        if (to) G.fx.push({ type: 'spark', from: center(screenRect(t)), to, t: 0, dur: BROKEN_SPARK, color: COLOR_OF(op.gate) });
+      }
+      if (t.clock < b.every) continue;
+      t.clock -= b.every;
+      t.thrown = false;
+      t.step = (t.step + 1) % b.ops.length;
+      const res = Q.auto([{ gate: op.gate, qubits: op.qi, angle: op.angle }]);
+      if (!res.ok) continue;
+      applySnapshot(res.state);
+      if (G.dev.showGates) G.fx.push({ type: 'gate', parts: gateParts(op.gate, op.qi), tileQis: tileItems().map((it) => it.qi), t: 0, dur: Math.min(GATE_SECONDS, b.every * 0.8) });
+    }
+  }
+
+  // How a gate reads in a sentence: "H on A", "CNOT on A and B", "RY(pi/2) on P".
+  function opWords(op) {
+    const turns = op.angle / Math.PI;
+    const angle = Math.abs(turns - 0.5) < 1e-9 ? '\u03c0/2' : Math.abs(turns - 1) < 1e-9 ? '\u03c0' : Number(op.angle).toFixed(2);
+    return `${GATE_INFO[op.gate].symbol}${op.gate === 'ry' ? `(${angle})` : ''} on ${list(op.q)}`;
   }
 
   async function machineMeasure(term, op) {
@@ -692,9 +729,13 @@ export function startGame() {
     ui.setTerminalBusy(true, carrying());
     audio.play('switch');
     // A countdown, one number a second (3, 2, 1, SWAP! by default), set by the swap delay.
-    G.swap = { a: pa, b: pb, wait: G.dev.swapDelay, delay: G.dev.swapDelay, count: G.dev.swapDelay, go: 0 };
-    audio.play('tick');
-    say(`SWAP ${pa.q} and ${pb.q}: the platforms trade places in ${G.dev.swapDelay}.`, 'info');
+    // A swap op can set its own delay; 0 sends the platforms off at once.
+    const delay = Number.isFinite(op.delay) ? op.delay : G.dev.swapDelay;
+    G.swap = { a: pa, b: pb, wait: delay, delay, count: delay, go: 0 };
+    if (delay > 0) {
+      audio.play('tick');
+      say(`SWAP ${pa.q} and ${pb.q}: the platforms trade places in ${delay}.`, 'info');
+    }
     await new Promise((resolve) => {
       const tick = () => (epoch !== G.epoch || G.swap.wait <= 0 ? resolve() : requestAnimationFrame(tick));
       tick();
@@ -709,8 +750,8 @@ export function startGame() {
       ui.setTerminalStatus(`That gate did not go through. ${res.error}`, 'bad');
       return;
     }
-    G.swap.go = 0.7; // SWAP! on screen as they set off
-    audio.play('tickGo');
+    G.swap.go = delay > 0 ? 0.7 : 0; // SWAP! on screen as they set off, after a countdown
+    if (delay > 0) audio.play('tickGo');
     if (G.dev.showGates) await throwGate(term, 'swap', op.qi, 'gate', epoch);
     else audio.play('gate');
     if (epoch !== G.epoch) return;
@@ -906,7 +947,7 @@ export function startGame() {
         if (p.state !== null) p.exposure = 0;
         continue;
       }
-      const lit = t.active && (rectLit(hand, t.angle, slotRect(p, 0)) || rectLit(hand, t.angle, slotRect(p, 1)));
+      const lit = t.active && (rectLit(hand, t.angle, slotRect(p, 0), t.range) || rectLit(hand, t.angle, slotRect(p, 1), t.range));
       p.exposure = lit ? p.exposure + dt : 0;
       if (p.exposure >= TORCH.dwell) ready.push(p);
     }
@@ -998,7 +1039,7 @@ export function startGame() {
     if (d.deniedT > 0) d.deniedT -= dt;
     if (G.dev.passiveTerminal) autoOpen(d);
     if (d.key && !d.unlocked && !d.byHand) {
-      const lit = G.torch.active && rectLit(handOf(pl), G.torch.angle, lockRect(d));
+      const lit = G.torch.active && rectLit(handOf(pl), G.torch.angle, lockRect(d), G.torch.range);
       if (!lit) {
         d.exposure = 0;
         d.armed = true;
@@ -1032,7 +1073,7 @@ export function startGame() {
       const d = Math.abs(cx - x);
       if (d < reach && (!best || d < best.d)) best = { type, obj, d };
     };
-    for (const t of room.terminals) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26);
+    for (const t of room.terminals) if (!t.broken) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26); // nobody can use a broken one
     for (const n of room.npcs) offer('npc', n, n.x, n.y, 34);
     for (const p of room.portals) offer('portal', p, p.x, p.y, 22);
     const d = room.door;
@@ -1068,9 +1109,10 @@ export function startGame() {
     if (Math.abs(cx - b.x) < 18 && Math.abs(feet - b.y) < 8) {
       b.taken = true;
       G.torch.battery = 'ok';
+      G.torch.range = b.range || TORCH.range; // a spare battery can be a weak one
       G.torch.on = true;
       audio.play('unlock');
-      say('New battery fitted. The flashlight is steady again.', 'good', LONG_TOAST);
+      say(b.range ? 'Spare battery fitted. It is a weak one: the beam only reaches a short way.' : 'New battery fitted. The flashlight is steady again.', 'good', LONG_TOAST);
       updateHud();
       if (story().onBattery) story().onBattery(storyCtx(null));
     }
@@ -1167,7 +1209,7 @@ export function startGame() {
     if (G.player.standing === p) return true;
     const rects = p.state === null ? [slotRect(p, 0), slotRect(p, 1)] : [{ x: p.x, y: p.y, w: p.w, h: PLATFORM_H }];
     const t = G.torch;
-    if (t.active && rects.some((r) => rectLit(handOf(G.player), t.angle, r))) return true;
+    if (t.active && rects.some((r) => rectLit(handOf(G.player), t.angle, r, t.range))) return true;
     return G.room.lights.some((light) => light.poly && rects.some((r) => rectInLight(r, light.poly)));
   }
 
@@ -1347,7 +1389,7 @@ export function startGame() {
       { got: G.hints === 0, text: 'No hints' },
     ];
     const bonus = level.bonus;
-    if (bonus) earned.push({ got: bonus.seconds ? G.floorTime <= bonus.seconds : G.bonusDone, text: bonus.text });
+    if (bonus) earned.push({ got: bonus.seconds ? G.floorTime <= bonus.seconds : bonus.fewest ? s.gates <= level.shortest : G.bonusDone, text: bonus.text });
     const stars = earned.filter((e) => e.got).length;
     const of = earned.length;
     const bonusLevel = isBonus(G.levelIndex);
@@ -1692,6 +1734,11 @@ export function startGame() {
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
+  function brokenNear() {
+    const pl = G.player;
+    return G.room.terminals.find((t) => t.broken && Math.abs(pl.x + PLAYER.w / 2 - t.x) < 30 && Math.abs(pl.y + PLAYER.h - t.y) < 6);
+  }
+
   function updatePrompt(hit) {
     if (G.mode !== 'play') return;
     const ghosts = G.room.platforms.filter((p) => p.state === null);
@@ -1705,8 +1752,11 @@ export function startGame() {
     if (lit) ui.setPrompt(`Observing <b>${lit.q}</b>. Hold the light steady.`);
     else if (G.swap && !G.swap.travel) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> trade places in <b>${G.swap.count}</b>: jump on or off now.`);
     else if (G.swap) ui.setPrompt(`<b>${G.swap.a.q}</b> and <b>${G.swap.b.q}</b> are trading places.`);
-    else if (station && !station.taken && G.torch.battery === 'dead') {
-      ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is at the left end of this ledge: walk up to it.${orAct}`);
+    else if (brokenNear()) {
+      const t = brokenNear();
+      ui.setPrompt(`<b>${t.id}</b> is broken. It is stuck applying ${list(t.broken.ops.map(opWords))}, over and over, ${t.broken.every === 1 ? 'one gate a second' : `one gate every ${t.broken.every} seconds`}. It does not respond.`);
+    } else if (station && !station.taken && G.torch.battery === 'dead') {
+      ui.setPrompt(`Your flashlight is dead. The <b>battery station</b> is ${station.where || 'at the left end of this ledge'}: walk up to it.${orAct}`);
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
     else if (ghost && !G.torch.on && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
@@ -1763,6 +1813,7 @@ export function startGame() {
       countDown(dt);
       updateLights(dt); // backup lights stand for decoherence, which does not wait while you are at a terminal
       updateCavities(dt); // nor does a cavity's drive
+      updateBroken(dt); // nor a broken terminal
       updateTorch(dt);
       return;
     }
@@ -1797,6 +1848,7 @@ export function startGame() {
 
     updateLights(dt);
     updateCavities(dt);
+    updateBroken(dt);
     countDown(dt);
     pickUps();
     const hit = findInteract();

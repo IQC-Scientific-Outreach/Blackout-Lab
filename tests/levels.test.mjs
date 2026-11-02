@@ -49,9 +49,18 @@ for (const [where0, level] of ALL) {
       }
       for (const t of room.terminals || []) {
         gateOps(t.ops, where(`terminal ${t.id}`));
-        for (const op of t.ops) if (op.gate === 'ry') assert.ok(Number.isFinite(op.angle), where(`terminal ${t.id}: ry needs an angle`));
+        const all = [...t.ops, ...(t.broken ? t.broken.ops : [])];
+        for (const op of all) if (op.gate === 'ry') assert.ok(Number.isFinite(op.angle), where(`terminal ${t.id}: ry needs an angle`));
+        for (const op of all) if ('delay' in op) assert.ok(op.gate === 'swap' && Number.isFinite(op.delay) && op.delay >= 0, where(`terminal ${t.id}: only a swap takes a delay, of 0 seconds or more`));
+        if (t.broken) {
+          gateOps(t.broken.ops, where(`broken terminal ${t.id}`));
+          assert.equal(t.ops.length, 0, where(`broken terminal ${t.id} cannot offer gates as well`));
+          assert.ok(t.broken.ops.length && t.broken.every > 0, where(`broken terminal ${t.id} needs ops and a period, every > 0`));
+          assert.ok(t.broken.ops.every((op) => op.gate !== 'measure'), where(`broken terminal ${t.id}: gates only`));
+        }
       }
       if (room.canister) known(room.canister.q, where('canister'));
+      if (room.battery && 'range' in room.battery) assert.ok(room.battery.range > 0, where('battery range must be positive'));
       if (room.door) {
         const { key, lock } = room.door;
         lock.forEach((id) => known(id, where('door lock')));

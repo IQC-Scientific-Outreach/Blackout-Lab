@@ -321,6 +321,37 @@ test('bonus level 3, stage 2: A ends 0 and B ends 1 with H, Z on A, H on B and C
   assert.deepEqual(q.snapshot().definite, [0, 1]);
 });
 
+test('bonus level 1: the loop H, CNOT, CNOT, H never makes B a certain 1; after A reads 1 it does', () => {
+  const loop = [['h', [0]], ['cx', [0, 1]], ['cx', [0, 1]], ['h', [0]]];
+  const q = lab(['0', '0']);
+  for (let k = 0; k < 12; k += 1) {
+    const [g, w] = loop[k % 4];
+    q.apply(g, w);
+    assert.notEqual(q.snapshot().definite[1], 1, 'unwatched, B is never a certain 1');
+  }
+  assert.deepEqual(q.snapshot().definite, [0, 0], 'and every four steps it is back where it began');
+  // Look at A after the first H and find 1: from then on, A is 1 for three steps in four and B for one.
+  let r;
+  for (let seed = 1; !r || r.snapshot().definite[0] !== 1; seed += 1) {
+    r = lab(['0', '0'], seed);
+    r.apply('h', [0]);
+    r.measure(0, true);
+  }
+  const seen = [];
+  for (let k = 1; k < 9; k += 1) {
+    const [g, w] = loop[k % 4];
+    r.apply(g, w);
+    seen.push(r.snapshot().definite.map((d) => (d === null ? '?' : d)).join(''));
+  }
+  assert.deepEqual(seen, ['11', '10', '?0', '10', '11', '10', '?0', '10']);
+});
+
+test('bonus level 2: X, SWAP A B, X, SWAP B C, SWAP A B turns 000 into 011', () => {
+  const q = lab(['0', '0', '0']);
+  for (const [g, w] of [['x', [0]], ['swap', [0, 1]], ['x', [0]], ['swap', [1, 2]], ['swap', [0, 1]]]) q.apply(g, w);
+  assert.deepEqual(q.snapshot().definite, [0, 1, 1]);
+});
+
 test('Ry turns 0 into +, then 1, then -, then back', () => {
   const q = lab(['0']);
   q.apply('ry', [0], Math.PI / 2);

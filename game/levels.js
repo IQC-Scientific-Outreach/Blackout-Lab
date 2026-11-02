@@ -21,10 +21,15 @@
 //              (angle, in radians, for ry)
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
+//              `broken: { every, ops }` (with `ops: []`): nobody can use it; it applies its
+//              ops by itself, one every `every` seconds, round and round.
+//              A swap op can take `delay` (seconds), overriding the swap delay; 0 is instant.
 //              Any op that touches the canister needs the canister in hand.
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
-//   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
+//   canister   { q, x, y }   battery { x, y, diesOnArrival?, range?, where? }   npcs, portals
+//              (battery range: a weak spare, the beam reaching only that far; where: how the
+//              prompt tells a player with a dead flashlight where to find it)
 //   cavities   Rabi drives: { x, w, y, to, dir: 'down' | 'up', rate }, a band of waves between
 //              an emitting cap at height y and a far cap at `to`, turning every platform in it
 //              (Ry, `rate` radians a second): 0, +, 1, - and round again. Watched platforms
@@ -40,7 +45,7 @@
 //   bonus      an extra star: { sequences: [{ q, gates, value?, untouched? }], text } for applying
 //              one of those gate sequences to its qubit (value: it must end in that state;
 //              untouched: nothing measured in between), or { seconds, text } for clearing the
-//              floor in time
+//              floor in time, or { fewest: true, text } for using no more gates than `shortest`
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
 // `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
@@ -485,9 +490,96 @@ export const TERRACE = {
 // Bonus levels: only in "Skip to floor", after the climb's floors and the terrace.
 export const BONUS_LEVELS = [
   {
+    id: 'broken',
+    name: 'Broken Terminal',
+    tag: 'Bonus level 1',
+    gates: ['ry', 'h', 'cx'],
+    torch: 'dead',
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 340, w: 110, h: 14 },
+      { kind: 'ground', x: 730, y: 240, w: 230, h: 300 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 470, y1: 360, need: 1 },
+      { q: 'A', x: 500, w: 80, y0: 420, y1: 290, need: 1 },
+      { q: 'B', x: 640, w: 80, y0: 380, y1: 240, need: 1 },
+    ],
+    // A weak spare: from the ledge the beam reaches A, never B.
+    battery: { x: 350, y: 340, range: 170, where: 'on the middle ledge' },
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [], broken: { every: 1, ops: [{ gate: 'ry', q: ['P'], angle: Math.PI / 2 }] } },
+      {
+        id: 'T2',
+        x: 420,
+        y: 340,
+        ops: [],
+        broken: { every: 1, ops: [{ gate: 'h', q: ['A'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'h', q: ['A'] }] },
+      },
+    ],
+    door: { x: 900, y: 240, key: null, lock: [] },
+    shortest: 0,
+    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
+    goal: 'Your flashlight is dead and both terminals here are broken, stuck in loops. Ride P up to the middle ledge, fit the spare battery there, then get A and B raised together to reach the exit.',
+    goalAfterBattery: 'Spare battery fitted, but it is weak: from this ledge the beam reaches A and not B. T2 keeps looping H, CNOT, CNOT, H. Get A and B raised together.',
+    concept:
+      'A broken terminal keeps applying its gates on a timer. RY(π/2) is a quarter turn, so P goes 0, superposed, 1, superposed and round again. T2\'s loop of H, CNOT, CNOT, H undoes itself every four steps, so on its own B never rises. A measurement breaks the loop: once A is a certain 1, every CNOT copies that 1 onto B.',
+    hints: [
+      'T1 turns P a quarter turn every second: lowered, superposed, raised, superposed. Jump on as it rises and get off onto the ledge before the next tick.',
+      'Pick up the battery on the ledge. It is weak: the beam reaches A but not B. Hold it on A while A is superposed until it collapses. If it reads 0, wait for the loop to make it superposed again, and look again.',
+      'With A a certain 1, the loop leaves it raised except for one second (between the two H gates), and raises B for one second, right after the CNOT. Stand on raised A, watch T2\'s screen, and jump to B as it rises.',
+    ],
+    takeaway:
+      'Left alone, H, CNOT, CNOT, H took A and B round in a loop that never left B certain. Your look made A an ordinary 1, and from then on each CNOT copied it onto B: a measurement changed what the same gates did.',
+  },
+  {
+    id: 'shuffle',
+    name: 'SWAP Shuffle',
+    tag: 'Bonus level 2',
+    gates: ['x', 'swap'],
+    qubits: [
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'C', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'ground', x: 550, y: 220, w: 410, h: 320 },
+    ],
+    platforms: [
+      { q: 'A', x: 160, w: 80, y0: 450, y1: 330, need: 0 },
+      { q: 'B', x: 290, w: 80, y0: 470, y1: 370, need: 1 },
+      { q: 'C', x: 420, w: 80, y0: 470, y1: 290, need: 1 },
+    ],
+    terminals: [
+      // delay 0: these SWAPs send the platforms off at once, without a countdown.
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'x', q: ['A'] }, { gate: 'swap', q: ['A', 'B'], delay: 0 }, { gate: 'swap', q: ['B', 'C'], delay: 0 }] },
+    ],
+    door: { x: 900, y: 220, key: null, lock: [] },
+    shortest: 5,
+    bonus: { fewest: true, text: 'Crossed with the fewest gates (5)' },
+    goal: 'A, B and C start lowered: 0 0 0. You need A lowered and B and C raised, 0 1 1, to cross to the exit. T1 has X on A and two SWAPs, nothing else.',
+    concept:
+      'SWAP exchanges the states of two qubits: here the two platforms trade places. With X only on A, the way to set B and C is to make a 1 on A and pass it down the line. These are ordinary bits being shuffled: no superposition, no measurement.',
+    hints: [
+      'X raises A. SWAP A and B then moves that 1 over to B and brings B\'s 0 back to A.',
+      'You need two 1s. The 1 on B has to move on to C before you make the next one on A and pass it to B.',
+      'X, SWAP A and B, X, SWAP B and C, SWAP A and B: five gates, and the platforms read 0 1 1.',
+    ],
+    takeaway:
+      'SWAP moved each 1 you made without copying it, so two Xs were enough for two 1s. Here the bits were ordinary ones; in Bonus level 3 the same gate carries a superposition across the lab.',
+  },
+  {
     id: 'channel',
     name: 'Quantum Communication',
-    tag: 'Bonus level 1',
+    tag: 'Bonus level 3',
     gates: ['h', 'swap', 'z', 'x'],
     torchOff: true,
     qubits: [
@@ -534,7 +626,7 @@ export const BONUS_LEVELS = [
   {
     id: 'channel-emergency',
     name: 'Emergency Channel',
-    tag: 'Bonus level 2',
+    tag: 'Bonus level 4',
     gates: ['h', 'swap', 'z', 'x'],
     torchOff: true,
     qubits: [
@@ -583,7 +675,7 @@ export const BONUS_LEVELS = [
   {
     id: 'decoherence',
     name: 'Decoherence Time',
-    tag: 'Bonus level 3',
+    tag: 'Bonus level 5',
     gates: ['h', 'z', 'cz'],
     qubits: [
       { id: 'P', init: '0', role: 'platform' },
@@ -627,7 +719,7 @@ export const BONUS_LEVELS = [
   {
     id: 'rabi',
     name: 'The Watched Qubit',
-    tag: 'Bonus level 4',
+    tag: 'Bonus level 6',
     gates: ['ry', 'x'],
     torchOff: true,
     qubits: [

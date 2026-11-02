@@ -751,7 +751,7 @@ async function main() {
     await bot.tap('KeyE');
     if (g.mode !== 'play') throw new Error('E at a broken terminal should do nothing');
     const turns = () => g.q.ops.filter((op) => op.kind === 'auto' && op.gate === 'ry').length;
-    await bot.until(() => turns() >= 2, 3000, 'T1 to turn P by itself');
+    await bot.until(() => turns() >= 2, 5000, 'T1 to turn P by itself');
     const ticks = turns();
     // Ride P: from the edge of the ground, jump as it turns up to 1, run across it and jump to the ledge before it turns on.
     const { key, until, frame } = bot;
@@ -767,7 +767,7 @@ async function main() {
       rides += 1;
       if (g.mode !== 'play') await until(() => g.mode === 'play', 6000, 'back on the floor');
       await bot.walkTo(140);
-      await until(() => P.state === 1 && t1.clock < 0.1, 6000, 'P to turn up to 1');
+      await until(() => P.state === 1 && t1.clock < 0.1, 9000, 'P to turn up to 1');
       key('ArrowRight', true);
       await jump();
       await until(() => pl.onGround || g.mode !== 'play', 3000, 'land on P');
@@ -785,24 +785,29 @@ async function main() {
     await bot.walkTo(g.room.battery.x);
     await until(() => g.torch.battery === 'ok', 2000, 'the battery');
     if (g.torch.range !== 170 || !g.torch.on) throw new Error(`the spare should be weak: range ${g.torch.range}`);
-    // Look at A until it reads 1 (a 0 is turned back into a superposition by the loop).
+    // Look at A until it reads 1 in the right phase of T2's loop (a 0 is turned back into a superposition by
+    // the loop). A 1 seen just before the loop's first H is the wrong phase: the H turns it into a superposition
+    // that the CNOTs entangle with B, and A is only certain between the two Hs. A is then 1 with T2's next gate
+    // the first H (step 0); in the right phase A stays 1 through the CNOTs (steps 1 to 3).
     await bot.walkTo(436);
     bot.aim(A.x + A.w / 2, A.y1 + 30);
-    await until(() => A.state === 1, 20000, 'A to read 1');
+    await until(() => A.state === 1 && t2.step !== 0, 30000, 'A to read 1 in phase');
     bot.aim(pl.x, 20);
     const lookedAtB = g.q.ops.some((op) => op.kind === 'measure' && op.qubits.includes(B.qi));
     if (lookedAtB) throw new Error('the weak beam should not have reached B');
     // With A a certain 1, the loop raises B for a second after each H. Jump onto A just after the H,
     // run to its end, and jump to B as it rises; then run on to the exit before it drops.
-    await until(() => A.state === 1 && t2.step === 1 && t2.clock < 0.1, 8000, 'the H that leaves A at 1');
+    await until(() => A.state === 1 && t2.step === 1 && t2.clock < 0.1, 12000, 'the H that leaves A at 1');
     key('ArrowRight', true);
     await jump();
     await until(() => pl.onGround || g.mode !== 'play', 3000, 'land on A');
     if (pl.standing !== A) throw new Error(`should have landed on A: ${A.state}`);
     await until(() => pl.x + 18 >= 578, 2000, 'the end of A');
-    if (t2.clock < 0.45) {
+    // The jump takes about 0.55 s: leave so as to land just after B rises.
+    const leave = t2.broken.every - 0.5;
+    if (t2.clock < leave) {
       key('ArrowRight', false);
-      await until(() => t2.clock >= 0.45, 1000, 'B about to rise');
+      await until(() => t2.clock >= leave, 2000, 'B about to rise');
       key('ArrowRight', true);
     }
     await jump();

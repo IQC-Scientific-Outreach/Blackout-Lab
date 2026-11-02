@@ -514,13 +514,13 @@ export const BONUS_LEVELS = [
     // A weak spare: from the ledge the beam reaches A, never B.
     battery: { x: 350, y: 340, range: 170, where: 'on the middle ledge' },
     terminals: [
-      { id: 'T1', x: 96, y: 440, ops: [], broken: { every: 1, ops: [{ gate: 'ry', q: ['P'], angle: Math.PI / 2 }] } },
+      { id: 'T1', x: 96, y: 440, ops: [], broken: { every: 1.5, ops: [{ gate: 'ry', q: ['P'], angle: Math.PI / 2 }] } },
       {
         id: 'T2',
         x: 420,
         y: 340,
         ops: [],
-        broken: { every: 1, ops: [{ gate: 'h', q: ['A'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'h', q: ['A'] }] },
+        broken: { every: 1.5, ops: [{ gate: 'h', q: ['A'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'h', q: ['A'] }] },
       },
     ],
     door: { x: 900, y: 240, key: null, lock: [] },
@@ -529,11 +529,11 @@ export const BONUS_LEVELS = [
     goal: 'Your flashlight is dead and both terminals here are broken, stuck in loops. Ride P up to the middle ledge, fit the spare battery there, then get A and B raised together to reach the exit.',
     goalAfterBattery: 'Spare battery fitted, but it is weak: from this ledge the beam reaches A and not B. T2 keeps looping H, CNOT, CNOT, H. Get A and B raised together.',
     concept:
-      'A broken terminal keeps applying its gates on a timer. RY(π/2) is a quarter turn, so P goes 0, superposed, 1, superposed and round again. T2\'s loop of H, CNOT, CNOT, H undoes itself every four steps, so on its own B never rises. A measurement breaks the loop: once A is a certain 1, every CNOT copies that 1 onto B.',
+      'A broken terminal keeps applying its gates on a timer. RY(π/2) is a quarter turn, so P goes 0, superposed, 1, superposed and round again. T2\'s loop of H, CNOT, CNOT, H undoes itself every four steps, so on its own B never rises. A measurement breaks the loop: a CNOT that finds A a certain 1 copies that 1 onto B.',
     hints: [
-      'T1 turns P a quarter turn every second: lowered, superposed, raised, superposed. Jump on as it rises and get off onto the ledge before the next tick.',
+      'T1 turns P a quarter turn every 1.5 seconds: lowered, superposed, raised, superposed. Jump on as it rises and get off onto the ledge before the next tick.',
       'Pick up the battery on the ledge. It is weak: the beam reaches A but not B. Hold it on A while A is superposed until it collapses. If it reads 0, wait for the loop to make it superposed again, and look again.',
-      'With A a certain 1, the loop leaves it raised except for one second (between the two H gates), and raises B for one second, right after the CNOT. Stand on raised A, watch T2\'s screen, and jump to B as it rises.',
+      'With A a certain 1, the loop leaves it raised except for one tick (between the two H gates), and raises B for one tick (1.5 seconds), right after the CNOT. Stand on raised A, watch T2\'s screen, and jump to B as it rises. If A is only raised between the two Hs and B never rises, A was caught in the wrong part of the loop: look at it again while it is superposed.',
     ],
     takeaway:
       'Left alone, H, CNOT, CNOT, H took A and B round in a loop that never left B certain. Your look made A an ordinary 1, and from then on each CNOT copied it onto B: a measurement changed what the same gates did.',

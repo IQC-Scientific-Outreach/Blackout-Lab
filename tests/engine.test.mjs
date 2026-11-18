@@ -396,7 +396,7 @@ test('SWAP exchanges two qubits\' states, superpositions and phases included', (
   assert.deepEqual(r.snapshot().definite, [1, 0]);
 });
 
-test('secret level: RY(pi/8) turns monster (1) towards cute (0) with P(cute) = sin^2(k pi/16), certain after eight', () => {
+test('bonus level 7: RY(pi/8) turns monster (1) towards cute (0) with P(cute) = sin^2(k pi/16), certain after eight', () => {
   const q = lab(['1']);
   for (let k = 1; k <= 8; k += 1) {
     q.apply('ry', [0], Math.PI / 8);

@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-5pKgy/inxRcqkPXCU4bydrdyKXBB7ktOEXu76MgOzDA='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-EEGoXk/9G/TNMfaMY/+b5oVgKgqEuxILSsJWWo2ORGk='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -1145,14 +1145,14 @@ const TERRACE = {
   takeaway: '',
 };
 
-// The secret level: type CAT on the title screen. The roof again, but this time the cat
-// jumped back into the box, and the radiation made it a giant. Not in "Skip to floor"
-// until it has been found once. The fight itself (paws, smashed terminals, the head in
-// the skyline) is in game.js and render.js; `beast` holds its numbers.
+// Bonus level 7, after the others: the roof again, but this time the cat jumped back into
+// the box, and the radiation made it a giant, floating in a mist behind the skyline. The
+// fight itself (paws, smashed terminals, the mist the flashlight parts) is in game.js and
+// render.js; `beast` holds its numbers.
 const BEAST = {
   id: 'beast',
   name: 'The Beast on the Roof',
-  tag: 'Secret level',
+  tag: 'Bonus level 7',
   beast: {
     head: { x: 480, y: 178 }, // where the head sits once risen, behind the skyline
     face: { x: 405, y: 118, w: 150, h: 120 }, // what the flashlight has to rest on
@@ -1175,13 +1175,13 @@ const BEAST = {
   shortest: 8,
   firstStar: 'Tamed the beast',
   bonus: { seconds: 90, text: 'Tamed within 90 seconds' },
-  goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Turn it back to cute, state 0. Each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
+  goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
   concept:
-    'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. Your flashlight on its face is a measurement: it comes out cute with the chance the panel shows, and otherwise it is all monster again.',
+    'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
   hints: [
     'Press E at a terminal to turn the cat with RY(\u03c0/8), then run: the cat brings a paw down on that terminal. It comes back after 15 seconds.',
     'A raised paw follows you, then stops for a moment before it drops straight down. Move as soon as it stops.',
-    'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. Keep the flashlight off its face until you choose to look.',
+    'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. The mist hides the cat until you look, so keep the flashlight off its face until you choose to.',
   ],
   takeaway:
     'The radiation rotated the cat into a monster, and eight small rotations rotated it back: what one unitary does, another can undo. Looking early was a gamble with exactly the odds sin\u00b2 of half the angle turned.',
@@ -2560,7 +2560,7 @@ function createAudio() {
       tone(980, 0.15, 0.34, 'triangle', 0.07, 520);
     },
     crank: () => tone(150, 0, 0.06, 'square', 0.04, 90),
-    // The secret level's beast.
+    // Bonus level 7's beast.
     roar: () => {
       tone(90, 0, 1.1, 'sawtooth', 0.07, 45);
       tone(135, 0.05, 0.9, 'sawtooth', 0.05, 60);
@@ -4328,7 +4328,7 @@ function createRenderer(canvas) {
 
   function crankGrip(G) {
     const gen = G.level.scene.generator;
-    const turn = G.scene ? G.scene.crank : G.t * 11; // on the secret level it simply runs
+    const turn = G.scene ? G.scene.crank : G.t * 11; // on bonus level 7 it simply runs
     return { x: gen.x - 36 + Math.cos(turn) * 8, y: gen.y - 22 + Math.sin(turn) * 8 };
   }
 
@@ -4606,7 +4606,7 @@ function createRenderer(canvas) {
     }
   }
 
-  // -- the secret level: the beast on the roof ---------------------------------------
+  // -- bonus level 7: the beast on the roof ------------------------------------------
 
   const BEAST_FUR = { monster: '#4b3f63', monsterDark: '#33294a', cute: '#f0a04b', cuteDark: '#b9631c' };
 
@@ -4819,8 +4819,8 @@ function createRenderer(canvas) {
     c.restore();
   }
 
-  // A paw on its arm: `bottom` is its underside. Claws out while it is a monster.
-  function paintPaw(c, x, bottom, w, p0, shoulder) {
+  // A paw, floating free: `bottom` is its underside. Claws out while it is a monster.
+  function paintPaw(c, x, bottom, w, p0) {
     const h = 46;
     c.save();
     c.lineCap = 'round';
@@ -4828,13 +4828,6 @@ function createRenderer(canvas) {
     for (const [look, alpha] of [['monster', 1 - p0], ['cute', p0]]) {
       if (alpha < 0.01) continue;
       c.globalAlpha = base * alpha;
-      c.strokeStyle = BEAST_FUR[look];
-      c.lineWidth = 34;
-      c.beginPath();
-      c.moveTo(shoulder.x, shoulder.y);
-      // Out from the side of the head, elbow up, and down onto the paw.
-      c.quadraticCurveTo(shoulder.x + (x - shoulder.x) * 0.5 + shoulder.side * 40, Math.min(shoulder.y, bottom - h) - 50, x, bottom - h + 6);
-      c.stroke();
       c.fillStyle = BEAST_FUR[look];
       rr(c, x - w / 2, bottom - h, w, h, 16);
       c.fill();
@@ -4860,6 +4853,28 @@ function createRenderer(canvas) {
       }
     }
     c.restore();
+  }
+
+  // The mist the cat floats in: soft puffs drifting over the head. `amount` 0 to 1.
+  const MIST = Array.from({ length: 14 }, (_, i) => ({
+    dx: Math.sin(i * 2.4) * 150,
+    dy: Math.cos(i * 1.7) * 95 - 20,
+    r: 80 + (i % 4) * 22,
+    speed: 0.25 + (i % 5) * 0.07,
+    phase: i * 1.3,
+  }));
+  function drawMist(G, x, y, amount) {
+    if (amount <= 0.01) return;
+    for (const m of MIST) {
+      const px = x + m.dx + Math.sin(G.t * m.speed + m.phase) * 30;
+      const py = y + m.dy + Math.cos(G.t * m.speed * 0.8 + m.phase) * 14;
+      const g = ctx.createRadialGradient(px, py, 0, px, py, m.r);
+      g.addColorStop(0, `rgba(150,146,190,${0.62 * amount})`);
+      g.addColorStop(0.55, `rgba(110,108,150,${0.42 * amount})`);
+      g.addColorStop(1, 'rgba(90,90,130,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - m.r, py - m.r, m.r * 2, m.r * 2);
+    }
   }
 
   function drawBeast(G) {
@@ -4896,13 +4911,21 @@ function createRenderer(canvas) {
     const tame = b.tame;
     const headY = cfg.head.y + (1 - b.rise) * 340 + tame * 120;
     const headS = 1 - 0.85 * tame;
+    // The head shows only where the mist is parted: at the very start, or in the
+    // flashlight, as whichever cat the light found. Otherwise, at most, two eyes in the mist.
+    const hidden = b.mist * (1 - b.reveal);
     if (b.rise > 0 && tame < 1) {
       ctx.save();
-      ctx.globalAlpha = 1 - tame;
-      paintBeastHead(ctx, cfg.head.x, headY, headS, b.phase === 'tamed' ? 1 : p0, G.t, b.lit ? 0.04 : 0.38);
+      ctx.globalAlpha = (1 - tame) * (1 - hidden);
+      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked ? 0.04 : 0.3);
       ctx.restore();
-      if (b.exposure > 0) exposureRing(cfg.face.x + cfg.face.w / 2, cfg.face.y + cfg.face.h / 2, b.exposure / TORCH.dwell, C.torch);
     }
+    drawMist(G, cfg.head.x, headY, b.mist * (1 - 0.75 * b.reveal) * (1 - tame));
+    if (hidden > 0.5 && b.seen === 'monster' && b.phase === 'fight') {
+      const flicker = 0.18 + 0.12 * Math.sin(G.t * 2.3);
+      for (const side of [-1, 1]) glow(cfg.head.x + side * 52, headY - 14, 22, `rgba(190,255,90,${flicker * hidden})`);
+    }
+    if (b.exposure > 0) exposureRing(cfg.face.x + cfg.face.w / 2, cfg.face.y + cfg.face.h / 2, b.exposure / TORCH.dwell, C.torch);
 
     ctx.fillStyle = '#0d1530';
     for (const [x, w, h] of SKYLINE) ctx.fillRect(x, roof - h, w, WORLD.h - roof + h);
@@ -5066,15 +5089,14 @@ function createRenderer(canvas) {
       } else drawPlayer(G);
     }
 
-    // The arms and paws, reaching over the city onto the roof.
+    // The paws, floating free of the mist. Always a monster's while it fights.
     if (b.rise > 0.3) {
       ctx.save();
-      ctx.globalAlpha = 1 - tame;
+      ctx.globalAlpha = (1 - tame) * Math.min(1, (b.rise - 0.3) / 0.4);
       for (const paw of b.paws) {
-        const shoulder = { x: cfg.head.x + paw.side * 118 * headS, y: headY + 70 * headS, side: paw.side };
         const jig = paw.state === 'windup' ? Math.sin(G.t * 60) * 2 : 0;
-        const py = b.phase === 'intro' ? paw.y + (1 - b.rise) * 200 : paw.y;
-        paintPaw(ctx, paw.x + jig, py, cfg.pawW, b.phase === 'tamed' ? 1 : p0, shoulder);
+        const bob = paw.state === 'rest' ? Math.sin(G.t * 1.6 + paw.side) * 4 : 0;
+        paintPaw(ctx, paw.x + jig, paw.y + bob, cfg.pawW, b.phase === 'tamed' ? 1 : 0);
       }
       ctx.restore();
     }
@@ -6171,29 +6193,12 @@ function saveDev(dev) {
 // Level numbers: the climb's floors (0 to 6), then the terrace, then the bonus levels,
 // which are reached only from "Skip to floor" and are not part of the climb.
 const BONUS_FROM = LEVELS.length + 1;
-const isBonus = (index) => index >= BONUS_FROM; // the secret level counts as one too
-// The secret level comes after the bonus levels, but "Next bonus level" never leads to it.
-const HIDDEN_INDEX = BONUS_FROM + BONUS_LEVELS.length;
+const isBonus = (index) => index >= BONUS_FROM;
+// The last bonus level, the beast on the roof, is its own kind of level (BEAST in levels.js).
+const BEAST_INDEX = BONUS_FROM + BONUS_LEVELS.length;
 const levelAt = (index) =>
-  index < LEVELS.length ? LEVELS[index] : index === HIDDEN_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
-const hasNextBonus = (index) => index + 1 < HIDDEN_INDEX;
-
-// Whether the secret level has been found in this browser (it is then listed with the bonus levels).
-const SECRET_KEY = 'blackoutLab.secret';
-function secretFound() {
-  try {
-    return localStorage.getItem(SECRET_KEY) === 'found';
-  } catch (err) {
-    return false;
-  }
-}
-function markSecretFound() {
-  try {
-    localStorage.setItem(SECRET_KEY, 'found');
-  } catch (err) {
-    // blocked storage: it stays unlisted, and CAT still works
-  }
-}
+  index < LEVELS.length ? LEVELS[index] : index === BEAST_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
+const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
 
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -6283,34 +6288,11 @@ function startGame() {
       input.setHeld(action, false);
     },
   });
-  function listFloors() {
-    const secret = secretFound() ? [{ name: `Secret. ${BEAST.name}`, index: HIDDEN_INDEX }] : [];
-    ui.setFloors(
-      LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
-      `Ending: ${TERRACE.name}`,
-      [...BONUS_LEVELS.map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i })), ...secret]
-    );
-  }
-  listFloors();
-
-  // The secret: typing CAT on the title screen.
-  let typed = '';
-  window.addEventListener('keydown', (ev) => {
-    if (G.mode !== 'title' || ev.ctrlKey || ev.metaKey || ev.altKey || !/^Key[A-Z]$/.test(ev.code)) return;
-    const tag = ev.target && ev.target.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    typed = (typed + ev.code.slice(3)).slice(-3);
-    if (typed !== 'CAT') return;
-    typed = '';
-    audio.unlock();
-    G.started = true;
-    G.results = G.results || [];
-    if (!secretFound()) {
-      markSecretFound();
-      listFloors();
-    }
-    loadLevel(HIDDEN_INDEX);
-  });
+  ui.setFloors(
+    LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
+    `Ending: ${TERRACE.name}`,
+    [...BONUS_LEVELS, BEAST].map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i }))
+  );
 
   // -- small helpers --------------------------------------------------------
 
@@ -6620,7 +6602,7 @@ function startGame() {
       G.hints = 0;
     }
     if (!backdrop) ui.setAbout(false);
-    panel.setLevel(level, isBonus(index) ? index - BONUS_FROM : index, isBonus(index) ? BONUS_LEVELS.length : LEVELS.length);
+    panel.setLevel(level, isBonus(index) ? index - BONUS_FROM : index, isBonus(index) ? BONUS_LEVELS.length + 1 : LEVELS.length);
     panel.setHints(G.hints);
     applySnapshot(res.state);
     updateHud();
@@ -7513,7 +7495,7 @@ function startGame() {
     if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
       // A bonus level is not part of the climb: out of lives, it simply starts over.
       loadLevel(G.levelIndex);
-      say(`Out of lives: the ${G.level.beast ? 'secret' : 'bonus'} level starts over with three.`, 'bad', true);
+      say('Out of lives: the bonus level starts over with three.', 'bad', true);
       return;
     }
     if (G.lives <= 0 && !G.infinite) {
@@ -7525,11 +7507,13 @@ function startGame() {
     loadLevel(G.levelIndex, { carry: 'fall' });
   }
 
-  // -- the secret level: the beast on the roof ----------------------------------
+  // -- bonus level 7: the beast on the roof -------------------------------------
   //
-  // The cat is one qubit, CAT: 0 cute, 1 monster, starting at 1. Its head sits in the
-  // skyline; its paws take turns: rise, follow the player, stop (the wind-up), drop
-  // straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
+  // The cat is one qubit, CAT: 0 cute, 1 monster, starting at 1. Its head floats behind
+  // the skyline, plain to see until the first attack, then hidden in a mist that only the
+  // flashlight parts: lit, it shows as what it certainly is, monster or cute (a superposed
+  // cat is measured first). Its paws take turns: rise, follow the player, stop (the
+  // wind-up), drop straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
   // smashing that terminal, which comes back after a while. The flashlight resting on
   // its face measures it: cute ends the fight, monster starts the count again.
   const PAW = { rise: 0.6, track: [1.3, 2.1], speed: 300, windup: 0.55, fall: 6500, down: 0.55, lift: 0.7, h: 46 };
@@ -7560,6 +7544,10 @@ function startGame() {
       grudge: null, // the terminal it is going for
       exposure: 0,
       lit: false,
+      mist: 0, // 0 to 1: rolls in once the attacks begin
+      reveal: 1, // 0 to 1: how far the flashlight has parted the mist
+      seen: 'monster', // the face the light last showed
+      attacked: false,
       cues: {},
     };
     G.torch.active = false; // the title screen's backdrop may have left it shining
@@ -7636,6 +7624,9 @@ function startGame() {
       if (b.t >= 6.2 || skip) endIntro();
     } else if (b.phase === 'tamed') {
       b.tame = ease(Math.min(1, b.t / 2.2));
+      b.seen = 'cute';
+      b.reveal = Math.min(1, b.reveal + dt * 4);
+      b.mist = Math.max(0, b.mist - dt);
       for (const paw of b.paws) paw.y += (PAW_REST_Y + 120 - paw.y) * Math.min(1, dt * 3);
       cue('sit', 2.2, () => {
         b.cat.state = 'sit';
@@ -7679,6 +7670,12 @@ function startGame() {
       b.exposure = 0;
       lookAtBeast(qi);
     }
+    // The mist: in once the paws start, parted by the light on a cat that is certain.
+    const certain = G.q.definite[qi];
+    if (certain !== null && b.lit) b.seen = certain === 0 ? 'cute' : 'monster';
+    if (b.attacked) b.mist = Math.min(1, b.mist + dt / 1.6);
+    const shown = !b.attacked || (b.lit && certain !== null);
+    b.reveal = shown ? Math.min(1, b.reveal + dt * 4) : Math.max(0, b.reveal - dt * 1.2);
   }
 
   function updatePaws(dt) {
@@ -7691,6 +7688,7 @@ function startGame() {
       if (b.wait <= 0) {
         const paw = b.paws[b.next];
         b.next = 1 - b.next;
+        b.attacked = true;
         paw.state = 'rise';
         paw.t = 0;
         paw.from = { x: paw.x, y: paw.y };
@@ -7828,7 +7826,7 @@ function startGame() {
     if (res.state.definite[op.qi[0]] === 0) {
       // Eight turns with nobody looking: certainly cute, no gamble needed.
       audio.play('collapse0');
-      tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The monster shrinks back into a cat.`);
+      tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The mist clears, and the monster shrinks back into a cat.`);
       return;
     }
     const p0 = 1 - res.state.p1[op.qi[0]];
@@ -7932,7 +7930,7 @@ function startGame() {
   }
 
   function nextFloor() {
-    if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level, or the secret one
+    if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level
     else loadLevel(G.levelIndex + 1);
   }
 

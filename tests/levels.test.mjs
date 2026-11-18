@@ -11,7 +11,7 @@ import { Lab } from '../game/quantum.js';
 
 const ROLES = ['platform', 'canister', 'sealed', 'box', 'door', 'beast'];
 
-const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level]), ['secret level', BEAST]];
+const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level]), ['bonus level 7', BEAST]];
 
 for (const [where0, level] of ALL) {
   test(`${where0}: ${level.name}`, () => {
@@ -77,7 +77,7 @@ for (const [where0, level] of ALL) {
   });
 }
 
-test('secret level: one beast qubit, starting as a monster, and two quick RY(pi/8) terminals', () => {
+test('bonus level 7: one beast qubit, starting as a monster, and two quick RY(pi/8) terminals', () => {
   assert.deepEqual(BEAST.qubits, [{ id: 'CAT', init: '1', role: 'beast' }]);
   assert.ok(ROLE_NAME.beast && ROLE_WORDS.beast.length === 2);
   assert.equal(BEAST.terminals.length, 2);

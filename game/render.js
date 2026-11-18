@@ -1703,7 +1703,7 @@ export function createRenderer(canvas) {
 
   function crankGrip(G) {
     const gen = G.level.scene.generator;
-    const turn = G.scene ? G.scene.crank : G.t * 11; // on the secret level it simply runs
+    const turn = G.scene ? G.scene.crank : G.t * 11; // on bonus level 7 it simply runs
     return { x: gen.x - 36 + Math.cos(turn) * 8, y: gen.y - 22 + Math.sin(turn) * 8 };
   }
 
@@ -1981,7 +1981,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  // -- the secret level: the beast on the roof ---------------------------------------
+  // -- bonus level 7: the beast on the roof ------------------------------------------
 
   const BEAST_FUR = { monster: '#4b3f63', monsterDark: '#33294a', cute: '#f0a04b', cuteDark: '#b9631c' };
 
@@ -2194,8 +2194,8 @@ export function createRenderer(canvas) {
     c.restore();
   }
 
-  // A paw on its arm: `bottom` is its underside. Claws out while it is a monster.
-  function paintPaw(c, x, bottom, w, p0, shoulder) {
+  // A paw, floating free: `bottom` is its underside. Claws out while it is a monster.
+  function paintPaw(c, x, bottom, w, p0) {
     const h = 46;
     c.save();
     c.lineCap = 'round';
@@ -2203,13 +2203,6 @@ export function createRenderer(canvas) {
     for (const [look, alpha] of [['monster', 1 - p0], ['cute', p0]]) {
       if (alpha < 0.01) continue;
       c.globalAlpha = base * alpha;
-      c.strokeStyle = BEAST_FUR[look];
-      c.lineWidth = 34;
-      c.beginPath();
-      c.moveTo(shoulder.x, shoulder.y);
-      // Out from the side of the head, elbow up, and down onto the paw.
-      c.quadraticCurveTo(shoulder.x + (x - shoulder.x) * 0.5 + shoulder.side * 40, Math.min(shoulder.y, bottom - h) - 50, x, bottom - h + 6);
-      c.stroke();
       c.fillStyle = BEAST_FUR[look];
       rr(c, x - w / 2, bottom - h, w, h, 16);
       c.fill();
@@ -2235,6 +2228,28 @@ export function createRenderer(canvas) {
       }
     }
     c.restore();
+  }
+
+  // The mist the cat floats in: soft puffs drifting over the head. `amount` 0 to 1.
+  const MIST = Array.from({ length: 14 }, (_, i) => ({
+    dx: Math.sin(i * 2.4) * 150,
+    dy: Math.cos(i * 1.7) * 95 - 20,
+    r: 80 + (i % 4) * 22,
+    speed: 0.25 + (i % 5) * 0.07,
+    phase: i * 1.3,
+  }));
+  function drawMist(G, x, y, amount) {
+    if (amount <= 0.01) return;
+    for (const m of MIST) {
+      const px = x + m.dx + Math.sin(G.t * m.speed + m.phase) * 30;
+      const py = y + m.dy + Math.cos(G.t * m.speed * 0.8 + m.phase) * 14;
+      const g = ctx.createRadialGradient(px, py, 0, px, py, m.r);
+      g.addColorStop(0, `rgba(150,146,190,${0.62 * amount})`);
+      g.addColorStop(0.55, `rgba(110,108,150,${0.42 * amount})`);
+      g.addColorStop(1, 'rgba(90,90,130,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - m.r, py - m.r, m.r * 2, m.r * 2);
+    }
   }
 
   function drawBeast(G) {
@@ -2271,13 +2286,21 @@ export function createRenderer(canvas) {
     const tame = b.tame;
     const headY = cfg.head.y + (1 - b.rise) * 340 + tame * 120;
     const headS = 1 - 0.85 * tame;
+    // The head shows only where the mist is parted: at the very start, or in the
+    // flashlight, as whichever cat the light found. Otherwise, at most, two eyes in the mist.
+    const hidden = b.mist * (1 - b.reveal);
     if (b.rise > 0 && tame < 1) {
       ctx.save();
-      ctx.globalAlpha = 1 - tame;
-      paintBeastHead(ctx, cfg.head.x, headY, headS, b.phase === 'tamed' ? 1 : p0, G.t, b.lit ? 0.04 : 0.38);
+      ctx.globalAlpha = (1 - tame) * (1 - hidden);
+      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked ? 0.04 : 0.3);
       ctx.restore();
-      if (b.exposure > 0) exposureRing(cfg.face.x + cfg.face.w / 2, cfg.face.y + cfg.face.h / 2, b.exposure / TORCH.dwell, C.torch);
     }
+    drawMist(G, cfg.head.x, headY, b.mist * (1 - 0.75 * b.reveal) * (1 - tame));
+    if (hidden > 0.5 && b.seen === 'monster' && b.phase === 'fight') {
+      const flicker = 0.18 + 0.12 * Math.sin(G.t * 2.3);
+      for (const side of [-1, 1]) glow(cfg.head.x + side * 52, headY - 14, 22, `rgba(190,255,90,${flicker * hidden})`);
+    }
+    if (b.exposure > 0) exposureRing(cfg.face.x + cfg.face.w / 2, cfg.face.y + cfg.face.h / 2, b.exposure / TORCH.dwell, C.torch);
 
     ctx.fillStyle = '#0d1530';
     for (const [x, w, h] of SKYLINE) ctx.fillRect(x, roof - h, w, WORLD.h - roof + h);
@@ -2441,15 +2464,14 @@ export function createRenderer(canvas) {
       } else drawPlayer(G);
     }
 
-    // The arms and paws, reaching over the city onto the roof.
+    // The paws, floating free of the mist. Always a monster's while it fights.
     if (b.rise > 0.3) {
       ctx.save();
-      ctx.globalAlpha = 1 - tame;
+      ctx.globalAlpha = (1 - tame) * Math.min(1, (b.rise - 0.3) / 0.4);
       for (const paw of b.paws) {
-        const shoulder = { x: cfg.head.x + paw.side * 118 * headS, y: headY + 70 * headS, side: paw.side };
         const jig = paw.state === 'windup' ? Math.sin(G.t * 60) * 2 : 0;
-        const py = b.phase === 'intro' ? paw.y + (1 - b.rise) * 200 : paw.y;
-        paintPaw(ctx, paw.x + jig, py, cfg.pawW, b.phase === 'tamed' ? 1 : p0, shoulder);
+        const bob = paw.state === 'rest' ? Math.sin(G.t * 1.6 + paw.side) * 4 : 0;
+        paintPaw(ctx, paw.x + jig, paw.y + bob, cfg.pawW, b.phase === 'tamed' ? 1 : 0);
       }
       ctx.restore();
     }

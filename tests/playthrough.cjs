@@ -261,7 +261,9 @@ async function main() {
   await page.click('#btn-floors');
   const offered = await page.$$eval('#title-floors:not([hidden]) button:not(.bonus)', (els) => els.map((el) => el.textContent));
   const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus', (els) => els.map((el) => el.textContent));
-  if (!bonusOffered.length || !bonusOffered[0].startsWith('Bonus 1.')) throw new Error(`"Skip to floor" should list the bonus levels: ${JSON.stringify(bonusOffered)}`);
+  if (!bonusOffered.length || !bonusOffered[0].startsWith('Bonus 1.') || bonusOffered[bonusOffered.length - 1] !== 'Bonus 7. The Beast on the Roof') {
+    throw new Error(`"Skip to floor" should list the seven bonus levels: ${JSON.stringify(bonusOffered)}`);
+  }
   if (offered.length !== 7 || offered[6] !== '7. Lights Out') throw new Error(`"Skip to floor" should list the seven floors: ${JSON.stringify(offered)}`);
   await page.click('#title-floors button[data-floor="0"]');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
@@ -1031,18 +1033,13 @@ async function main() {
     await bot.hop(bot.slab('B'));
     await bot.hop(bot.solid(2));
     await bot.exit();
-    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
+    if (document.getElementById('btn-next').textContent !== 'Next bonus level') throw new Error('bonus level 6 should lead on to bonus level 7');
     return `bonus level 6: P swung between ${lo.toFixed(2)} and ${hi.toFixed(2)} unwatched; frozen lowered after ${freezes} flashlight try, held while stood on; A=0, B=1 after ${rounds} shield round(s)`;
   });
+  // Bonus level 7, the beast on the roof: straight on from bonus level 6.
   await page.click('#btn-next');
-  await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
-
-  // The secret level: CAT typed on the title screen. Not listed until it has been found.
-  const listed = () => page.$$eval('#title-floors button.bonus', (els) => els.map((el) => el.textContent));
-  if ((await listed()).some((t) => t.startsWith('Secret'))) throw new Error('the secret level should not be listed before it is found');
-  for (const k of ['KeyC', 'KeyA', 'KeyT']) await page.keyboard.press(k);
   await page.waitForFunction(() => window.blackoutLab.state.level && window.blackoutLab.state.level.id === 'beast' && window.blackoutLab.state.mode === 'cutscene');
-  await step('secret level', async () => {
+  await step('bonus level 7', async () => {
     const g = bot.G();
     const { key, until, frame } = bot;
     const b = () => g.beast;
@@ -1053,6 +1050,8 @@ async function main() {
     await until(() => b().cat.state === 'in', 4000, 'the cat to jump into the box');
     await bot.tap('KeyE'); // skip the rest
     await until(() => g.mode === 'play' && b().phase === 'fight' && b().rise === 1, 2000, 'the fight to start');
+    if (b().mist > 0 || b().reveal !== 1) throw new Error('the face should be in plain view until the attacks begin');
+    await until(() => b().mist === 1 && b().reveal < 0.05, 8000, 'the mist to roll in once the paws start');
     // Walk to x while keeping clear of any paw that has stopped to drop; until done() holds with no paw about to drop.
     const threat = () => b().paws.find((p) => (p.state === 'windup' || p.state === 'slam') && Math.abs(p.x - (g.player.x + 9)) < 64);
     let dodged = 0;
@@ -1111,11 +1110,14 @@ async function main() {
     const face = g.level.beast.face;
     bot.aim(face.x + face.w / 2, face.y + face.h / 2);
     await go(400, () => cat() !== null || g.mode !== 'play', 6000, 'the look');
+    for (let k = 0; k < 20 && g.mode === 'play'; k += 1) await frame(); // hold the light: it shows what it found
+    const revealed = { seen: b().seen, reveal: b().reveal };
     bot.aim(g.player.x, 500);
     await bot.tap('KeyF');
     const looked = g.q.ops.find((op) => op.kind === 'measure');
     if (!looked || looked.by !== 'torch') throw new Error('the flashlight on its face should measure the cat');
-    if (b().phase === 'tamed') return 'secret level: CAT on the title; flattened and flung; dodged; T1 turned and smashed; a look at 4% cute came out cute (lucky)';
+    if (b().phase === 'tamed') return 'bonus level 7: flattened and flung; dodged; T1 turned and smashed; a look at 4% cute came out cute (lucky)';
+    if (revealed.seen !== 'monster' || revealed.reveal < 0.5) throw new Error(`the light should have parted the mist on a monster: ${JSON.stringify(revealed)}`);
     if (cat() !== 1) throw new Error('a monster result should leave the cat a plain 1');
     // Now the sure way: eight turns, nobody looking, alternating T1 and T2; rebuilds cut short.
     let turns = 0;
@@ -1134,16 +1136,14 @@ async function main() {
       t.wreck = 0.2;
     }
     if (turns !== 8 || b().phase !== 'tamed' || cat() !== 0) throw new Error(`eight turns should tame it without a look: ${turns} turns, ${b().phase}`);
-    await until(() => g.mode === 'complete', 8000, 'the secret level to be cleared');
+    await until(() => g.mode === 'complete', 8000, 'bonus level 7 to be cleared');
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the secret level, Next should lead back to the title');
-    return `secret level: CAT on the title; the intro skipped; flattened and flung off the roof (a life lost, the cat back at 1); ${drops} drops dodged (${dodged} paws stepped away from); T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; a look came out monster; eight turns then tamed it with no look; stars ${stars.join(', ')}`;
+    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
+    return `bonus level 7: the intro skipped; the face in plain view, then lost in the mist as the paws began; flattened and flung off the roof (a life lost, the cat back at 1); ${drops} drops dodged (${dodged} paws stepped away from); T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; a look came out monster; eight turns then tamed it with no look; stars ${stars.join(', ')}`;
   });
-  await shot('15c-secret-cleared');
+  await shot('15c-beast-cleared');
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
-  if (!(await listed()).some((t) => t === 'Secret. The Beast on the Roof')) throw new Error(`once found, the secret level should be listed: ${JSON.stringify(await listed())}`);
-  report.push('the secret level is listed with the bonus levels once found');
   await page.click('#btn-start');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
 

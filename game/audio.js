@@ -87,7 +87,7 @@ export function createAudio() {
       tone(980, 0.15, 0.34, 'triangle', 0.07, 520);
     },
     crank: () => tone(150, 0, 0.06, 'square', 0.04, 90),
-    // The secret level's beast.
+    // Bonus level 7's beast.
     roar: () => {
       tone(90, 0, 1.1, 'sawtooth', 0.07, 45);
       tone(135, 0.05, 0.9, 'sawtooth', 0.05, 60);

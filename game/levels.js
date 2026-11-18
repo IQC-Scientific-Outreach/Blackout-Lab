@@ -487,14 +487,14 @@ export const TERRACE = {
   takeaway: '',
 };
 
-// The secret level: type CAT on the title screen. The roof again, but this time the cat
-// jumped back into the box, and the radiation made it a giant. Not in "Skip to floor"
-// until it has been found once. The fight itself (paws, smashed terminals, the head in
-// the skyline) is in game.js and render.js; `beast` holds its numbers.
+// Bonus level 7, after the others: the roof again, but this time the cat jumped back into
+// the box, and the radiation made it a giant, floating in a mist behind the skyline. The
+// fight itself (paws, smashed terminals, the mist the flashlight parts) is in game.js and
+// render.js; `beast` holds its numbers.
 export const BEAST = {
   id: 'beast',
   name: 'The Beast on the Roof',
-  tag: 'Secret level',
+  tag: 'Bonus level 7',
   beast: {
     head: { x: 480, y: 178 }, // where the head sits once risen, behind the skyline
     face: { x: 405, y: 118, w: 150, h: 120 }, // what the flashlight has to rest on
@@ -517,13 +517,13 @@ export const BEAST = {
   shortest: 8,
   firstStar: 'Tamed the beast',
   bonus: { seconds: 90, text: 'Tamed within 90 seconds' },
-  goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Turn it back to cute, state 0. Each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
+  goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
   concept:
-    'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. Your flashlight on its face is a measurement: it comes out cute with the chance the panel shows, and otherwise it is all monster again.',
+    'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
   hints: [
     'Press E at a terminal to turn the cat with RY(\u03c0/8), then run: the cat brings a paw down on that terminal. It comes back after 15 seconds.',
     'A raised paw follows you, then stops for a moment before it drops straight down. Move as soon as it stops.',
-    'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. Keep the flashlight off its face until you choose to look.',
+    'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. The mist hides the cat until you look, so keep the flashlight off its face until you choose to.',
   ],
   takeaway:
     'The radiation rotated the cat into a monster, and eight small rotations rotated it back: what one unitary does, another can undo. Looking early was a gamble with exactly the odds sin\u00b2 of half the angle turned.',

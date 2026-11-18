@@ -72,29 +72,12 @@ function saveDev(dev) {
 // Level numbers: the climb's floors (0 to 6), then the terrace, then the bonus levels,
 // which are reached only from "Skip to floor" and are not part of the climb.
 const BONUS_FROM = LEVELS.length + 1;
-const isBonus = (index) => index >= BONUS_FROM; // the secret level counts as one too
-// The secret level comes after the bonus levels, but "Next bonus level" never leads to it.
-const HIDDEN_INDEX = BONUS_FROM + BONUS_LEVELS.length;
+const isBonus = (index) => index >= BONUS_FROM;
+// The last bonus level, the beast on the roof, is its own kind of level (BEAST in levels.js).
+const BEAST_INDEX = BONUS_FROM + BONUS_LEVELS.length;
 const levelAt = (index) =>
-  index < LEVELS.length ? LEVELS[index] : index === HIDDEN_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
-const hasNextBonus = (index) => index + 1 < HIDDEN_INDEX;
-
-// Whether the secret level has been found in this browser (it is then listed with the bonus levels).
-const SECRET_KEY = 'blackoutLab.secret';
-function secretFound() {
-  try {
-    return localStorage.getItem(SECRET_KEY) === 'found';
-  } catch (err) {
-    return false;
-  }
-}
-function markSecretFound() {
-  try {
-    localStorage.setItem(SECRET_KEY, 'found');
-  } catch (err) {
-    // blocked storage: it stays unlisted, and CAT still works
-  }
-}
+  index < LEVELS.length ? LEVELS[index] : index === BEAST_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
+const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
 
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -184,34 +167,11 @@ export function startGame() {
       input.setHeld(action, false);
     },
   });
-  function listFloors() {
-    const secret = secretFound() ? [{ name: `Secret. ${BEAST.name}`, index: HIDDEN_INDEX }] : [];
-    ui.setFloors(
-      LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
-      `Ending: ${TERRACE.name}`,
-      [...BONUS_LEVELS.map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i })), ...secret]
-    );
-  }
-  listFloors();
-
-  // The secret: typing CAT on the title screen.
-  let typed = '';
-  window.addEventListener('keydown', (ev) => {
-    if (G.mode !== 'title' || ev.ctrlKey || ev.metaKey || ev.altKey || !/^Key[A-Z]$/.test(ev.code)) return;
-    const tag = ev.target && ev.target.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    typed = (typed + ev.code.slice(3)).slice(-3);
-    if (typed !== 'CAT') return;
-    typed = '';
-    audio.unlock();
-    G.started = true;
-    G.results = G.results || [];
-    if (!secretFound()) {
-      markSecretFound();
-      listFloors();
-    }
-    loadLevel(HIDDEN_INDEX);
-  });
+  ui.setFloors(
+    LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
+    `Ending: ${TERRACE.name}`,
+    [...BONUS_LEVELS, BEAST].map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i }))
+  );
 
   // -- small helpers --------------------------------------------------------
 
@@ -521,7 +481,7 @@ export function startGame() {
       G.hints = 0;
     }
     if (!backdrop) ui.setAbout(false);
-    panel.setLevel(level, isBonus(index) ? index - BONUS_FROM : index, isBonus(index) ? BONUS_LEVELS.length : LEVELS.length);
+    panel.setLevel(level, isBonus(index) ? index - BONUS_FROM : index, isBonus(index) ? BONUS_LEVELS.length + 1 : LEVELS.length);
     panel.setHints(G.hints);
     applySnapshot(res.state);
     updateHud();
@@ -1414,7 +1374,7 @@ export function startGame() {
     if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
       // A bonus level is not part of the climb: out of lives, it simply starts over.
       loadLevel(G.levelIndex);
-      say(`Out of lives: the ${G.level.beast ? 'secret' : 'bonus'} level starts over with three.`, 'bad', true);
+      say('Out of lives: the bonus level starts over with three.', 'bad', true);
       return;
     }
     if (G.lives <= 0 && !G.infinite) {
@@ -1426,11 +1386,13 @@ export function startGame() {
     loadLevel(G.levelIndex, { carry: 'fall' });
   }
 
-  // -- the secret level: the beast on the roof ----------------------------------
+  // -- bonus level 7: the beast on the roof -------------------------------------
   //
-  // The cat is one qubit, CAT: 0 cute, 1 monster, starting at 1. Its head sits in the
-  // skyline; its paws take turns: rise, follow the player, stop (the wind-up), drop
-  // straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
+  // The cat is one qubit, CAT: 0 cute, 1 monster, starting at 1. Its head floats behind
+  // the skyline, plain to see until the first attack, then hidden in a mist that only the
+  // flashlight parts: lit, it shows as what it certainly is, monster or cute (a superposed
+  // cat is measured first). Its paws take turns: rise, follow the player, stop (the
+  // wind-up), drop straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
   // smashing that terminal, which comes back after a while. The flashlight resting on
   // its face measures it: cute ends the fight, monster starts the count again.
   const PAW = { rise: 0.6, track: [1.3, 2.1], speed: 300, windup: 0.55, fall: 6500, down: 0.55, lift: 0.7, h: 46 };
@@ -1461,6 +1423,10 @@ export function startGame() {
       grudge: null, // the terminal it is going for
       exposure: 0,
       lit: false,
+      mist: 0, // 0 to 1: rolls in once the attacks begin
+      reveal: 1, // 0 to 1: how far the flashlight has parted the mist
+      seen: 'monster', // the face the light last showed
+      attacked: false,
       cues: {},
     };
     G.torch.active = false; // the title screen's backdrop may have left it shining
@@ -1537,6 +1503,9 @@ export function startGame() {
       if (b.t >= 6.2 || skip) endIntro();
     } else if (b.phase === 'tamed') {
       b.tame = ease(Math.min(1, b.t / 2.2));
+      b.seen = 'cute';
+      b.reveal = Math.min(1, b.reveal + dt * 4);
+      b.mist = Math.max(0, b.mist - dt);
       for (const paw of b.paws) paw.y += (PAW_REST_Y + 120 - paw.y) * Math.min(1, dt * 3);
       cue('sit', 2.2, () => {
         b.cat.state = 'sit';
@@ -1580,6 +1549,12 @@ export function startGame() {
       b.exposure = 0;
       lookAtBeast(qi);
     }
+    // The mist: in once the paws start, parted by the light on a cat that is certain.
+    const certain = G.q.definite[qi];
+    if (certain !== null && b.lit) b.seen = certain === 0 ? 'cute' : 'monster';
+    if (b.attacked) b.mist = Math.min(1, b.mist + dt / 1.6);
+    const shown = !b.attacked || (b.lit && certain !== null);
+    b.reveal = shown ? Math.min(1, b.reveal + dt * 4) : Math.max(0, b.reveal - dt * 1.2);
   }
 
   function updatePaws(dt) {
@@ -1592,6 +1567,7 @@ export function startGame() {
       if (b.wait <= 0) {
         const paw = b.paws[b.next];
         b.next = 1 - b.next;
+        b.attacked = true;
         paw.state = 'rise';
         paw.t = 0;
         paw.from = { x: paw.x, y: paw.y };
@@ -1729,7 +1705,7 @@ export function startGame() {
     if (res.state.definite[op.qi[0]] === 0) {
       // Eight turns with nobody looking: certainly cute, no gamble needed.
       audio.play('collapse0');
-      tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The monster shrinks back into a cat.`);
+      tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The mist clears, and the monster shrinks back into a cat.`);
       return;
     }
     const p0 = 1 - res.state.p1[op.qi[0]];
@@ -1833,7 +1809,7 @@ export function startGame() {
   }
 
   function nextFloor() {
-    if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level, or the secret one
+    if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level
     else loadLevel(G.levelIndex + 1);
   }
 

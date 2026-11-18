@@ -1313,6 +1313,7 @@ export function startGame() {
 
     const feetBefore = pl.y + PLAYER.h;
     const wasOnGround = pl.onGround;
+    const wasOn = pl.standing; // where two platforms cross (a SWAP), stay on the one you were on
     pl.y += pl.vy * dt;
     pl.onGround = false;
     pl.standing = null;
@@ -1334,7 +1335,8 @@ export function startGame() {
     }
     if (pl.vy >= 0 && !pl.onGround) {
       const feet = pl.y + PLAYER.h;
-      for (const s of slabs()) {
+      const under = slabs().sort((a, b) => (b.platform === wasOn && wasOn ? 1 : 0) - (a.platform === wasOn && wasOn ? 1 : 0));
+      for (const s of under) {
         if (pl.x + PLAYER.w > s.x && pl.x < s.x + s.w && feetBefore <= s.y + 2 && feet >= s.y) {
           pl.y = s.y - PLAYER.h;
           pl.vy = 0;

@@ -2280,18 +2280,17 @@ export function createRenderer(canvas) {
       c.fillStyle = look === 'monster' ? BEAST_FUR.monsterDark : BEAST_FUR.cuteDark;
       for (const dx of [-w / 4, 0, w / 4]) c.fillRect(x + dx - 1, bottom - 16, 2, 14); // toes
       if (look === 'monster') {
+        c.fillStyle = MONSTER.fang; // claws: plain triangles, outlined to show against the white
+        c.strokeStyle = MONSTER.line;
+        c.lineWidth = 1.2;
         for (const dx of [-w / 3, -w / 9, w / 9, w / 3]) {
-          c.fillStyle = '#2b2320'; // long dark hooked claws
           c.beginPath();
-          c.moveTo(x + dx - 5, bottom - 6);
-          c.quadraticCurveTo(x + dx + 6, bottom - 2, x + dx + 5, bottom + 10);
-          c.quadraticCurveTo(x + dx + 2, bottom + 1, x + dx + 5, bottom - 6);
+          c.moveTo(x + dx - 4, bottom - 4);
+          c.lineTo(x + dx + 4, bottom - 4);
+          c.lineTo(x + dx + 1, bottom + 9);
           c.closePath();
           c.fill();
-          c.fillStyle = '#d9cdb4'; // pale tips
-          c.beginPath();
-          c.arc(x + dx + 5, bottom + 8, 1.5, 0, Math.PI * 2);
-          c.fill();
+          c.stroke();
         }
       } else {
         c.fillStyle = '#f7b6c2';

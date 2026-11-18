@@ -646,6 +646,8 @@ export const BONUS_LEVELS = [
     lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'normal' }],
     terminals: [
       { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
+      // On Bob's side, under the exit: a SWAP to send a platform back, so a player left there can get home.
+      { id: 'T2', x: 880, y: 450, ops: [{ gate: 'swap', q: ['Q', 'R'] }] },
     ],
     decor: [
       { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
@@ -663,7 +665,7 @@ export const BONUS_LEVELS = [
     hints: [
       'Z at T1 acts on R, over on Bob\'s side, and R is a plain 0, so on its own Z does nothing. SWAP sends Q\'s state over to R\'s place (and R\'s back): watch the arrows, then the platforms trade places.',
       'The backup light in the middle sees any superposition crossing under it. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off.',
-      'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit.',
+      'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
     ],
     takeaway:
       'The light in the middle was an eavesdropper. With the channel shielded, your state crossed the room, picked up Bob\'s Z and came back, and H, Z, H made an X.',
@@ -695,6 +697,8 @@ export const BONUS_LEVELS = [
     lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'emergency' }],
     terminals: [
       { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
+      // On Bob's side, under the exit: a SWAP to send a platform back, so a player left there can get home.
+      { id: 'T2', x: 880, y: 450, ops: [{ gate: 'swap', q: ['Q', 'R'] }] },
     ],
     decor: [
       { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
@@ -712,7 +716,7 @@ export const BONUS_LEVELS = [
     hints: [
       'SWAP sends Q\'s state to Bob\'s side, where Z at T1 can reach it, and brings R\'s state back. The platforms trade places under the light.',
       'The red light damps whatever crosses under it to 0. X at T1 slides the shield S under the light (this shield blocks it as 0).',
-      'With the shield in place: H, SWAP, Z, SWAP, H, then SWAP once more and jump onto the raised platform to ride it to Bob\'s side.',
+      'With the shield in place: H, SWAP, Z, SWAP, H, then SWAP once more and jump onto the raised platform to ride it to Bob\'s side. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
     ],
     takeaway:
       'The emergency light was not an eavesdropper but a drain: it pulled everything down to 0. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',

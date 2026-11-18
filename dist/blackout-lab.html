@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-6cZhISKr9RNpEvVENqOypH7U7/sKPtp1Qls7xk5JRNY='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-tW8NvH5bhth+gm2KkJ6DOI/AudIT+0Qmd+PqflDxxyU='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -1304,6 +1304,8 @@ const BONUS_LEVELS = [
     lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'normal' }],
     terminals: [
       { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
+      // On Bob's side, under the exit: a SWAP to send a platform back, so a player left there can get home.
+      { id: 'T2', x: 880, y: 450, ops: [{ gate: 'swap', q: ['Q', 'R'] }] },
     ],
     decor: [
       { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
@@ -1321,7 +1323,7 @@ const BONUS_LEVELS = [
     hints: [
       'Z at T1 acts on R, over on Bob\'s side, and R is a plain 0, so on its own Z does nothing. SWAP sends Q\'s state over to R\'s place (and R\'s back): watch the arrows, then the platforms trade places.',
       'The backup light in the middle sees any superposition crossing under it. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off.',
-      'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit.',
+      'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
     ],
     takeaway:
       'The light in the middle was an eavesdropper. With the channel shielded, your state crossed the room, picked up Bob\'s Z and came back, and H, Z, H made an X.',
@@ -1353,6 +1355,8 @@ const BONUS_LEVELS = [
     lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'emergency' }],
     terminals: [
       { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
+      // On Bob's side, under the exit: a SWAP to send a platform back, so a player left there can get home.
+      { id: 'T2', x: 880, y: 450, ops: [{ gate: 'swap', q: ['Q', 'R'] }] },
     ],
     decor: [
       { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
@@ -1370,7 +1374,7 @@ const BONUS_LEVELS = [
     hints: [
       'SWAP sends Q\'s state to Bob\'s side, where Z at T1 can reach it, and brings R\'s state back. The platforms trade places under the light.',
       'The red light damps whatever crosses under it to 0. X at T1 slides the shield S under the light (this shield blocks it as 0).',
-      'With the shield in place: H, SWAP, Z, SWAP, H, then SWAP once more and jump onto the raised platform to ride it to Bob\'s side.',
+      'With the shield in place: H, SWAP, Z, SWAP, H, then SWAP once more and jump onto the raised platform to ride it to Bob\'s side. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
     ],
     takeaway:
       'The emergency light was not an eavesdropper but a drain: it pulled everything down to 0. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',
@@ -5008,18 +5012,17 @@ function createRenderer(canvas) {
       c.fillStyle = look === 'monster' ? BEAST_FUR.monsterDark : BEAST_FUR.cuteDark;
       for (const dx of [-w / 4, 0, w / 4]) c.fillRect(x + dx - 1, bottom - 16, 2, 14); // toes
       if (look === 'monster') {
+        c.fillStyle = MONSTER.fang; // claws: plain triangles, outlined to show against the white
+        c.strokeStyle = MONSTER.line;
+        c.lineWidth = 1.2;
         for (const dx of [-w / 3, -w / 9, w / 9, w / 3]) {
-          c.fillStyle = '#2b2320'; // long dark hooked claws
           c.beginPath();
-          c.moveTo(x + dx - 5, bottom - 6);
-          c.quadraticCurveTo(x + dx + 6, bottom - 2, x + dx + 5, bottom + 10);
-          c.quadraticCurveTo(x + dx + 2, bottom + 1, x + dx + 5, bottom - 6);
+          c.moveTo(x + dx - 4, bottom - 4);
+          c.lineTo(x + dx + 4, bottom - 4);
+          c.lineTo(x + dx + 1, bottom + 9);
           c.closePath();
           c.fill();
-          c.fillStyle = '#d9cdb4'; // pale tips
-          c.beginPath();
-          c.arc(x + dx + 5, bottom + 8, 1.5, 0, Math.PI * 2);
-          c.fill();
+          c.stroke();
         }
       } else {
         c.fillStyle = '#f7b6c2';
@@ -7704,6 +7707,7 @@ function startGame() {
 
     const feetBefore = pl.y + PLAYER.h;
     const wasOnGround = pl.onGround;
+    const wasOn = pl.standing; // where two platforms cross (a SWAP), stay on the one you were on
     pl.y += pl.vy * dt;
     pl.onGround = false;
     pl.standing = null;
@@ -7725,7 +7729,8 @@ function startGame() {
     }
     if (pl.vy >= 0 && !pl.onGround) {
       const feet = pl.y + PLAYER.h;
-      for (const s of slabs()) {
+      const under = slabs().sort((a, b) => (b.platform === wasOn && wasOn ? 1 : 0) - (a.platform === wasOn && wasOn ? 1 : 0));
+      for (const s of under) {
         if (pl.x + PLAYER.w > s.x && pl.x < s.x + s.w && feetBefore <= s.y + 2 && feet >= s.y) {
           pl.y = s.y - PLAYER.h;
           pl.vy = 0;

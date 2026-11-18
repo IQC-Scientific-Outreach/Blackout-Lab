@@ -871,6 +871,26 @@ async function main() {
     if (!first.startsWith('h swap') || !first.includes(seen)) throw new Error(`unshielded, the light should catch the crossing: ${first}`);
     document.getElementById('btn-restart').click();
     await bot.until(() => g.mode === 'play' && g.q.ops.length === 0, 4000, 'the restart');
+    let rescue = '';
+    if (level === 3) {
+      // Stranded down on Bob's side: T2 there swaps the platforms back; ride R's platform home.
+      Object.assign(g.player, { x: 871, y: 450 - 32, vx: 0, vy: 0 });
+      const t2 = g.room.terminals.find((t) => t.id === 'T2');
+      await bot.until(() => t2.near, 2000, 'stand at T2');
+      await bot.tap('KeyE');
+      await bot.until(() => g.mode === 'terminal', 2000, 'T2 to open');
+      document.querySelector('#term-ops button[data-op="0"]').click();
+      await bot.tap('KeyE');
+      await bot.until(() => g.mode === 'play', 2000, 'T2 to close');
+      const ride = bot.platform('R');
+      await bot.walkTo(ride.x + ride.w / 2);
+      if (g.player.standing !== ride || !g.swap || g.swap.travel) throw new Error('the player should be on R\'s platform before the swap sets off');
+      await bot.until(() => !g.swap, 10000, 'the swap back');
+      if (g.player.standing !== ride || g.player.x > 260) throw new Error(`the platform should carry the player home, staying on it where the two cross: x ${Math.round(g.player.x)}`);
+      rescue = '; stranded on Bob\'s side, T2 swapped a platform back and carried the player home';
+      document.getElementById('btn-restart').click();
+      await bot.until(() => g.mode === 'play' && g.q.ops.length === 0, 4000, 'the restart');
+    }
     // Shielded: X, H, SWAP, Z (on R, now holding Q's state), SWAP, H: Q is a certain 1.
     await bot.terminal('T1', [4, 1, 2, 3, 2, 1]);
     const Q = bot.platform('Q');
@@ -897,7 +917,7 @@ async function main() {
     await bot.hop(bot.solid(2));
     await bot.exit();
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    return `bonus level ${level}: unshielded the light caught the crossing (${first}); shielded, X H SWAP Z SWAP H made Q a certain 1, and the last SWAP carried the player across; stars ${stars.join(', ')}`;
+    return `bonus level ${level}: unshielded the light caught the crossing (${first}); shielded, X H SWAP Z SWAP H made Q a certain 1, and the last SWAP carried the player across${rescue}; stars ${stars.join(', ')}`;
   };
   await step('bonus level 3', channel, 3);
   await page.click('#btn-next');

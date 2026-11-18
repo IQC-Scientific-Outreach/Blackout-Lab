@@ -10,25 +10,58 @@
 // A floor is one room, or several (`rooms`) joined by `portals`. A room has
 //   solids     ground blocks and fixed stands
 //   platforms  { q, x, w, y0, y1, need, half? }
-//   terminals  { id, x, y, ops, port?, sealed? }  op = { gate, q } with q = ids
+//              Sideways platform: { q, axis: 'x', x0, x1, y, w, need, speed? }: state 0 parks it
+//              at x0, state 1 at x1, on one height (it can slide in and out of a light's path);
+//              speed in pixels a second, 240 if not given. `steady: true`: cavities do not
+//              turn it (a shield that blocks their waves).
+//              A swap gate between two platforms sends each across to the other's place
+//              (after the swap delay, an arrow showing where it will go), so a qubit's state
+//              really travels: see game.js.
+//   terminals  { id, x, y, ops, port?, sealed? }  op = { gate, q, angle? } with q = ids
+//              (angle, in radians, for ry)
 //              ([control, target] for cx; gate 'measure' reads its qubits).
 //              `port: true` is a dead terminal: only its canister port works.
+//              `broken: { every, ops }` (with `ops: []`): nobody can use it; it applies its
+//              ops by itself, one every `every` seconds, round and round.
+//              A swap op can take `delay` (seconds), overriding the swap delay; 0 is instant.
 //              Any op that touches the canister needs the canister in hand.
 //   door       the exit: { x, y, key, lock, check?, reprep?, byHand?, item? }
 //              (byHand: read only with E, never by flashlight; item: needs a key in hand)
-//   canister   { q, x, y }   battery { x, y, diesOnArrival? }   npcs, portals
+//   canister   { q, x, y }   battery { x, y, diesOnArrival?, range?, where? }   npcs, portals
+//              (battery range: a weak spare, the beam reaching only that far; where: how the
+//              prompt tells a player with a dead flashlight where to find it)
+//   cavities   Rabi drives: { x, w, y, to, dir: 'down' | 'up', rate }, a band of waves between
+//              an emitting cap at height y and a far cap at `to`, turning every platform in it
+//              (Ry, `rate` radians a second): 0, +, 1, - and round again. Watched platforms
+//              (lit, or stood on) hold still. All or nothing: a solid or a steady platform
+//              spanning the band's whole width shuts it off; it reloads when cleared.
+//   lights     backup lights: { x, y, angle, spread, range, kind }, a lamp shining a cone
+//              (angle and spread in radians). Like the flashlight, a light resting on a
+//              superposed platform measures it: 'normal' as fast as the flashlight, 'weak'
+//              (faulty, sparking) five times slower, and 'emergency' (red) damps it to 0,
+//              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   bonus      an extra star: { sequences: [{ q, gates }], text } for applying one of those
-//              gate sequences to its qubit, or { seconds, text } for clearing the floor in time
+//   bonus      an extra star: { sequences: [{ q, gates, value?, untouched? }], text } for applying
+//              one of those gate sequences to its qubit (value: it must end in that state;
+//              untouched: nothing measured in between), or { seconds, text } for clearing the
+//              floor in time, or { fewest: true, text } for using no more gates than `shortest`
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
+// `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
+// Bonus levels (BONUS_LEVELS, below) take the same fields; they are reached only from
+// "Skip to floor" and do not count towards the climb.
 
 export const WORLD = { w: 960, h: 540 };
 export const PLATFORM_H = 14;
 export const LIVES_PER_FLOOR = 3;
 
 export const GATE_INFO = {
+  i: {
+    symbol: 'I',
+    name: 'Identity',
+    text: 'Does nothing to the state. Applied to a shuttle platform, it just sends it on its way.',
+  },
   h: {
     symbol: 'H',
     name: 'Hadamard',
@@ -44,6 +77,21 @@ export const GATE_INFO = {
     symbol: 'CNOT',
     name: 'Controlled flip',
     text: 'Flips the target only when the control is in state 1. A control in superposition leaves the two entangled.',
+  },
+  swap: {
+    symbol: 'SWAP',
+    name: 'Swap',
+    text: 'Exchanges the states of two qubits. Here the two platforms trade places, so a state really travels across the room.',
+  },
+  ry: {
+    symbol: 'RY',
+    name: 'Y rotation',
+    text: 'Turns the state part of the way round, 0 towards + towards 1. A quarter turn (pi/2) is the same step a cavity takes in a quarter of its cycle.',
+  },
+  cz: {
+    symbol: 'CZ',
+    name: 'Controlled Z',
+    text: 'Applies Z to one qubit when the other is in state 1: a phase flip that only H makes visible. It works the same both ways round.',
   },
   measure: {
     symbol: 'M',
@@ -439,6 +487,334 @@ export const TERRACE = {
   takeaway: '',
 };
 
+// Bonus level 7, after the others: the roof again, but this time the cat jumped back into
+// the box, and the radiation made it a giant, floating in a mist behind the skyline. The
+// fight itself (paws, smashed terminals, the mist the flashlight parts) is in game.js and
+// render.js; `beast` holds its numbers.
+export const BEAST = {
+  id: 'beast',
+  name: 'The Beast on the Roof',
+  tag: 'Bonus level 7',
+  beast: {
+    head: { x: 480, y: 178 }, // where the head sits once risen, behind the skyline
+    face: { x: 405, y: 118, w: 150, h: 120 }, // its face, where the exposure ring shows
+    // What the flashlight has to rest on to see the cat: the head and the mist below it down to
+    // the roof, so a beam held level along the roof (no aiming up, no jumping) finds it.
+    sight: { x: 400, y: 110, w: 160, h: 215 },
+    pawW: 54, // three players wide
+    top: 64, // a raised paw's underside
+    wreck: 10, // seconds a smashed terminal takes to come back
+    sureStar: 'Deterministically made the cat cute', // an extra star: eight RY turns in a row, no look
+  },
+  torchOff: true,
+  gates: ['ry'],
+  qubits: [{ id: 'CAT', init: '1', role: 'beast' }],
+  spawn: { x: 176, y: 330 }, // where the terrace starts too
+  solids: [{ kind: 'ground', x: 0, y: 330, w: 880, h: 210 }],
+  platforms: [],
+  // quick: E applies the gate at once, with no terminal screen (there is no time).
+  terminals: [
+    { id: 'T1', x: 236, y: 330, quick: true, ops: [{ gate: 'ry', q: ['CAT'], angle: Math.PI / 8 }] },
+    { id: 'T2', x: 700, y: 330, quick: true, ops: [{ gate: 'ry', q: ['CAT'], angle: Math.PI / 8 }] },
+  ],
+  scene: TERRACE.scene,
+  shortest: 8,
+  firstStar: 'Tamed the beast',
+  bonus: { seconds: 60, text: 'Tamed within 60 seconds of the fight starting' },
+  goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
+  concept:
+    'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
+  hints: [
+    'Press 1 (or E) at a terminal to turn the cat with RY(\u03c0/8), then run at once: the cat brings a paw straight down on that terminal. It comes back after 10 seconds.',
+    'A raised paw follows you, then stops for a moment before it drops straight down: move as soon as it stops. A paw that comes down at one end of the roof is about to sweep along it: jump over it.',
+    'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. The mist hides the cat until you look, so keep the flashlight off its face until you choose to.',
+  ],
+  takeaway:
+    'The radiation rotated the cat into a monster, and eight small rotations rotated it back: what one unitary does, another can undo. Looking early was a gamble with exactly the odds sin\u00b2 of half the angle turned.',
+};
+
+// Bonus levels: only in "Skip to floor", after the climb's floors and the terrace.
+export const BONUS_LEVELS = [
+  {
+    id: 'broken',
+    name: 'Broken Terminal',
+    tag: 'Bonus level 1',
+    gates: ['ry', 'h', 'cx'],
+    torch: 'dead',
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 340, w: 110, h: 14 },
+      { kind: 'ground', x: 730, y: 240, w: 230, h: 300 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 470, y1: 360, need: 1 },
+      { q: 'A', x: 500, w: 80, y0: 420, y1: 290, need: 1 },
+      { q: 'B', x: 640, w: 80, y0: 380, y1: 240, need: 1 },
+    ],
+    // A weak spare: from the ledge the beam reaches A, never B.
+    battery: { x: 350, y: 340, range: 170, where: 'on the middle ledge' },
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [], broken: { every: 1.5, ops: [{ gate: 'ry', q: ['P'], angle: Math.PI / 2 }] } },
+      {
+        id: 'T2',
+        x: 420,
+        y: 340,
+        ops: [],
+        broken: { every: 1.5, ops: [{ gate: 'h', q: ['A'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'cx', q: ['A', 'B'] }, { gate: 'h', q: ['A'] }] },
+      },
+    ],
+    door: { x: 900, y: 240, key: null, lock: [] },
+    shortest: 0,
+    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
+    goal: 'Your flashlight is dead and both terminals here are broken, stuck in loops. Ride P up to the middle ledge, fit the spare battery there, then get A and B raised together to reach the exit.',
+    goalAfterBattery: 'Spare battery fitted, but it is weak: from this ledge the beam reaches A and not B. T2 keeps looping H, CNOT, CNOT, H. Get A and B raised together.',
+    concept:
+      'A broken terminal keeps applying its gates on a timer. RY(π/2) is a quarter turn, so P goes 0, superposed, 1, superposed and round again. T2\'s loop of H, CNOT, CNOT, H undoes itself every four steps, so on its own B never rises. A measurement breaks the loop: a CNOT that finds A a certain 1 copies that 1 onto B.',
+    hints: [
+      'T1 turns P a quarter turn every 1.5 seconds: lowered, superposed, raised, superposed. Jump on as it rises and get off onto the ledge before the next tick.',
+      'Pick up the battery on the ledge. It is weak: the beam reaches A but not B. Hold it on A while A is superposed until it collapses. If it reads 0, wait for the loop to make it superposed again, and look again.',
+      'With A a certain 1, the loop leaves it raised except for one tick (between the two H gates), and raises B for one tick (1.5 seconds), right after the CNOT. Stand on raised A, watch T2\'s screen, and jump to B as it rises. If A is only raised between the two Hs and B never rises, A was caught in the wrong part of the loop: look at it again while it is superposed.',
+    ],
+    takeaway:
+      'Left alone, H, CNOT, CNOT, H took A and B round in a loop that never left B certain. Your look made A an ordinary 1, and from then on each CNOT copied it onto B: a measurement changed what the same gates did.',
+  },
+  {
+    id: 'shuffle',
+    name: 'SWAP Shuffle',
+    tag: 'Bonus level 2',
+    gates: ['x', 'swap'],
+    qubits: [
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'C', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'ground', x: 550, y: 220, w: 410, h: 320 },
+    ],
+    platforms: [
+      { q: 'A', x: 160, w: 80, y0: 450, y1: 330, need: 0 },
+      { q: 'B', x: 290, w: 80, y0: 470, y1: 370, need: 1 },
+      { q: 'C', x: 420, w: 80, y0: 470, y1: 290, need: 1 },
+    ],
+    terminals: [
+      // delay 0: these SWAPs send the platforms off at once, without a countdown.
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'x', q: ['A'] }, { gate: 'swap', q: ['A', 'B'], delay: 0 }, { gate: 'swap', q: ['B', 'C'], delay: 0 }] },
+    ],
+    door: { x: 900, y: 220, key: null, lock: [] },
+    shortest: 5,
+    bonus: { fewest: true, text: 'Crossed with the fewest gates (5)' },
+    goal: 'A, B and C start lowered: 0 0 0. You need A lowered and B and C raised, 0 1 1, to cross to the exit. T1 has X on A and two SWAPs, nothing else.',
+    concept:
+      'SWAP exchanges the states of two qubits: here the two platforms trade places. With X only on A, the way to set B and C is to make a 1 on A and pass it down the line. These are ordinary bits being shuffled: no superposition, no measurement.',
+    hints: [
+      'X raises A. SWAP A and B then moves that 1 over to B and brings B\'s 0 back to A.',
+      'You need two 1s. The 1 on B has to move on to C before you make the next one on A and pass it to B.',
+      'X, SWAP A and B, X, SWAP B and C, SWAP A and B: five gates, and the platforms read 0 1 1.',
+    ],
+    takeaway:
+      'SWAP moved each 1 you made without copying it, so two Xs were enough for two 1s. Here the bits were ordinary ones; in Bonus level 3 the same gate carries a superposition across the lab.',
+  },
+  {
+    id: 'channel',
+    name: 'Quantum Communication',
+    tag: 'Bonus level 3',
+    gates: ['h', 'swap', 'z', 'x'],
+    torchOff: true,
+    qubits: [
+      { id: 'Q', init: '0', role: 'platform' },
+      { id: 'R', init: '0', role: 'platform' },
+      { id: 'S', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 450 },
+    solids: [
+      { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
+      { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 820, y: 270, w: 140, h: 14 },
+    ],
+    platforms: [
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1 },
+      { q: 'R', x: 720, w: 80, y0: 455, y1: 360, need: 1 },
+      { q: 'S', axis: 'x', x0: 235, x1: 420, y: 230, w: 110, need: 1 },
+    ],
+    lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'normal' }],
+    terminals: [
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
+      // On Bob's side, under the exit: a SWAP to send a platform back, so a player left there can get home.
+      { id: 'T2', x: 880, y: 450, ops: [{ gate: 'swap', q: ['Q', 'R'] }] },
+    ],
+    decor: [
+      { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
+      { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
+    ],
+    door: { x: 900, y: 270, key: null, lock: [] },
+    shortest: 7,
+    bonus: {
+      sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
+      text: 'Built an X from H, Z, H with nothing seeing the qubit on the way',
+    },
+    goal: 'Send Q\'s state across to Bob\'s platform R and back so that it comes home as 1, then ride it over to the exit above Bob.',
+    concept:
+      'SWAP trades the states of two qubits: here the platforms Q and R change places, so a state really crosses the room. Any light on the way is a measurement, the way quantum key distribution spots an eavesdropper. H, then Z, then H adds up to an X, but only if nothing looks at the qubit in between.',
+    hints: [
+      'Z at T1 acts on R, over on Bob\'s side, and R is a plain 0, so on its own Z does nothing. SWAP sends Q\'s state over to R\'s place (and R\'s back): watch the arrows, then the platforms trade places.',
+      'The backup light in the middle sees any superposition crossing under it. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off.',
+      'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
+    ],
+    takeaway:
+      'The light in the middle was an eavesdropper. With the channel shielded, your state crossed the room, picked up Bob\'s Z and came back, and H, Z, H made an X.',
+  },
+  {
+    id: 'channel-emergency',
+    name: 'Emergency Channel',
+    tag: 'Bonus level 4',
+    gates: ['h', 'swap', 'z', 'x'],
+    torchOff: true,
+    qubits: [
+      { id: 'Q', init: '0', role: 'platform' },
+      { id: 'R', init: '0', role: 'platform' },
+      // The emergency light damps whatever is not certainly 0, so here the shield blocks
+      // the light in state 0, and starts in state 1, parked out of the light.
+      { id: 'S', init: '1', role: 'platform' },
+    ],
+    spawn: { x: 30, y: 450 },
+    solids: [
+      { kind: 'ground', x: 0, y: 450, w: 150, h: 90 },
+      { kind: 'ground', x: 810, y: 450, w: 150, h: 90 },
+      { kind: 'stand', x: 820, y: 270, w: 140, h: 14 },
+    ],
+    platforms: [
+      { q: 'Q', x: 160, w: 80, y0: 455, y1: 360, need: 1 },
+      { q: 'R', x: 720, w: 80, y0: 455, y1: 360, need: 1 },
+      { q: 'S', axis: 'x', x0: 420, x1: 235, y: 230, w: 110, need: 0 },
+    ],
+    lights: [{ x: 475, y: 70, angle: Math.PI / 2, spread: 0.3, range: 430, kind: 'emergency' }],
+    terminals: [
+      { id: 'T1', x: 100, y: 450, ops: [{ gate: 'h', q: ['Q'] }, { gate: 'swap', q: ['Q', 'R'] }, { gate: 'z', q: ['R'] }, { gate: 'x', q: ['S'] }] },
+      // On Bob's side, under the exit: a SWAP to send a platform back, so a player left there can get home.
+      { id: 'T2', x: 880, y: 450, ops: [{ gate: 'swap', q: ['Q', 'R'] }] },
+    ],
+    decor: [
+      { type: 'sign', x: 16, y: 120, lines: ['ALICE'] },
+      { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
+    ],
+    door: { x: 900, y: 270, key: null, lock: [] },
+    shortest: 7,
+    bonus: {
+      sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
+      text: 'Built an X from H, Z, H with nothing seeing the qubit on the way',
+    },
+    goal: 'The same channel, but the backup light is an emergency one. Make Q a certain 1 by way of Bob\'s Z, then ride it over to the exit above Bob.',
+    concept:
+      'An emergency light does not just look: it drains a qubit to its ground state, 0, whatever it was. That is amplitude damping, the way a real qubit loses its energy to its surroundings. Unshielded, any crossing comes out as 0, even the raised platform you ride at the end.',
+    hints: [
+      'SWAP sends Q\'s state to Bob\'s side, where Z at T1 can reach it, and brings R\'s state back. The platforms trade places under the light.',
+      'The red light damps whatever crosses under it to 0. X at T1 slides the shield S under the light (this shield blocks it as 0).',
+      'With the shield in place: H, SWAP, Z, SWAP, H, then SWAP once more and jump onto the raised platform to ride it to Bob\'s side. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
+    ],
+    takeaway:
+      'The emergency light was not an eavesdropper but a drain: it pulled everything down to 0. Real qubits leak their energy the same way, which is why they have to be shielded from their surroundings.',
+  },
+  {
+    id: 'decoherence',
+    name: 'Decoherence Time',
+    tag: 'Bonus level 5',
+    gates: ['h', 'z', 'cz'],
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 40, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 340, w: 110, h: 14 },
+      { kind: 'ground', x: 760, y: 160, w: 200, h: 380 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 505, y1: 395, need: 1 },
+      { q: 'A', x: 490, w: 80, y0: 340, y1: 220, need: 0 },
+      { q: 'B', x: 620, w: 80, y0: 430, y1: 250, need: 1 },
+    ],
+    lights: [
+      { x: 242, y: 70, angle: Math.PI / 2, spread: 0.34, range: 480, kind: 'weak' },
+      { x: 595, y: 40, angle: Math.PI / 2, spread: 0.55, range: 470, kind: 'weak' },
+    ],
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'h', q: ['P'] }, { gate: 'z', q: ['P'] }] },
+      { id: 'T2', x: 392, y: 340, ops: [{ gate: 'h', q: ['A'] }, { gate: 'z', q: ['A'] }, { gate: 'h', q: ['B'] }, { gate: 'cz', q: ['A', 'B'] }] },
+    ],
+    door: { x: 900, y: 160, key: null, lock: [] },
+    shortest: 12,
+    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
+    goal: 'Raise P to reach the middle, then set A lowered and B raised to cross to the exit. Faulty lights hang over every platform: each superposition has only a few seconds.',
+    concept:
+      'Decoherence: a qubit cannot stay in superposition for ever, because its surroundings keep looking at it. The faulty lights here are slow, but every superposition you make has a deadline, even while you work at a terminal. CZ applies Z to one qubit when the other is 1.',
+    hints: [
+      'The faulty lights take a few seconds to collapse a superposition, but they always get there. Plan your gates, then apply them quickly.',
+      'At T1, H, Z, H on P is an X: three gates before the light catches P. (A lucky collapse to 1 also works.)',
+      'At T2, A must end lowered and B raised. B only flips through H, Z, H, and its Z can only come from CZ, which needs A in state 1.',
+      'The full recipe at T2: H, Z, H on A (now 1); H on B; CZ; H on B (now 1); H, Z, H on A (back to 0).',
+    ],
+    takeaway:
+      'Every superposition here had a deadline, set by the faulty lights. Real qubits have one too, called the decoherence time, and a quantum computer has to finish its gates inside it.',
+  },
+  {
+    id: 'rabi',
+    name: 'The Watched Qubit',
+    tag: 'Bonus level 6',
+    gates: ['ry', 'x'],
+    torchOff: true,
+    qubits: [
+      { id: 'P', init: '0', role: 'platform' },
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'S', init: '0', role: 'platform' },
+    ],
+    spawn: { x: 40, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 150, h: 100 },
+      { kind: 'stand', x: 335, y: 360, w: 110, h: 14 },
+      { kind: 'ground', x: 760, y: 180, w: 200, h: 360 },
+    ],
+    platforms: [
+      { q: 'P', x: 200, w: 84, y0: 445, y1: 320, need: 0 },
+      { q: 'A', x: 490, w: 80, y0: 360, y1: 240, need: 0 },
+      { q: 'B', x: 620, w: 80, y0: 450, y1: 270, need: 1 },
+      // The shield: parked out of the way, and fast, so that it cuts A's and B's waves together.
+      { q: 'S', axis: 'x', x0: 240, x1: 478, y: 150, w: 234, need: 1, speed: 1000, steady: true },
+    ],
+    cavities: [
+      { x: 200, w: 84, y: 490, to: 300, dir: 'up', rate: Math.PI / 2 },
+      { x: 482, w: 226, y: 75, to: 485, dir: 'down', rate: Math.PI / 2 },
+    ],
+    terminals: [
+      { id: 'T1', x: 96, y: 440, ops: [{ gate: 'ry', q: ['B'], angle: Math.PI / 2 }] },
+      { id: 'T2', x: 392, y: 360, ops: [{ gate: 'x', q: ['S'] }] },
+    ],
+    door: { x: 900, y: 180, key: null, lock: [] },
+    shortest: 3,
+    bonus: { seconds: 120, text: 'Cleared within two minutes' },
+    goal: 'Freeze P lowered and climb on, then get A lowered and B raised at the same moment to cross to the exit.',
+    concept:
+      'Rabi oscillation: the waves from a cavity turn a qubit round and round, 0, then +, then 1, then -, then 0 again. Watching stops it, the quantum watchdog (or Zeno) effect: a qubit that is lit, or stood on, is being measured all the time, so it cannot turn. Look away and it carries on from where it was.',
+    hints: [
+      'P never stops turning while nothing watches it. Switch the flashlight on (F) as P comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
+      'A and B turn together, so they would freeze as 0 0 or 1 1. Before you cross, Ry(pi/2) twice at T1 puts B half a turn ahead of A: whenever A is 0, B is 1.',
+      'At T2, X slides the shield into the waves and freezes A and B together. Do it as A comes down to lowered, then light them up and cross.',
+    ],
+    takeaway:
+      'The cavity kept the qubits turning, and only being watched stopped them. Measured often enough, a qubit cannot change at all: physicists call that the quantum Zeno effect, after the arrow paradox.',
+  },
+];
+
 // A floor without `rooms` is a single room made of its own top-level fields.
 export function roomsOf(level) {
   return level.rooms || [{ id: 'main', name: level.name, ...level }];
@@ -450,10 +826,12 @@ export const ROLE_NAME = {
   sealed: 'sealed qubit',
   box: 'atom in the box',
   door: 'lock lamp',
+  beast: 'mutated cat',
 };
 
 // What 0 and 1 mean for each role, in words.
 export const ROLE_WORDS = {
   platform: ['lowered', 'raised'],
   box: ['alive', 'dead'],
+  beast: ['cute', 'monster'],
 };

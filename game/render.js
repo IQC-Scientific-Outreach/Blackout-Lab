@@ -4,7 +4,7 @@
 // signs, speech bubbles) are drawn again on top, so they stay readable in the dark.
 
 import { WORLD, PLATFORM_H } from './levels.js';
-import { TORCH, PLAYER, slotRect, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, lampPos, screenRect, boxRect, cryoRect, canisterRect, center, handOf, LIGHT_KINDS } from './geometry.js';
 
 const C = {
   wallTop: '#1a2942',
@@ -49,12 +49,233 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// The canister sprite, standing on baseY. Shared with the canister view in the rack.
+//
+// `state` (canister view only) lights its two bands the way platforms show a qubit:
+//   { value: 0 | 1 }   definite: the bottom band (0) or the top band (1) glows bright blue
+//   { p1, t }          superposed or entangled: both bands get a moving dashed outline,
+//                      each as strong as the chance of its value, like a platform's outlines
+export function paintCanister(ctx, x, baseY, state) {
+  const bands = [
+    { value: 1, y: baseY - 16 },
+    { value: 0, y: baseY - 6 },
+  ];
+  ctx.fillStyle = '#9fb3d6';
+  rr(ctx, x - 5, baseY - 19, 10, 19, 4);
+  ctx.fill();
+  for (const band of bands) {
+    const lit = state && state.value === band.value;
+    ctx.save();
+    if (lit) {
+      ctx.shadowColor = '#3ea6ff';
+      ctx.shadowBlur = 6;
+    }
+    ctx.fillStyle = lit ? '#3ea6ff' : '#5d7299';
+    ctx.fillRect(x - 6, band.y, 12, 2.5);
+    ctx.restore();
+    if (state && state.p1 !== undefined) {
+      ctx.save();
+      ctx.globalAlpha = 0.3 + 0.7 * (band.value ? state.p1 : 1 - state.p1);
+      ctx.strokeStyle = '#5ee6ff';
+      ctx.lineWidth = 0.55;
+      ctx.setLineDash([1.4, 1]);
+      ctx.lineDashOffset = -(state.t || 0) * 3;
+      ctx.strokeRect(x - 6.6, band.y - 0.6, 13.2, 3.7);
+      ctx.restore();
+    }
+  }
+  ctx.fillStyle = '#2a3855';
+  ctx.fillRect(x - 2, baseY - 22, 4, 3);
+}
+
+// Show gates (developer option): a gate popping up over a qubit, drawn like the
+// circuit diagram. `part.role` is 'box' (a gate square with its letter), 'ctrl'
+// (a CNOT's control dot) or 'targ' (its target, a circled plus). `k` runs 0 to 1
+// over the animation: in with a spring, hold, then out. `size` is the box width.
+export const GATE_COLORS = { h: '#5ee6ff', x: '#ffd98a', z: '#8fb3ff', ry: '#c39bff', cx: '#ff8adf', cz: '#ff8adf', swap: '#e6edf7' };
+
+export function gatePop(k, calm) {
+  if (calm) return { scale: 1, alpha: k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+  let scale = 1;
+  if (k < 0.2) {
+    const u = k / 0.2 - 1; // ease out with a small overshoot
+    scale = 1 + 2.7 * u * u * u + 1.7 * u * u;
+  } else if (k > 0.8) {
+    const u = (k - 0.8) / 0.2;
+    scale = 1 - u * u;
+  }
+  return { scale: Math.max(0, scale), alpha: 1, glow: k < 0.2 ? 1 : Math.max(0.35, 1 - (k - 0.2) * 2) };
+}
+
+export function paintGate(ctx, x, y, part, pop, size) {
+  const half = size / 2;
+  const color = GATE_COLORS[part.gate] || '#dbe7f5';
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(pop.scale, pop.scale);
+  ctx.globalAlpha = pop.alpha;
+  ctx.lineWidth = size * 0.06;
+  // A soft white halo behind the gate, brightest as it appears.
+  const halo = ctx.createRadialGradient(0, 0, size * 0.2, 0, 0, size * 1.15);
+  halo.addColorStop(0, `rgba(255,255,255,${0.42 * pop.glow})`);
+  halo.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(-size * 1.15, -size * 1.15, size * 2.3, size * 2.3);
+  // The white outline under a light blur, strongest as the gate appears. (The halo above
+  // carries most of the glow: blurs are costly, so there is only one, and a small one.)
+  const glow = () => {
+    ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+    ctx.lineWidth = size * 0.07;
+    ctx.shadowBlur = size * 0.5 * pop.glow;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  };
+  if (part.role === 'box') {
+    rr(ctx, -half, -half, size, size, size * 0.19);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    rr(ctx, -half - size * 0.08, -half - size * 0.08, size * 1.16, size * 1.16, size * 0.25);
+    glow();
+    ctx.fillStyle = color;
+    ctx.font = `700 ${Math.round(size * 0.46)}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(part.symbol, 0, size * 0.03);
+  } else if (part.role === 'swap') {
+    // A swap's end: a cross, as in a circuit diagram.
+    const r = size * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(-r, -r);
+    ctx.lineTo(r, r);
+    ctx.moveTo(r, -r);
+    ctx.lineTo(-r, r);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.1;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+    glow();
+  } else if (part.role === 'ctrl') {
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.17, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.27, 0, Math.PI * 2);
+    glow();
+  } else {
+    const r = size * 0.37;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#152036';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.lineTo(r, 0);
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0, r);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, r + size * 0.09, 0, Math.PI * 2);
+    glow();
+  }
+  ctx.restore();
+}
+
+// The glowing white line joining a CNOT's control and target.
+export function paintGateLink(ctx, a, b, pop, size) {
+  ctx.save();
+  ctx.globalAlpha = pop.alpha * Math.min(1, pop.scale);
+  ctx.shadowColor = `rgba(255,255,255,${pop.glow})`;
+  ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * pop.glow})`;
+  ctx.lineWidth = size * 0.08;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.shadowBlur = size * 0.5 * pop.glow;
+  ctx.stroke();
+  ctx.restore();
+}
+
+const CAT = { fur: '#f0a04b', stripe: '#b9631c', chest: '#fbe3c0', eye: '#1d3b16' };
+
+// The cat, sitting on y. `dead` (the canister view's cat): upside down, eyes crossed out.
+export function paintCat(ctx, x, y, dead) {
+  ctx.save();
+  if (dead) {
+    // Upside down, legs in the air, around the middle of the body.
+    ctx.translate(x, y - 9);
+    ctx.rotate(Math.PI);
+    ctx.translate(-x, -(y - 9));
+  }
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = CAT.fur;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); // tail
+  ctx.moveTo(x - 6, y - 4);
+  ctx.quadraticCurveTo(x - 13, y - 6, x - 11, y - 14);
+  ctx.stroke();
+  ctx.fillStyle = CAT.fur;
+  ctx.beginPath();
+  ctx.ellipse(x, y - 5, 7, 6, 0, 0, Math.PI * 2); // body
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x + 5, y - 12, 4.5, 0, Math.PI * 2); // head
+  ctx.fill();
+  ctx.beginPath(); // ears
+  ctx.moveTo(x + 1.5, y - 14);
+  ctx.lineTo(x + 2.5, y - 19);
+  ctx.lineTo(x + 5, y - 15.5);
+  ctx.moveTo(x + 5.5, y - 15.5);
+  ctx.lineTo(x + 8, y - 19);
+  ctx.lineTo(x + 9, y - 14);
+  ctx.fill();
+  ctx.fillStyle = CAT.chest;
+  ctx.beginPath();
+  ctx.ellipse(x + 4, y - 5, 2.6, 3.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = CAT.stripe;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); // tabby stripes
+  for (const dx of [-4, -1.5]) {
+    ctx.moveTo(x + dx, y - 10);
+    ctx.lineTo(x + dx - 0.5, y - 6.5);
+  }
+  ctx.stroke();
+  if (dead) {
+    ctx.strokeStyle = CAT.eye; // eyes crossed out
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (const ex of [4, 7]) {
+      ctx.moveTo(x + ex - 1.1, y - 13.4);
+      ctx.lineTo(x + ex + 1.1, y - 11.2);
+      ctx.moveTo(x + ex + 1.1, y - 13.4);
+      ctx.lineTo(x + ex - 1.1, y - 11.2);
+    }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = CAT.eye;
+    ctx.fillRect(x + 3.2, y - 13.2, 1.6, 1.8);
+    ctx.fillRect(x + 6.2, y - 13.2, 1.6, 1.8);
+  }
+  ctx.restore();
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const mask = document.createElement('canvas');
   const mctx = mask.getContext('2d');
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
   let scale = 1;
+  // The darkness is drawn small and stretched over the picture: it is all soft edges,
+  // so the stretch blurs it for free, and it is a fraction of the pixels to fill and copy.
+  let maskScale = 0.5;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -63,11 +284,12 @@ export function createRenderer(canvas) {
     scale = Math.max(0.5, Math.min(2, (cssW / WORLD.w) * dpr));
     const w = Math.round(WORLD.w * scale);
     const h = Math.round(WORLD.h * scale);
+    maskScale = Math.min(scale, 0.5);
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
-      mask.width = w;
-      mask.height = h;
+      mask.width = Math.round(WORLD.w * maskScale);
+      mask.height = Math.round(WORLD.h * maskScale);
     }
   }
 
@@ -116,10 +338,11 @@ export function createRenderer(canvas) {
     ctx.font = `800 150px ${SIGN_FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(String(G.levelIndex + 1).padStart(2, '0'), 250, 200);
+    const bonus = /^Bonus level (\d+)/.exec(G.level.tag || ''); // a bonus level is painted B1, B2, ...
+    ctx.fillText(bonus ? `B${bonus[1]}` : String(G.levelIndex + 1).padStart(2, '0'), 250, 200);
     ctx.font = `700 22px ${SIGN_FONT}`;
     ctx.fillStyle = 'rgba(219,231,245,0.24)';
-    ctx.fillText('FLOOR', 254, 78);
+    ctx.fillText(bonus ? 'BONUS' : 'FLOOR', 254, 78);
     ctx.restore();
 
     ctx.fillStyle = '#22314c';
@@ -223,6 +446,17 @@ export function createRenderer(canvas) {
   function drawRails(p) {
     ctx.strokeStyle = '#2a3a58';
     ctx.lineWidth = 3;
+    if (p.axis === 'x') {
+      // A sideways platform runs along a track under both of its slots.
+      const y = p.y + PLATFORM_H + 4;
+      ctx.beginPath();
+      ctx.moveTo(Math.min(p.x0, p.x1) - 8, y);
+      ctx.lineTo(Math.max(p.x0, p.x1) + p.w + 8, y);
+      ctx.stroke();
+      ctx.fillStyle = '#3a4d72';
+      for (const x of [p.x0, p.x1]) ctx.fillRect(x + p.w / 2 - 5, y - 1, 10, 3);
+      return;
+    }
     ctx.beginPath();
     for (const x of [p.x + 9, p.x + p.w - 9]) {
       ctx.moveTo(x, p.y1 - 14);
@@ -299,48 +533,9 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
-  const CAT = { fur: '#f0a04b', stripe: '#b9631c', chest: '#fbe3c0', eye: '#1d3b16' };
 
   function drawCat(x, y) {
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = CAT.fur;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath(); // tail
-    ctx.moveTo(x - 6, y - 4);
-    ctx.quadraticCurveTo(x - 13, y - 6, x - 11, y - 14);
-    ctx.stroke();
-    ctx.fillStyle = CAT.fur;
-    ctx.beginPath();
-    ctx.ellipse(x, y - 5, 7, 6, 0, 0, Math.PI * 2); // body
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + 5, y - 12, 4.5, 0, Math.PI * 2); // head
-    ctx.fill();
-    ctx.beginPath(); // ears
-    ctx.moveTo(x + 1.5, y - 14);
-    ctx.lineTo(x + 2.5, y - 19);
-    ctx.lineTo(x + 5, y - 15.5);
-    ctx.moveTo(x + 5.5, y - 15.5);
-    ctx.lineTo(x + 8, y - 19);
-    ctx.lineTo(x + 9, y - 14);
-    ctx.fill();
-    ctx.fillStyle = CAT.chest;
-    ctx.beginPath();
-    ctx.ellipse(x + 4, y - 5, 2.6, 3.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = CAT.stripe;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath(); // tabby stripes
-    for (const dx of [-4, -1.5]) {
-      ctx.moveTo(x + dx, y - 10);
-      ctx.lineTo(x + dx - 0.5, y - 6.5);
-    }
-    ctx.stroke();
-    ctx.fillStyle = CAT.eye;
-    ctx.fillRect(x + 3.2, y - 13.2, 1.6, 1.8);
-    ctx.fillRect(x + 6.2, y - 13.2, 1.6, 1.8);
-    ctx.restore();
+    paintCat(ctx, x, y);
   }
 
   function drawCatRun(x, y, stride, tilt) {
@@ -435,14 +630,7 @@ export function createRenderer(canvas) {
   }
 
   function drawCanister(x, baseY) {
-    ctx.fillStyle = '#9fb3d6';
-    rr(ctx, x - 5, baseY - 19, 10, 19, 4);
-    ctx.fill();
-    ctx.fillStyle = '#5d7299';
-    ctx.fillRect(x - 6, baseY - 16, 12, 2.5);
-    ctx.fillRect(x - 6, baseY - 6, 12, 2.5);
-    ctx.fillStyle = '#2a3855';
-    ctx.fillRect(x - 2, baseY - 22, 4, 3);
+    paintCanister(ctx, x, baseY);
   }
 
   function drawPickups(G) {
@@ -679,7 +867,7 @@ export function createRenderer(canvas) {
 
   function drawDarkness(G) {
     const room = G.room;
-    mctx.setTransform(scale, 0, 0, scale, 0, 0);
+    mctx.setTransform(maskScale, 0, 0, maskScale, 0, 0);
     mctx.globalCompositeOperation = 'source-over';
     mctx.clearRect(0, 0, WORLD.w, WORLD.h);
     mctx.fillStyle = C.dark;
@@ -705,44 +893,57 @@ export function createRenderer(canvas) {
       const c = center(doorRect(room.door));
       hole(c.x, c.y - 26, room.door.open ? 96 : 64, room.door.open ? 0.85 : 0.5);
     }
+    // Backup lights cut their traced cones (shadows included) out of the dark.
+    for (const light of room.lights || []) {
+      if (!light.poly) continue;
+      const g = mctx.createRadialGradient(light.x, light.y, 6, light.x, light.y, light.range);
+      const strength = light.kind === 'weak' ? 0.62 : 0.92;
+      g.addColorStop(0, `rgba(0,0,0,${strength})`);
+      g.addColorStop(0.7, `rgba(0,0,0,${strength * 0.75})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      mctx.fillStyle = g;
+      polyPath(mctx, light.poly);
+      mctx.fill();
+      hole(light.x, light.y, 26, 0.7); // the lamp itself
+    }
 
     if (G.torch.active) {
       const hand = handOf(p);
-      const g = mctx.createRadialGradient(hand.x, hand.y, 8, hand.x, hand.y, TORCH.range);
+      const g = mctx.createRadialGradient(hand.x, hand.y, 8, hand.x, hand.y, G.torch.range);
       g.addColorStop(0, 'rgba(0,0,0,1)');
       g.addColorStop(0.55, 'rgba(0,0,0,0.92)');
       g.addColorStop(0.9, 'rgba(0,0,0,0.45)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
       mctx.fillStyle = g;
-      if ('filter' in mctx) mctx.filter = `blur(${Math.round(4 * scale)}px)`;
-      beamPath(mctx, hand, G.torch.angle, TORCH.range);
+      beamPath(mctx, hand, G.torch.angle, G.torch.range); // its edge is softened by the stretch below
       mctx.fill();
-      if ('filter' in mctx) mctx.filter = 'none';
     }
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(mask, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(mask, 0, 0, canvas.width, canvas.height);
     ctx.restore();
 
     if (G.torch.active) {
       const hand = handOf(p);
-      const g = ctx.createRadialGradient(hand.x, hand.y, 4, hand.x, hand.y, TORCH.range);
+      const g = ctx.createRadialGradient(hand.x, hand.y, 4, hand.x, hand.y, G.torch.range);
       g.addColorStop(0, 'rgba(255,217,138,0.20)');
       g.addColorStop(1, 'rgba(255,217,138,0)');
       ctx.fillStyle = g;
-      beamPath(ctx, hand, G.torch.angle, TORCH.range);
+      beamPath(ctx, hand, G.torch.angle, G.torch.range);
       ctx.fill();
     }
   }
 
   // -- things that glow -----------------------------------------------------
 
-  function drawGhost(G, p, state, prob, lit, percent) {
+  // `fade` (0 to 1) thins the outline for a state close to 0 or 1 (see drawPlatformGlow).
+  function drawGhost(G, p, state, prob, lit, percent, fade = 1) {
     const r = slotRect(p, state);
     const jitter = Math.sin(G.t * 9 + p.x + state * 2) * 1.2;
     ctx.save();
-    ctx.globalAlpha = 0.3 + 0.7 * prob;
+    ctx.globalAlpha = (0.3 + 0.7 * prob) * fade;
     ctx.fillStyle = 'rgba(94,230,255,0.10)';
     platformPath(p, r.x, r.y + jitter);
     ctx.fill();
@@ -755,27 +956,48 @@ export function createRenderer(canvas) {
     tag(`${state} · ${percent}%`, r.x + r.w / 2, r.y - 12, C.qubit);
   }
 
+  // How far a light has got towards measuring a platform: a ring filling up.
+  function exposureRing(x, y, part, color) {
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, part));
+    ctx.stroke();
+  }
+
+  const LIGHT_RING = { normal: '#ffe9b0', weak: '#ffe9b0', emergency: '#ff6b6b' };
+
   function drawPlatformGlow(G, p) {
+    const lightPart = p.lightKind ? p.lightExposure / LIGHT_KINDS[p.lightKind].dwell : 0;
     if (p.state === null) {
       const p1 = p.p1;
       const one = Math.round(p1 * 100);
-      drawGhost(G, p, 0, 1 - p1, p.exposure > 0, 100 - one);
-      drawGhost(G, p, 1, p1, p.exposure > 0, one);
-      const mid = { x: p.x + p.w / 2, y: (p.y0 + p.y1 + PLATFORM_H) / 2 };
-      if (p.exposure > 0) {
-        ctx.strokeStyle = 'rgba(255,217,138,0.25)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(mid.x, mid.y, 13, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = C.torch;
-        ctx.beginPath();
-        ctx.arc(mid.x, mid.y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, p.exposure / TORCH.dwell));
-        ctx.stroke();
+      const seen = p.exposure > 0 || lightPart > 0;
+      // A state part way between certain and 50/50 (a cavity's rotation) is drawn as both
+      // at once: the platform at its likelier slot, as solid as the state is close to it,
+      // over the 50/50 outlines, as faint as it is far from them.
+      const near = Math.abs(1 - 2 * p1);
+      if (near > 0.02) {
+        const slot = slotRect(p, p1 > 0.5 ? 1 : 0);
+        ctx.save();
+        ctx.globalAlpha = near * 0.85;
+        drawPlatformBody({ ...p, x: slot.x, y: slot.y });
+        ctx.restore();
       }
-      tag(p.q, mid.x, mid.y + (p.exposure > 0 ? 26 : 0), C.qubit);
+      const fade = Math.max(0.2, 1 - near);
+      drawGhost(G, p, 0, near > 0.02 ? 0.5 : 1 - p1, seen, 100 - one, fade);
+      drawGhost(G, p, 1, near > 0.02 ? 0.5 : p1, seen, one, fade);
+      const mid = slotMid(p);
+      if (p.exposure > 0) exposureRing(mid.x, mid.y, p.exposure / TORCH.dwell, C.torch);
+      else if (lightPart > 0) exposureRing(mid.x, mid.y, lightPart, LIGHT_RING[p.lightKind]);
+      tag(p.q, mid.x - (seen ? 30 : 0), mid.y, C.qubit); // beside the ring while a light works on it
       return;
     }
+    if (lightPart > 0) exposureRing(p.x + p.w / 2, p.y - 16, lightPart, LIGHT_RING[p.lightKind]); // an emergency light at work
     const flash = Math.max(0, p.flash);
     ctx.fillStyle = flash > 0 ? `rgba(255,255,255,${0.35 + 0.65 * flash})` : p.state ? 'rgba(255,217,138,0.75)' : 'rgba(143,179,255,0.75)';
     ctx.fillRect(p.x + 7, p.y + 1, p.w - 14, 2);
@@ -799,6 +1021,31 @@ export function createRenderer(canvas) {
     return definite;
   }
 
+  // A broken terminal: a cracked, flickering screen stuck on its loop. It shows the gate it
+  // applies next and, along the bottom, how long until it does.
+  const BROKEN_SYMBOL = { cx: 'CX', cz: 'CZ', swap: 'SW', ry: 'RY' };
+  function drawBrokenScreen(G, term, s) {
+    const b = term.broken;
+    const op = b.ops[term.step];
+    const flicker = 0.75 + 0.25 * Math.sin(G.t * 23 + term.x) * Math.sin(G.t * 7);
+    ctx.fillStyle = '#2a1410';
+    rr(ctx, s.x, s.y, s.w, s.h, 2);
+    ctx.fill();
+    ctx.globalAlpha = flicker;
+    label(`${BROKEN_SYMBOL[op.gate] || op.gate.toUpperCase()} ${op.q.join('')}`, s.x + s.w / 2, s.y + 8, '#ffb070', 8);
+    ctx.fillStyle = '#ff8a4a';
+    ctx.fillRect(s.x + 3, s.y + s.h - 5, (s.w - 6) * Math.min(1, term.clock / b.every), 2);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,220,200,0.55)'; // the crack
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(s.x + s.w - 4, s.y + 1);
+    ctx.lineTo(s.x + s.w - 10, s.y + 7);
+    ctx.lineTo(s.x + s.w - 7, s.y + 11);
+    ctx.lineTo(s.x + s.w - 14, s.y + s.h - 1);
+    ctx.stroke();
+  }
+
   function drawTerminalGlow(G, term) {
     const carrying = !!(G.canister && G.canister.carried);
     const s = screenRect(term);
@@ -814,6 +1061,8 @@ export function createRenderer(canvas) {
       ctx.globalAlpha = 1;
       const qi = G.level.qubits.findIndex((q) => q.role === 'box');
       if (qi >= 0 && !G.flags.opened) sealedTag(G, G.level.qubits[qi].id, qi, r.x + r.w / 2, r.y - 12);
+    } else if (term.broken) {
+      drawBrokenScreen(G, term, s);
     } else if (term.port) {
       ctx.fillStyle = '#1a1014';
       rr(ctx, s.x, s.y, s.w, s.h, 2);
@@ -844,7 +1093,9 @@ export function createRenderer(canvas) {
       for (let i = 0; i < 6; i += 1) ctx.fillRect(term.x - 10 + i * 3.6, term.y - 30, 2, 1.5);
     }
     const catOut = !!(term.box && G.flags.opened);
-    if (term.near && G.mode === 'play' && (!term.port || carrying || catOut)) {
+    // A passive terminal (developer option) needs no E: its gates show by themselves. Petting the cat still does.
+    const passive = G.dev.passiveTerminal && !catOut && !term.quick;
+    if (term.near && G.mode === 'play' && !passive && (!term.port || carrying || catOut)) {
       const bob = Math.sin(G.t * 5) * 2;
       tag('E', term.x + (catOut ? 3 : 0), s.y - (catOut ? 28 : 14) + bob, C.torch);
     }
@@ -1003,6 +1254,204 @@ export function createRenderer(canvas) {
     }
   }
 
+  function polyPath(c, poly) {
+    c.beginPath();
+    c.moveTo(poly[0].x, poly[0].y);
+    for (let i = 1; i < poly.length; i += 1) c.lineTo(poly[i].x, poly[i].y);
+    c.closePath();
+  }
+
+  const LIGHT_TINT = { normal: '255,236,190', weak: '255,226,160', emergency: '255,70,70' };
+
+  // Cavities: a cap at each end of the band, like the mirrors of a microwave cavity, and
+  // the waves between them. Blocked, the cavity is empty; cleared, its waves come back one
+  // column at a time as it loads (it drives nothing until full).
+  function drawCavityCap(c, y, facing) {
+    // facing: +1 when the cap's mirror faces down the room, -1 when it faces up.
+    ctx.fillStyle = '#2c3a55';
+    ctx.fillRect(c.x - 8, facing > 0 ? y - 12 : y, c.w + 16, 12);
+    ctx.strokeStyle = '#c39bff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(c.x - 4, y);
+    ctx.quadraticCurveTo(c.x + c.w / 2, y - facing * 7, c.x + c.w + 4, y); // a concave mirror
+    ctx.stroke();
+    ctx.fillStyle = '#43557a';
+    ctx.fillRect(c.x - 8, facing > 0 ? y - 16 : y + 12, 6, 4);
+    ctx.fillRect(c.x + c.w + 2, facing > 0 ? y - 16 : y + 12, 6, 4);
+  }
+
+  // The feed: a waveguide from the edge of the room into the emitting cap, with power
+  // flowing along it into the cavity. Always on, even while the cavity is blocked: the
+  // cavity only keeps its waves while energy is pumped in.
+  function drawCavityFeed(c, sign, drift) {
+    const cx = c.x + c.w / 2;
+    const from = sign > 0 ? 0 : WORLD.h; // the room's edge behind the emitter
+    const to = c.y - sign * 12; // the back of the emitting cap
+    const half = 13;
+    ctx.save();
+    ctx.fillStyle = 'rgba(20,28,46,0.9)';
+    ctx.fillRect(cx - half, Math.min(from, to), half * 2, Math.abs(to - from));
+    ctx.strokeStyle = '#43557a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - half, from);
+    ctx.lineTo(cx - half, to);
+    ctx.moveTo(cx + half, from);
+    ctx.lineTo(cx + half, to);
+    ctx.stroke();
+    // The seeding wave, travelling towards the cavity, brighter as it arrives.
+    const length = Math.abs(to - from);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let d = 0; d <= length; d += 2) {
+      const y = from + sign * d;
+      const x = cx + Math.sin((d - drift * 1.6) / 5) * (half - 4);
+      if (d === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    const g = ctx.createLinearGradient(0, from, 0, to);
+    g.addColorStop(0, 'rgba(195,155,255,0.25)');
+    g.addColorStop(1, 'rgba(225,200,255,0.95)');
+    ctx.strokeStyle = g;
+    ctx.shadowColor = 'rgba(195,155,255,0.8)';
+    ctx.shadowBlur = 6;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCavities(G) {
+    const room = G.room;
+    if (!room.cavities || !room.cavities.length) return;
+    const drift = calm.matches ? 0 : G.t * 40; // the waves travel away from the emitter
+    for (const c of room.cavities) {
+      const sign = c.dir === 'up' ? -1 : 1;
+      drawCavityFeed(c, sign, drift);
+      const length = Math.abs(c.to - c.y);
+      const columns = [];
+      for (let x = c.x + 9; x <= c.x + c.w - 9; x += 18) columns.push(x);
+      const shown = c.blocked ? 0 : Math.ceil((c.load || 0) * columns.length - 1e-9);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(195,155,255,0.38)';
+      ctx.lineWidth = 1.6;
+      columns.slice(0, shown).forEach((x) => {
+        ctx.beginPath();
+        for (let d = 0; d <= length; d += 4) {
+          const wx = x + Math.sin((d - drift) / 9) * 3.5;
+          if (d === 0) ctx.moveTo(wx, c.y + sign * d);
+          else ctx.lineTo(wx, c.y + sign * d);
+        }
+        ctx.stroke();
+      });
+      ctx.restore();
+      drawCavityCap(c, c.y, sign);
+      drawCavityCap(c, c.to, -sign);
+    }
+  }
+
+  // During a swap's delay: an arrow in the middle of each platform's state, pointing
+  // where it is about to go.
+  function drawSwapArrows(G) {
+    const sw = G.swap;
+    if (!sw) return;
+    // The countdown, big, between the two platforms: 3, 2, 1, then SWAP! as they set off.
+    if (!sw.travel || sw.go > 0) {
+      const a = slotMid(sw.a);
+      const b = slotMid(sw.b);
+      const text = sw.travel ? 'SWAP!' : String(sw.count);
+      const phase = sw.travel ? 1 - sw.go / 0.7 : 1 - (sw.wait - Math.floor(sw.wait - 1e-9)); // 0 to 1 through each second
+      const pop = calm.matches ? 1 : 1 + 0.35 * Math.max(0, 1 - phase * 4);
+      ctx.save();
+      ctx.translate((a.x + b.x) / 2, Math.min(a.y, b.y) - 70);
+      ctx.scale(pop, pop);
+      ctx.globalAlpha = sw.travel ? Math.min(1, sw.go / 0.3) : 1;
+      ctx.font = `800 ${sw.travel ? 46 : 64}px ${SIGN_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(7,11,20,0.85)';
+      ctx.strokeText(text, 0, 0);
+      ctx.shadowColor = sw.travel ? 'rgba(125,255,168,0.9)' : 'rgba(255,217,138,0.9)';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = sw.travel ? '#7dffa8' : '#ffd98a';
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    if (sw.travel) return;
+    const pulse = calm.matches ? 1 : 0.65 + 0.35 * Math.sin(G.t * 9);
+    for (const [p, other] of [[sw.a, sw.b], [sw.b, sw.a]]) {
+      const mid = slotMid(p);
+      const dir = Math.sign(other.placeX - p.placeX) || 1;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.translate(mid.x, mid.y);
+      ctx.scale(dir, 1);
+      ctx.shadowColor = 'rgba(255,255,255,0.9)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(-22, -4);
+      ctx.lineTo(8, -4);
+      ctx.lineTo(8, -11);
+      ctx.lineTo(24, 0);
+      ctx.lineTo(8, 11);
+      ctx.lineTo(8, 4);
+      ctx.lineTo(-22, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Backup lights: the tint of each cone, then the lamp hanging at its top. A faulty
+  // (weak) lamp sparks at its wiring; an emergency lamp glows red.
+  function drawLights(G) {
+    for (const light of G.room.lights || []) {
+      if (!light.poly) continue;
+      const tint = LIGHT_TINT[light.kind] || LIGHT_TINT.normal;
+      const g = ctx.createRadialGradient(light.x, light.y, 4, light.x, light.y, light.range);
+      g.addColorStop(0, `rgba(${tint},${light.kind === 'emergency' ? 0.3 : 0.2})`);
+      g.addColorStop(1, `rgba(${tint},0)`);
+      ctx.fillStyle = g;
+      polyPath(ctx, light.poly);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(light.x, light.y);
+      ctx.rotate(light.angle - Math.PI / 2);
+      ctx.fillStyle = '#2c3a55'; // cable and housing
+      ctx.fillRect(-1, -60, 2, 52);
+      ctx.beginPath();
+      ctx.moveTo(-14, -2);
+      ctx.lineTo(14, -2);
+      ctx.lineTo(8, -12);
+      ctx.lineTo(-8, -12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = light.kind === 'emergency' ? '#ff5a5a' : light.kind === 'weak' ? '#e9d79a' : '#fff4d0';
+      ctx.fillRect(-11, -3, 22, 3);
+      if (light.kind === 'weak') {
+        // A faulty circuit: a few short sparks by the housing, changing several times a
+        // second. Small and local, so not a flashing hazard (the cone itself is steady).
+        const tick = Math.floor(G.t * 8);
+        ctx.strokeStyle = '#fff2a8';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let k = 0; k < 3; k += 1) {
+          const r = Math.sin((tick + 1) * 12.9898 + k * 78.233) * 43758.5453;
+          const u = r - Math.floor(r);
+          if (u < 0.35) continue;
+          const sx = -10 + u * 20;
+          const sy = -8 - u * 6;
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + (u - 0.5) * 8, sy - 3);
+          ctx.lineTo(sx + (u - 0.5) * 3, sy - 6);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   function drawDecorGlow(G) {
     for (const d of G.room.decor) {
       if (d.type === 'candle') {
@@ -1049,8 +1498,7 @@ export function createRenderer(canvas) {
     const room = G.room;
     for (const p of room.platforms) {
       if (p.qi === qi) {
-        const y = p.state === null ? (p.y0 + p.y1 + PLATFORM_H) / 2 : p.y + PLATFORM_H / 2;
-        return { x: p.x + p.w / 2, y };
+        return p.state === null ? slotMid(p) : { x: p.x + p.w / 2, y: p.y + PLATFORM_H / 2 };
       }
     }
     if (G.canister && G.canister.qi === qi) return canisterAnchor(G);
@@ -1092,6 +1540,31 @@ export function createRenderer(canvas) {
     ctx.restore();
   }
 
+  // Where a gate pops up over a qubit: halfway between a platform's two heights (the
+  // middle of its state), or over the qubit's machine, lamp or carried canister.
+  // A canister held in the canister view shows its part in that tile instead.
+  function gateAnchor(G, qi) {
+    const p = G.room.platforms.find((pl) => pl.qi === qi);
+    if (p) return slotMid(p);
+    return anchorOf(G, qi);
+  }
+
+  function drawGateFx(G, fx, k) {
+    const pop = gatePop(k, calm.matches);
+    const at = fx.parts.map((part) => ({ part, pos: gateAnchor(G, part.qi), tile: fx.tileQis.includes(part.qi) }));
+    // A gate wholly on qubits in the canister view tile is drawn only there.
+    if (at.every((a) => a.tile)) return;
+    if (at.length === 2 && at[0].pos && at[1].pos) paintGateLink(ctx, at[0].pos, at[1].pos, pop, 26); // a two-qubit gate's line
+    for (const a of at) {
+      if (!a.pos) continue;
+      // The canister view tile shows a qubit's gate; on the player's back stays only a
+      // CNOT's dot, so the line still starts somewhere. Without the tile the canister gets it all, small.
+      if (a.tile && a.part.role !== 'ctrl') continue;
+      const small = G.canister && a.part.qi === G.canister.qi;
+      paintGate(ctx, a.pos.x, a.pos.y, a.part, pop, small ? 16 : 26);
+    }
+  }
+
   function drawFx(G) {
     for (const fx of G.fx) {
       const k = Math.min(1, fx.t / fx.dur);
@@ -1103,15 +1576,21 @@ export function createRenderer(canvas) {
         ctx.beginPath();
         ctx.arc(fx.x, fx.y, 8 + k * (fx.size || 46), 0, Math.PI * 2);
         ctx.stroke();
+      } else if (fx.type === 'gate') {
+        drawGateFx(G, fx, k);
       } else if (fx.type === 'spark') {
-        const x = fx.from.x + (fx.to.x - fx.from.x) * k;
-        const y = fx.from.y + (fx.to.y - fx.from.y) * k - Math.sin(k * Math.PI) * 26;
+        // The ball rides the drawn arc itself: the same quadratic curve, at k along it.
+        const cx = (fx.from.x + fx.to.x) / 2;
+        const cy = Math.min(fx.from.y, fx.to.y) - 52;
+        const u = 1 - k;
+        const x = u * u * fx.from.x + 2 * u * k * cx + k * k * fx.to.x;
+        const y = u * u * fx.from.y + 2 * u * k * cy + k * k * fx.to.y;
         ctx.globalAlpha = 0.35 * (1 - k);
         ctx.strokeStyle = fx.color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(fx.from.x, fx.from.y);
-        ctx.quadraticCurveTo((fx.from.x + fx.to.x) / 2, Math.min(fx.from.y, fx.to.y) - 52, fx.to.x, fx.to.y);
+        ctx.quadraticCurveTo(cx, cy, fx.to.x, fx.to.y);
         ctx.stroke();
         ctx.globalAlpha = 1;
         ctx.fillStyle = fx.color;
@@ -1224,7 +1703,9 @@ export function createRenderer(canvas) {
 
   function crankGrip(G) {
     const gen = G.level.scene.generator;
-    return { x: gen.x - 36 + Math.cos(G.scene.crank) * 8, y: gen.y - 22 + Math.sin(G.scene.crank) * 8 };
+    // Bonus level 7: still until it is cranked in the opening, then running through the fight.
+    const turn = G.scene ? G.scene.crank : G.beast && G.beast.phase === 'intro' ? G.beast.crank : G.t * 11;
+    return { x: gen.x - 36 + Math.cos(turn) * 8, y: gen.y - 22 + Math.sin(turn) * 8 };
   }
 
   let festoonCache = null;
@@ -1501,6 +1982,734 @@ export function createRenderer(canvas) {
     }
   }
 
+  // -- bonus level 7: the beast on the roof ------------------------------------------
+
+  const BEAST_FUR = { monster: '#e8ebef', monsterDark: '#9aa1ad', cute: '#f0a04b', cuteDark: '#b9631c' };
+
+  // The outline of the head and ears, for the shade that hides it in the dark.
+  function headPath(c, x, y, s) {
+    c.beginPath();
+    c.ellipse(x, y, 140 * s, 112 * s, 0, 0, Math.PI * 2);
+    for (const side of [-1, 1]) {
+      c.moveTo(x + side * 50 * s, y - 92 * s);
+      c.lineTo(x + side * 112 * s, y - 165 * s);
+      c.lineTo(x + side * 128 * s, y - 52 * s);
+      c.closePath();
+    }
+  }
+
+  // The mutated cat: white, mangy and ragged, with glowing green slit eyes and long fangs.
+  // The mouth is shut in a snarl (open 0) until it screeches (open 1). Flat shapes, like the
+  // rest of the game.
+  const MONSTER = {
+    fur: '#e8ebef',
+    shade: '#c3c9d2',
+    mange: '#aab1bc',
+    line: '#59606b',
+    ear: '#b8444f',
+    mouth: '#3a0a12',
+    gum: '#c2566a',
+    tongue: '#d8718a',
+    fang: '#f1e8d0',
+    fangLine: '#a59775',
+  };
+
+  function paintMonsterHead(c, x, y, s, t, opened) {
+    const M = MONSTER;
+    glow(x, y, 235 * s, 'rgba(150,255,170,0.14)');
+    // Ears: tall, ragged, raw inside.
+    for (const side of [-1, 1]) {
+      c.fillStyle = M.fur;
+      c.beginPath();
+      c.moveTo(x + side * 46 * s, y - 88 * s);
+      c.lineTo(x + side * 112 * s, y - 178 * s);
+      c.lineTo(x + side * 120 * s, y - 150 * s); // a tear in the edge
+      c.lineTo(x + side * 128 * s, y - 140 * s);
+      c.lineTo(x + side * 134 * s, y - 44 * s);
+      c.closePath();
+      c.fill();
+      c.fillStyle = M.ear;
+      c.beginPath();
+      c.moveTo(x + side * 62 * s, y - 90 * s);
+      c.lineTo(x + side * 108 * s, y - 158 * s);
+      c.lineTo(x + side * 120 * s, y - 64 * s);
+      c.closePath();
+      c.fill();
+    }
+    // Mangy tufts along the cheeks, then the head.
+    c.fillStyle = M.fur;
+    for (const side of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(x + side * 112 * s, y - 50 * s);
+      for (let k = 0; k <= 6; k += 1) {
+        const ty = y + (-40 + k * 22) * s;
+        const tx = x + side * (138 - k * 9) * s;
+        c.lineTo(tx + side * 26 * s, ty + 6 * s);
+        c.lineTo(tx, ty + 14 * s);
+      }
+      c.lineTo(x + side * 40 * s, y + 104 * s);
+      c.closePath();
+      c.fill();
+    }
+    c.beginPath();
+    c.ellipse(x, y, 134 * s, 108 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha *= 0.45;
+    c.fillStyle = M.shade; // shadow under the brow and down the jaw
+    c.beginPath();
+    c.ellipse(x, y + 46 * s, 112 * s, 60 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = M.mange;
+    c.beginPath();
+    c.ellipse(x + 40 * s, y - 84 * s, 30 * s, 14 * s, 0.3, 0, Math.PI * 2);
+    c.ellipse(x - 70 * s, y + 20 * s, 22 * s, 30 * s, -0.4, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha /= 0.45;
+    c.strokeStyle = M.shade; // fur strokes
+    c.lineWidth = 2 * s;
+    c.beginPath();
+    for (const [dx, dy] of [[-20, -70], [8, -60], [36, -46], [-60, -54], [-100, -6], [104, -12], [60, 6]]) {
+      c.moveTo(x + dx * s, y + dy * s);
+      c.lineTo(x + (dx + 6) * s, y + (dy + 12) * s);
+    }
+    c.stroke();
+    // Brows, eyes.
+    for (const side of [-1, 1]) {
+      const ex = x + side * 52 * s;
+      const ey = y - 16 * s;
+      c.strokeStyle = M.line;
+      c.lineWidth = 7 * s;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(ex - side * 36 * s, ey - 36 * s);
+      c.lineTo(ex + side * 22 * s, ey - 14 * s);
+      c.stroke();
+      glow(ex, ey, 50 * s, 'rgba(120,255,90,0.55)');
+      const iris = c.createRadialGradient(ex, ey, 2 * s, ex, ey, 30 * s);
+      iris.addColorStop(0, '#f2ffc4');
+      iris.addColorStop(0.45, '#8dff52');
+      iris.addColorStop(1, '#2fae2a');
+      c.fillStyle = iris;
+      c.beginPath();
+      c.ellipse(ex, ey, 30 * s, 17 * s, side * 0.3, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#05080a';
+      c.beginPath();
+      c.ellipse(ex, ey, 3.5 * s, 15 * s, side * 0.3, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = M.line;
+      c.lineWidth = 3 * s;
+      c.beginPath();
+      c.ellipse(ex, ey, 30 * s, 17 * s, side * 0.3, 0, Math.PI * 2);
+      c.stroke();
+    }
+    // Nose.
+    c.fillStyle = '#b65a66';
+    c.beginPath();
+    c.moveTo(x - 14 * s, y + 14 * s);
+    c.lineTo(x + 14 * s, y + 14 * s);
+    c.lineTo(x, y + 28 * s);
+    c.closePath();
+    c.fill();
+    // The mouth: a shut snarl, the long upper fangs down over the chin; it gapes as it screeches.
+    const open = Math.max(0, Math.min(1, opened || 0));
+    const low = y + (58 + 66 * open) * s; // how far down the jaw has dropped
+    c.fillStyle = M.mouth;
+    c.beginPath();
+    c.moveTo(x - 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x, y + 52 * s, x + 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x + 40 * s, low, x, low + 2 * s);
+    c.quadraticCurveTo(x - 40 * s, low, x - 74 * s, y + 34 * s);
+    c.fill();
+    if (open > 0.2) {
+      c.globalAlpha *= Math.min(1, (open - 0.2) * 3);
+      c.strokeStyle = M.gum;
+      c.lineWidth = 6 * s;
+      c.beginPath();
+      c.moveTo(x - 70 * s, y + 38 * s);
+      c.quadraticCurveTo(x, y + 56 * s, x + 70 * s, y + 38 * s);
+      c.stroke();
+      c.fillStyle = M.tongue;
+      c.beginPath();
+      c.ellipse(x, low - 18 * s, 30 * open * s, 13 * open * s, 0, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha /= Math.min(1, (open - 0.2) * 3);
+    }
+    c.strokeStyle = M.line; // the lips
+    c.lineWidth = 3 * s;
+    c.beginPath();
+    c.moveTo(x - 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x, y + 52 * s, x + 74 * s, y + 34 * s);
+    c.stroke();
+    const fang = (fx, fy, len, dir) => {
+      c.beginPath();
+      c.moveTo(fx - 7 * s, fy);
+      c.quadraticCurveTo(fx - 2 * s, fy + dir * len * 0.7 * s, fx + 1 * s, fy + dir * len * s);
+      c.lineTo(fx + 7 * s, fy);
+      c.closePath();
+      c.fillStyle = M.fang;
+      c.fill();
+      c.strokeStyle = M.fangLine;
+      c.lineWidth = 1.2 * s;
+      c.stroke();
+    };
+    for (const side of [-1, 1]) {
+      fang(x + side * 44 * s, y + 44 * s, 36 + 8 * open, 1); // the long upper canines, always out
+      if (open > 0.2) {
+        fang(x + side * 22 * s, y + 50 * s, 14 * open, 1);
+        fang(x + side * 36 * s, low - 6 * s, 26 * open, -1); // lower canines
+      }
+    }
+    // Whiskers, some snapped.
+    c.strokeStyle = '#f6f8fa';
+    c.lineWidth = 1.8 * s;
+    c.beginPath();
+    for (const side of [-1, 1]) {
+      for (const [dy, len] of [[-4, 150], [8, 120], [20, 165]]) {
+        c.moveTo(x + side * 76 * s, y + (24 + dy) * s);
+        c.lineTo(x + side * (76 + len) * s, y + (16 + dy * 2.2) * s);
+      }
+    }
+    c.stroke();
+  }
+
+  function paintCuteHead(c, x, y, s) {
+    glow(x, y, 210 * s, 'rgba(255,200,120,0.16)');
+    c.fillStyle = BEAST_FUR.cute;
+    headPath(c, x, y, s);
+    c.fill();
+    c.fillStyle = '#f7b6c2';
+    for (const side of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(x + side * 64 * s, y - 92 * s);
+      c.lineTo(x + side * 106 * s, y - 142 * s);
+      c.lineTo(x + side * 114 * s, y - 70 * s);
+      c.closePath();
+      c.fill();
+    }
+    c.fillStyle = BEAST_FUR.cuteDark; // forehead stripes
+    for (const dx of [-26, 0, 26]) {
+      c.beginPath();
+      c.moveTo(x + (dx - 9) * s, y - 110 * s);
+      c.lineTo(x + (dx + 9) * s, y - 110 * s);
+      c.lineTo(x + dx * s, y - 70 * s);
+      c.closePath();
+      c.fill();
+    }
+    c.fillStyle = '#fbe3c0'; // muzzle
+    c.beginPath();
+    c.ellipse(x - 24 * s, y + 42 * s, 34 * s, 26 * s, 0, 0, Math.PI * 2);
+    c.ellipse(x + 24 * s, y + 42 * s, 34 * s, 26 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    for (const side of [-1, 1]) {
+      const ex = x + side * 54 * s;
+      const ey = y - 6 * s;
+      c.fillStyle = '#2b2233'; // big round eyes
+      c.beginPath();
+      c.ellipse(ex, ey, 24 * s, 28 * s, 0, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#ffffff';
+      c.beginPath();
+      c.arc(ex - 8 * s, ey - 10 * s, 8 * s, 0, Math.PI * 2);
+      c.arc(ex + 8 * s, ey + 8 * s, 4 * s, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = 'rgba(255,120,150,0.45)'; // blush
+      c.beginPath();
+      c.ellipse(x + side * 92 * s, y + 34 * s, 18 * s, 10 * s, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = '#e8728a'; // nose
+    c.beginPath();
+    c.moveTo(x - 10 * s, y + 22 * s);
+    c.lineTo(x + 10 * s, y + 22 * s);
+    c.lineTo(x, y + 32 * s);
+    c.closePath();
+    c.fill();
+    c.strokeStyle = '#5a3a2a'; // a w for a mouth, and whiskers
+    c.lineWidth = 3 * s;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(x, y + 32 * s);
+    c.quadraticCurveTo(x - 6 * s, y + 46 * s, x - 18 * s, y + 40 * s);
+    c.moveTo(x, y + 32 * s);
+    c.quadraticCurveTo(x + 6 * s, y + 46 * s, x + 18 * s, y + 40 * s);
+    c.stroke();
+    c.strokeStyle = '#fff6e6';
+    c.lineWidth = 2 * s;
+    c.beginPath();
+    for (const side of [-1, 1]) {
+      for (const dy of [-6, 6]) {
+        c.moveTo(x + side * 60 * s, y + (36 + dy) * s);
+        c.lineTo(x + side * 150 * s, y + (28 + dy * 2.4) * s);
+      }
+    }
+    c.stroke();
+  }
+
+  // The head, as both pictures at once while the cat is superposed: each as solid as its odds.
+  // `shade` (0 to 1) hides it in the dark when the flashlight is not on it.
+  function paintBeastHead(c, x, y, s, p0, t, shade, open) {
+    c.save();
+    const jitter = p0 > 0.001 && p0 < 0.999 ? Math.sin(t * 9) * 1.5 : 0;
+    if (p0 < 0.999) {
+      c.globalAlpha = 1 - p0;
+      paintMonsterHead(c, x + jitter, y, s, t, open);
+    }
+    if (p0 > 0.001) {
+      c.globalAlpha = p0;
+      paintCuteHead(c, x - jitter, y, s);
+    }
+    c.globalAlpha = shade;
+    c.fillStyle = '#060a1a';
+    headPath(c, x, y, s * 1.02);
+    c.fill();
+    c.restore();
+  }
+
+  // A paw, floating free: `bottom` is its underside. Claws out while it is a monster.
+  function paintPaw(c, x, bottom, w, p0) {
+    const h = 46;
+    c.save();
+    c.lineCap = 'round';
+    const base = c.globalAlpha; // fading out as the cat is tamed
+    for (const [look, alpha] of [['monster', 1 - p0], ['cute', p0]]) {
+      if (alpha < 0.01) continue;
+      c.globalAlpha = base * alpha;
+      c.fillStyle = BEAST_FUR[look];
+      rr(c, x - w / 2, bottom - h, w, h, 16);
+      c.fill();
+      c.fillStyle = look === 'monster' ? BEAST_FUR.monsterDark : BEAST_FUR.cuteDark;
+      for (const dx of [-w / 4, 0, w / 4]) c.fillRect(x + dx - 1, bottom - 16, 2, 14); // toes
+      if (look === 'monster') {
+        c.fillStyle = MONSTER.fang; // claws: plain triangles, outlined to show against the white
+        c.strokeStyle = MONSTER.line;
+        c.lineWidth = 1.2;
+        for (const dx of [-w / 3, -w / 9, w / 9, w / 3]) {
+          c.beginPath();
+          c.moveTo(x + dx - 4, bottom - 4);
+          c.lineTo(x + dx + 4, bottom - 4);
+          c.lineTo(x + dx + 1, bottom + 9);
+          c.closePath();
+          c.fill();
+          c.stroke();
+        }
+      } else {
+        c.fillStyle = '#f7b6c2';
+        for (const dx of [-w / 3.2, 0, w / 3.2]) {
+          c.beginPath();
+          c.ellipse(x + dx, bottom - 6, 5, 4, 0, 0, Math.PI * 2);
+          c.fill();
+        }
+      }
+    }
+    c.restore();
+  }
+
+  // The mist the cat floats in: soft puffs drifting over the head. `amount` 0 to 1.
+  const MIST = Array.from({ length: 14 }, (_, i) => ({
+    dx: Math.sin(i * 2.4) * 150,
+    dy: Math.cos(i * 1.7) * 95 - 20,
+    r: 80 + (i % 4) * 22,
+    speed: 0.25 + (i % 5) * 0.07,
+    phase: i * 1.3,
+  }));
+  function drawMist(G, x, y, amount) {
+    if (amount <= 0.01) return;
+    for (const m of MIST) {
+      const px = x + m.dx + Math.sin(G.t * m.speed + m.phase) * 30;
+      const py = y + m.dy + Math.cos(G.t * m.speed * 0.8 + m.phase) * 14;
+      const g = ctx.createRadialGradient(px, py, 0, px, py, m.r);
+      g.addColorStop(0, `rgba(150,146,190,${0.62 * amount})`);
+      g.addColorStop(0.55, `rgba(110,108,150,${0.42 * amount})`);
+      g.addColorStop(1, 'rgba(90,90,130,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - m.r, py - m.r, m.r * 2, m.r * 2);
+    }
+  }
+
+  function drawBeast(G) {
+    const b = G.beast;
+    const s = G.level.scene;
+    const cfg = G.level.beast;
+    const roof = b.roof;
+    const qi = G.qIndex.CAT;
+    const p0 = G.q ? 1 - G.q.p1[qi] : 0;
+    const shake = calm.matches ? 0 : G.shake;
+    ctx.save();
+    if (shake > 0) ctx.translate((Math.random() - 0.5) * shake * 10, (Math.random() - 0.5) * shake * 10);
+
+    // The sky, then the head rising behind the city, then the city.
+    const sky = ctx.createLinearGradient(0, 0, 0, WORLD.h);
+    sky.addColorStop(0, '#05081a');
+    sky.addColorStop(0.62, '#1c1a46');
+    sky.addColorStop(1, '#0d1634');
+    ctx.fillStyle = sky;
+    ctx.fillRect(-20, -20, WORLD.w + 40, WORLD.h + 40);
+    for (const st of SKY_STARS) {
+      ctx.globalAlpha = 0.55 + 0.4 * Math.sin(G.t * 1.3 + st.phase);
+      ctx.fillStyle = '#e8eeff';
+      ctx.fillRect(st.x, st.y, st.r, st.r);
+    }
+    ctx.globalAlpha = 1;
+    const moon = { x: 846, y: 78, r: 30 };
+    glow(moon.x, moon.y, 120, 'rgba(210,220,255,0.28)');
+    ctx.fillStyle = '#f4efda';
+    ctx.beginPath();
+    ctx.arc(moon.x, moon.y, moon.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    const tame = b.tame;
+    const headY = cfg.head.y + (1 - b.rise) * 340 + tame * 120;
+    const headS = 1 - 0.85 * tame;
+    // The head shows only where the mist is parted: at the very start, or in the
+    // flashlight, as whichever cat the light found. Otherwise, at most, two eyes in the mist.
+    const hidden = b.mist * (1 - b.reveal);
+    if (b.rise > 0 && tame < 1) {
+      ctx.save();
+      ctx.globalAlpha = (1 - tame) * (1 - hidden);
+      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked || b.t < b.showUntil ? 0.04 : 0.3, b.mouth);
+      ctx.restore();
+    }
+    drawMist(G, cfg.head.x, headY, b.mist * (1 - 0.75 * b.reveal) * (1 - tame));
+    if (hidden > 0.5 && b.seen === 'monster' && b.phase === 'fight') {
+      const flicker = 0.18 + 0.12 * Math.sin(G.t * 2.3);
+      for (const side of [-1, 1]) glow(cfg.head.x + side * 52, headY - 14, 22, `rgba(190,255,90,${flicker * hidden})`);
+    }
+    if (b.exposure > 0) exposureRing(cfg.face.x + cfg.face.w / 2, cfg.face.y + cfg.face.h / 2, b.exposure / TORCH.dwell, C.torch);
+
+    ctx.fillStyle = '#0d1530';
+    for (const [x, w, h] of SKYLINE) ctx.fillRect(x, roof - h, w, WORLD.h - roof + h);
+    ctx.fillStyle = 'rgba(255,214,140,0.5)';
+    SKYLINE.forEach(([x, w, h], n) => {
+      for (let k = 0; k < 4; k += 1) ctx.fillRect(x + 8 + ((n * 17 + k * 23) % Math.max(1, w - 16)), roof - h + 10 + ((n * 29 + k * 31) % Math.max(1, h - 4)), 3, 4);
+    });
+
+    // The building and the roof; the lights come on with the generator.
+    const power = b.power;
+    const rows = [roof + 48, roof + 170];
+    ctx.fillStyle = '#1c2742';
+    ctx.fillRect(0, roof + 14, s.edge, WORLD.h - roof - 14);
+    rows.forEach((y, row) => {
+      FACADE_WINDOWS.forEach((x, i) => {
+        ctx.fillStyle = '#0a1120';
+        ctx.fillRect(x - 4, y - 4, WINDOW.w + 8, WINDOW.h + 8);
+        drawPane(x, y, windowLit(i, row, power));
+      });
+    });
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillRect(s.edge - 8, roof + 14, 8, WORLD.h);
+    ctx.fillStyle = C.concrete;
+    ctx.fillRect(0, roof, s.edge + 6, 14);
+    ctx.fillRect(s.edge - 10, roof - 12, 12, 12);
+    ctx.fillStyle = C.concreteEdge;
+    ctx.fillRect(0, roof, s.edge - 10, 3);
+    ctx.fillStyle = '#2b3954';
+    ctx.fillRect(56, roof - 94, 112, 94);
+    ctx.fillStyle = '#3a4b6c';
+    ctx.fillRect(50, roof - 101, 124, 8);
+    drawDoorLeaf(doorRect(s.door), b.doorOpen, '#44597f');
+    const { spans, bulbs } = festoon(s);
+    for (const x of s.lamps) {
+      ctx.fillStyle = '#2f4062';
+      ctx.fillRect(x - 1.5, roof - 102, 3, 102);
+      ctx.fillRect(x - 7, roof - 4, 14, 4);
+    }
+    ctx.strokeStyle = '#0d1424';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    if (!b.lightsBroken) {
+      for (const [a, mid, z] of spans) {
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(mid.x, mid.y, z.x, z.y);
+      }
+    } else {
+      // Torn down by the swipe: snapped wires dangling from the lamp posts.
+      for (const [a, , z] of spans) {
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(a.x + 6, a.y + 30, a.x + 2 + Math.sin(G.t * 2 + a.x) * 2, a.y + 52);
+        ctx.moveTo(z.x, z.y);
+        ctx.quadraticCurveTo(z.x - 6, z.y + 24, z.x - 3 + Math.sin(G.t * 2.3 + z.x) * 2, z.y + 40);
+      }
+    }
+    ctx.stroke();
+    drawGenerator(G, s.generator, power > 0);
+    for (const x of s.lamps) {
+      ctx.fillStyle = '#16213a';
+      rr(ctx, x - 6, roof - 116, 12, 14, 3);
+      ctx.fill();
+      if (b.lightsBroken) {
+        ctx.strokeStyle = '#3d4a63'; // burst: a cracked, empty lantern
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - 4, roof - 114);
+        ctx.lineTo(x + 1, roof - 108);
+        ctx.lineTo(x - 2, roof - 104);
+        ctx.moveTo(x + 4, roof - 113);
+        ctx.lineTo(x + 1, roof - 108);
+        ctx.stroke();
+        continue;
+      }
+      if (!litAt(x, power)) continue;
+      glow(x, roof - 109, 46, 'rgba(255,214,140,0.5)');
+      ctx.fillStyle = '#fff1c2';
+      rr(ctx, x - 4, roof - 114, 8, 10, 2);
+      ctx.fill();
+    }
+    if (!b.lightsBroken) {
+      for (const bulb of bulbs) {
+        const on = litAt(bulb.x, power);
+        if (on) glow(bulb.x, bulb.y, 13, 'rgba(255,214,140,0.45)');
+        ctx.fillStyle = on ? '#fff1c2' : '#56627e';
+        ctx.beginPath();
+        ctx.arc(bulb.x, bulb.y, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = '#56627e'; // a few dead bulbs on the roof
+      for (const bx of [214, 318, 472, 566, 690]) ctx.fillRect(bx, roof - 3, 4, 3);
+    }
+    if (b.phase === 'intro' && b.step === 'walk') {
+      const bob = Math.sin(G.t * 5) * 2;
+      tag('GENERATOR', s.generator.x, roof - 108, C.ok);
+      if (b.near) tag('E', s.generator.x - 36, roof - 46 + bob, C.torch);
+    }
+
+    // Terminals: working, waiting to be smashed, or smashed and rebuilding.
+    for (const term of G.room.terminals) {
+      if (term.wreck > 0) drawWreck(G, term, cfg.wreck);
+      else if (!b.termsOn) {
+        drawTerminal(G, term); // switched off: a dark screen
+        const r = screenRect(term);
+        ctx.fillStyle = '#0b1220';
+        rr(ctx, r.x, r.y, r.w, r.h, 2);
+        ctx.fill();
+        label('OFF', r.x + r.w / 2, r.y + r.h / 2 + 0.5, '#3d4a63', 8);
+      } else {
+        drawTerminal(G, term);
+        drawTerminalGlow(G, term);
+        if (term.used && Math.sin(G.t * 12) > 0) {
+          const r = screenRect(term);
+          ctx.fillStyle = 'rgba(255,90,90,0.75)';
+          rr(ctx, r.x, r.y, r.w, r.h, 2);
+          ctx.fill();
+          label('!', r.x + r.w / 2, r.y + r.h / 2 + 1, '#fff', 14, 'center', SIGN_FONT);
+        }
+      }
+    }
+
+    // The intro: the cat, the box and its radiation.
+    const box = b.box;
+    if (box.state === 'shut' || box.state === 'open' || box.state === 'burst') {
+      ctx.save();
+      const jig = box.state !== 'burst' ? Math.sin(G.t * 40) * 3 * box.shake : 0;
+      ctx.translate(box.x + jig, roof);
+      if (box.glow > 0) glow(0, -20, 40 + 70 * box.glow, `rgba(125,255,106,${0.25 + 0.4 * box.glow})`);
+      if (box.state !== 'burst') {
+        ctx.fillStyle = '#7a5a3a';
+        ctx.fillRect(-24, -34, 48, 34);
+        ctx.fillStyle = '#8d6a45';
+        ctx.save(); // the lid, hinged at the back right
+        ctx.translate(26, -39);
+        ctx.rotate(-1.9 * (box.lid || 0));
+        ctx.fillRect(-52, 0, 52, 6);
+        ctx.restore();
+        ctx.fillStyle = '#5d4329';
+        ctx.fillRect(-24, -26, 48, 2);
+        ctx.fillStyle = '#f2d14a'; // the radiation sign
+        ctx.beginPath();
+        ctx.arc(0, -15, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#16213a';
+        for (let k = 0; k < 3; k += 1) {
+          ctx.beginPath();
+          ctx.moveTo(0, -15);
+          ctx.arc(0, -15, 8, -Math.PI / 2 + (k * 2 * Math.PI) / 3 - 0.5, -Math.PI / 2 + (k * 2 * Math.PI) / 3 + 0.5);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.fillStyle = '#f2d14a';
+        ctx.beginPath();
+        ctx.arc(0, -15, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = '#7a5a3a'; // splinters
+        const k = b.step === 'open' ? Math.max(0, Math.min(1, b.st - 0.6)) : 1;
+        for (let i = 0; i < 8; i += 1) {
+          const a = -Math.PI * (0.1 + 0.8 * (i / 7));
+          ctx.save();
+          ctx.translate(Math.cos(a) * 90 * k, -10 + Math.sin(a) * 120 * k + 160 * k * k);
+          ctx.rotate(i + k * 8);
+          ctx.fillRect(-8, -2, 16, 4);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+    const cat = b.cat;
+    if (cat.state === 'sit') {
+      const alpha = b.phase === 'tamed' ? Math.min(1, (b.t - 2.2) / 0.4) : 1;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, alpha);
+      drawCat(cat.x, roof - 1);
+      ctx.restore();
+    } else if (cat.state === 'trot') {
+      drawCatRun(cat.x, roof, Math.sin(cat.k * 18), 0);
+    } else if (cat.state === 'jump') {
+      const k = Math.min(1, cat.k); // a hop from where it sat into the box
+      drawCatRun(cat.from + (box.x - cat.from) * k, roof - Math.sin(k * Math.PI) * 60 - 14 * k, 0.9, (k - 0.5) * 1.6);
+    }
+    // The Professor, Bob and Alice, until the swipe sends them off the roof.
+    for (const a of b.actors) {
+      if (!a.out) continue;
+      const fy = a.flung ? a.flung.y : 0;
+      if (roof + fy < -80) continue;
+      ctx.save();
+      if (a.flung) {
+        ctx.translate(a.x, roof + fy - 17);
+        ctx.rotate(a.flung.spin);
+        ctx.translate(-a.x, -(roof + fy - 17));
+      }
+      drawPerson(a.x, roof + fy, PEOPLE[a.kind], { armsUp: a.alarm, step: a.moving ? Math.sin(a.anim * 12) : 0 });
+      ctx.restore();
+      if (a.flung) continue;
+      tag(a.name, a.x, roof - 46, C.ink);
+      if (a.alarm) {
+        const hop = Math.abs(Math.sin(G.t * 9 + a.x)) * 3;
+        ctx.fillStyle = 'rgba(7,11,20,0.85)';
+        ctx.beginPath();
+        ctx.arc(a.x, roof - 70 - hop, 10, 0, Math.PI * 2);
+        ctx.fill();
+        label('!', a.x, roof - 69 - hop, C.torch, 17, 'center', SIGN_FONT);
+      }
+    }
+
+    // Shadows of the raised paws: they turn red as a paw winds up to drop.
+    for (const paw of b.paws) {
+      if (!['rise', 'track', 'windup', 'slam'].includes(paw.state) || b.phase !== 'fight') continue;
+      const near = 1 - Math.min(1, (roof - paw.y) / (roof - cfg.top + 20));
+      const warn = paw.state === 'windup' || paw.state === 'slam';
+      ctx.fillStyle = warn ? 'rgba(255,70,70,0.55)' : 'rgba(0,0,0,0.38)';
+      ctx.beginPath();
+      ctx.ellipse(paw.x, roof + 1, (cfg.pawW / 2) * (0.6 + 0.4 * near), 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      if (paw.state === 'windup') label('!', paw.x, roof - 12, '#ff6b6b', 16, 'center', SIGN_FONT);
+    }
+    // A swipe about to sweep along the roof: a red streak along its path, chevrons pointing the way.
+    for (const paw of b.paws) {
+      if (b.phase !== 'fight' || (paw.state !== 'swipeWind' && paw.state !== 'swipe')) continue;
+      const end = paw.dir > 0 ? s.edge - 30 : 30;
+      const from = paw.x + paw.dir * (cfg.pawW / 2);
+      if ((end - from) * paw.dir <= 0) continue;
+      const pulse = paw.state === 'swipeWind' ? 0.35 + 0.25 * Math.sin(G.t * 18) : 0.18;
+      ctx.fillStyle = `rgba(255,70,70,${pulse})`;
+      ctx.fillRect(Math.min(from, end), roof - 6, Math.abs(end - from), 6);
+      if (paw.state === 'swipeWind') {
+        ctx.strokeStyle = 'rgba(255,120,120,0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let x = from + paw.dir * 30; (end - x) * paw.dir > 0; x += paw.dir * 60) {
+          const shift = ((G.t * 120) % 60) * paw.dir;
+          ctx.moveTo(x + shift - paw.dir * 7, roof - 22);
+          ctx.lineTo(x + shift, roof - 15);
+          ctx.lineTo(x + shift - paw.dir * 7, roof - 8);
+        }
+        ctx.stroke();
+        label('!', paw.x, roof - 64, '#ff6b6b', 16, 'center', SIGN_FONT);
+      }
+    }
+
+    // The player, flattened and flung if a paw caught them.
+    if (G.player.visible) {
+      const f = G.flung;
+      if (f) {
+        const pl = G.player;
+        ctx.save();
+        if (f.t < 0.22) {
+          ctx.translate(pl.x + PLAYER.w / 2, pl.y + PLAYER.h);
+          ctx.scale(1.5, 0.22);
+          ctx.translate(-(pl.x + PLAYER.w / 2), -(pl.y + PLAYER.h));
+        } else {
+          ctx.translate(pl.x + PLAYER.w / 2, pl.y + PLAYER.h / 2);
+          ctx.rotate(f.spin);
+          ctx.translate(-(pl.x + PLAYER.w / 2), -(pl.y + PLAYER.h / 2));
+        }
+        drawPlayer(G);
+        ctx.restore();
+      } else drawPlayer(G);
+    }
+
+    // The paws, floating free of the mist. Always a monster's while it fights.
+    if (b.rise > 0.3) {
+      ctx.save();
+      ctx.globalAlpha = (1 - tame) * Math.min(1, (b.rise - 0.3) / 0.4);
+      for (const paw of b.paws) {
+        const jig = paw.state === 'windup' ? Math.sin(G.t * 60) * 2 : 0;
+        const bob = paw.state === 'rest' ? Math.sin(G.t * 1.6 + paw.side) * 4 : 0;
+        paintPaw(ctx, paw.x + jig, paw.y + bob, cfg.pawW, b.phase === 'tamed' ? 1 : 0);
+      }
+      ctx.restore();
+    }
+
+    if (G.torch.active) {
+      const hand = handOf(G.player);
+      const g = ctx.createRadialGradient(hand.x, hand.y, 4, hand.x, hand.y, G.torch.range);
+      g.addColorStop(0, 'rgba(255,217,138,0.28)');
+      g.addColorStop(1, 'rgba(255,217,138,0)');
+      ctx.fillStyle = g;
+      beamPath(ctx, hand, G.torch.angle, G.torch.range);
+      ctx.fill();
+    }
+    if (b.phase !== 'intro' && b.phase !== 'tamed' && G.q) {
+      const pct = Math.round(p0 * 100);
+      tag(G.q.definite[qi] === 1 ? 'CAT = 1 (monster)' : G.q.definite[qi] === 0 ? 'CAT = 0 (cute)' : `CAT: ${pct}% cute`, 92, 22, G.q.definite[qi] === null ? C.qubit || '#ffd36b' : C.ink);
+    }
+    drawFx(G);
+    if (b.line) {
+      const who = b.actors.find((a) => a.id === b.line.follow);
+      const at = who ? { x: who.x, y: roof - 58 } : { x: b.cat.x + 6, y: roof - 30 };
+      speech(at.x, at.y, b.line.text, b.line.who, 1, undefined, b.line.text === 'MEOW');
+    }
+    drawSpeech(G);
+    if (b.flash > 0) {
+      ctx.fillStyle = `rgba(200,255,190,${Math.min(0.85, b.flash)})`;
+      ctx.fillRect(-20, -20, WORLD.w + 40, WORLD.h + 40);
+    }
+    ctx.restore();
+  }
+
+  // A smashed terminal: a heap of panels and wires, and how long until it is back.
+  function drawWreck(G, term, total) {
+    const y = term.y;
+    ctx.fillStyle = '#1b2740';
+    ctx.save();
+    ctx.translate(term.x, y);
+    ctx.rotate(-0.25);
+    ctx.fillRect(-18, -8, 22, 6);
+    ctx.restore();
+    ctx.fillStyle = '#2f4062';
+    ctx.fillRect(term.x - 4, y - 14, 18, 10);
+    ctx.fillStyle = '#0c1422';
+    ctx.fillRect(term.x - 12, y - 6, 26, 6);
+    if (Math.sin(G.t * 17 + term.x) > 0.6) {
+      ctx.fillStyle = '#ffd36b'; // a spark
+      ctx.fillRect(term.x + 6 + Math.random() * 4, y - 18 - Math.random() * 6, 2, 2);
+    }
+    const left = Math.max(0, term.wreck);
+    const cx = term.x;
+    const cy = y - 40;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#7dffa8';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - left / total));
+    ctx.stroke();
+    label(String(Math.ceil(left)), cx, cy + 0.5, C.ink, 10);
+    label(term.id, cx, cy - 22, '#ff9a7a', 9);
+  }
+
   // -- frame ----------------------------------------------------------------
 
   function draw(G) {
@@ -1513,6 +2722,10 @@ export function createRenderer(canvas) {
     }
     if (G.level.outdoor) {
       drawTerrace(G);
+      return;
+    }
+    if (G.level.beast && G.beast) {
+      drawBeast(G);
       return;
     }
     const room = G.room;
@@ -1542,10 +2755,24 @@ export function createRenderer(canvas) {
     drawPickupGlow(G);
     drawDoorGlow(G);
     drawDecorGlow(G);
+    drawCavities(G);
+    drawLights(G);
+    drawSwapArrows(G);
     drawFx(G);
     drawSpeech(G);
     ctx.restore();
   }
 
-  return { draw, resize, anchorOf };
+  // The exit's lock panel, its sign and the door, in this canvas's pixels (the lock view
+  // developer option magnifies this part of the picture). Null if this room has no lock.
+  function lockCrop(G) {
+    const d = G.room && G.room.door;
+    if (!d || !d.lock || !d.lock.length) return null;
+    const l = lockRect(d);
+    const x0 = l.x - 10;
+    const y0 = d.y - 104;
+    return { x: x0 * scale, y: y0 * scale, w: (d.x + 32 - x0) * scale, h: (d.y + 8 - y0) * scale };
+  }
+
+  return { draw, resize, anchorOf, gateAnchor, lockCrop };
 }

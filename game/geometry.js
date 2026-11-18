@@ -1,14 +1,94 @@
 // Shapes shared by the game logic and the renderer, so that what the flashlight
 // "sees" is exactly what is drawn.
 
-import { PLATFORM_H } from './levels.js';
+import { PLATFORM_H, WORLD } from './levels.js';
 
 export const TORCH = { range: 330, half: 0.33, dwell: 0.45 };
 export const PLAYER = { w: 18, h: 32 };
 
-// Rectangle of a platform parked in state 0 (lowered) or 1 (raised).
+// Rectangle of a platform parked in state 0 or 1: lowered or raised, or for a
+// sideways platform (axis 'x'), at x0 or x1 on one height.
 export function slotRect(p, state) {
+  if (p.axis === 'x') return { x: state ? p.x1 : p.x0, y: p.y, w: p.w, h: PLATFORM_H };
   return { x: p.x, y: state ? p.y1 : p.y0, w: p.w, h: PLATFORM_H };
+}
+
+// The middle of a platform's state: halfway between its two slots.
+export function slotMid(p) {
+  const a = slotRect(p, 0);
+  const b = slotRect(p, 1);
+  return { x: (a.x + b.x + p.w) / 2, y: (a.y + b.y + PLATFORM_H) / 2 };
+}
+
+// -- backup lights ----------------------------------------------------------------
+//
+// A backup light is a lamp that shines a cone: { x, y, angle, spread, range, kind }
+// (angle points the cone, spread is its half-width, both in radians). Solid things
+// cast shadows, so its lit area is traced ray by ray, each ray stopping at the first
+// rectangle it meets. The result is a polygon: the lamp, then the ends of the rays.
+// The same polygon is drawn and used to decide what the light sees.
+
+// How long a light must rest on a superposed platform to measure it, in seconds.
+// 'weak' (faulty) lights take five times as long as the flashlight; 'emergency'
+// lights damp the qubit to 0 in the flashlight's time.
+export const LIGHT_KINDS = {
+  normal: { dwell: TORCH.dwell },
+  weak: { dwell: TORCH.dwell * 5 },
+  emergency: { dwell: TORCH.dwell },
+};
+
+const RAYS = 72;
+
+// Where a ray from (ox, oy) heading (dx, dy) first meets rectangle r, as a distance, or Infinity.
+function rayHit(ox, oy, dx, dy, r) {
+  let near = -Infinity;
+  let far = Infinity;
+  for (const [o, d, lo, hi] of [
+    [ox, dx, r.x, r.x + r.w],
+    [oy, dy, r.y, r.y + r.h],
+  ]) {
+    if (Math.abs(d) < 1e-12) {
+      if (o < lo || o > hi) return Infinity;
+    } else {
+      let t1 = (lo - o) / d;
+      let t2 = (hi - o) / d;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      near = Math.max(near, t1);
+      far = Math.min(far, t2);
+    }
+  }
+  return near <= far && far > 0 ? Math.max(near, 0) : Infinity;
+}
+
+export function lightPolygon(light, blockers) {
+  const pts = [{ x: light.x, y: light.y }];
+  for (let i = 0; i <= RAYS; i += 1) {
+    const a = light.angle - light.spread + (2 * light.spread * i) / RAYS;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    let reach = light.range;
+    for (const r of blockers) reach = Math.min(reach, rayHit(light.x, light.y, dx, dy, r));
+    pts.push({ x: light.x + dx * reach, y: light.y + dy * reach });
+  }
+  return pts;
+}
+
+export function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > pt.y !== b.y > pt.y && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+// Whether a light polygon reaches any part of a rectangle (its corners, edge middles and centre).
+export function rectInLight(r, poly) {
+  const xs = [r.x + 1, r.x + r.w / 2, r.x + r.w - 1];
+  const ys = [r.y + 1, r.y + r.h / 2, r.y + r.h - 1];
+  for (const x of xs) for (const y of ys) if (pointInPolygon({ x, y }, poly)) return true;
+  return false;
 }
 
 export function doorRect(door) {
@@ -65,18 +145,19 @@ function angleGap(a, b) {
   return Math.abs(d);
 }
 
-export function pointLit(hand, angle, x, y) {
+// `range`: how far the beam reaches (a spare battery can be weaker than a new one).
+export function pointLit(hand, angle, x, y, range = TORCH.range) {
   const dx = x - hand.x;
   const dy = y - hand.y;
   const dist = Math.hypot(dx, dy);
-  if (dist > TORCH.range) return false;
+  if (dist > range) return false;
   if (dist < 14) return true;
   return angleGap(Math.atan2(dy, dx), angle) <= TORCH.half;
 }
 
 // A rectangle counts as lit when its centre, or any two of its corners, are in the beam.
-export function rectLit(hand, angle, r) {
-  if (pointLit(hand, angle, r.x + r.w / 2, r.y + r.h / 2)) return true;
+export function rectLit(hand, angle, r, range = TORCH.range) {
+  if (pointLit(hand, angle, r.x + r.w / 2, r.y + r.h / 2, range)) return true;
   const inset = 3;
   let hits = 0;
   for (const [x, y] of [
@@ -85,7 +166,31 @@ export function rectLit(hand, angle, r) {
     [r.x + inset, r.y + r.h - inset],
     [r.x + r.w - inset, r.y + r.h - inset],
   ]) {
-    if (pointLit(hand, angle, x, y)) hits += 1;
+    if (pointLit(hand, angle, x, y, range)) hits += 1;
   }
   return hits >= 2;
+}
+
+// -- cavities (Rabi drive) ---------------------------------------------------------
+//
+// A cavity is a band of waves between two caps: { x, w, y, to, dir, rate }. The emitting
+// cap is at height y, the far cap at `to`, and `dir` ('down' or 'up') says which way the
+// waves run (rate: radians of Ry per second). It is all or nothing: a blocker spanning
+// the band's whole width anywhere between the caps shuts it off completely, and anything
+// narrower does not block it at all.
+
+export function cavitySpan(c) {
+  return { top: Math.min(c.y, c.to), bottom: Math.max(c.y, c.to) };
+}
+
+export function cavityBlocked(c, blockers) {
+  const { top, bottom } = cavitySpan(c);
+  return blockers.some((r) => r.x <= c.x && r.x + r.w >= c.x + c.w && r.y < bottom && r.y + r.h > top);
+}
+
+// Whether a rectangle sits in the band: its middle column inside it, between the caps.
+export function cavityHolds(c, r) {
+  const x = r.x + r.w / 2;
+  const { top, bottom } = cavitySpan(c);
+  return x >= c.x && x <= c.x + c.w && r.y < bottom && r.y + r.h > top;
 }

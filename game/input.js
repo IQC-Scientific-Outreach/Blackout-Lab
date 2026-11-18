@@ -14,6 +14,8 @@ const KEYS = {
   mute: ['KeyM'],
   hint: ['KeyH'],
 };
+// 1 to 9 pick a gate at a passive terminal (developer option).
+for (let k = 1; k <= 9; k += 1) KEYS[`op${k}`] = [`Digit${k}`, `Numpad${k}`];
 
 const ACTION_OF = {};
 for (const action of Object.keys(KEYS)) for (const code of KEYS[action]) ACTION_OF[code] = action;

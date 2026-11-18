@@ -27,10 +27,11 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | Space or W | Jump |
 | Mouse, or I / K | Aim the flashlight |
 | F | Flashlight on / off |
-| E | Use a terminal or port, talk, go through a room door, try a lock, pet the cat |
+| E or Enter | Use a terminal or port, talk, go through a room door, try a lock, pet the cat |
 | ← → then Enter | Pick a gate while a terminal is open (E to leave) |
 | H | Show a hint |
 | R / P / M | Restart floor / pause and options / sound |
+| Main menu (top right) | Back to the title screen from anywhere, including the cleared-floor, pause and out-of-lives screens |
 
 - Every moving platform is a qubit. State `0` parks it lowered, state `1` parks it raised.
 - A platform in superposition is drawn as dotted outlines at both heights and cannot be stood on.
@@ -41,7 +42,25 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 - The title screen's side panel says where the game was made and links to its Qollab and GitHub pages (fill in the two empty `href` attributes in the `about` block of `index.html`, then rebuild the single file; until then each line reads "link not added yet").
 - Falling into the gap costs one of three lives and resets the floor. Lose all three on one floor and the climb starts again from floor 1. There is no timer. Unlimited lives are in the pause menu. "Skip to floor" on the title screen and in the pause menu jumps to any floor.
 
-The rack on the right is live: the **circuit** you have built on this floor (with a meter icon and its result for every observation), the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, and **lab notes** with the goal, a concept explanation, hints and an event log. "This floor as Qiskit code" shows the same circuit as code you can paste into a notebook. **Expand** on the circuit moves it under the game and draws all of it at once, with nothing to scroll.
+The **circuit** you have built on this floor is drawn under the game, whole, with a meter icon and its result for every observation (**Collapse** moves it into the rack on the right, where it scrolls sideways). The rack starts with the floor's **goal**, then the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, **lab notes** with a concept explanation, hints and an event log, and last "This floor as Qiskit code" (the same circuit as code you can paste into a notebook).
+
+### Developer options
+
+The title screen has a collapsible **Developer options** panel, under the credits, with experimental switches for trying out ideas. The pause screen shows the same panel, next to a reminder of the controls. All are off by default, and the browser remembers them (`localStorage`).
+
+| Option | What it does |
+| --- | --- |
+| Keyboard flashlight | The flashlight shines only while F is held, straight ahead in the direction the player faces. The mouse does not aim it at all. |
+| Touch-collapse | Landing on either outline of a superposed platform measures it, by the Born rule (50/50 after an H). The platform appears at the height it collapsed to: you land if that is the outline you touched, otherwise you drop past it. The circuit records it as a measurement ("Player landed on"). |
+| Instant response | A gate applied at a terminal moves its platform straight away, while you are still at the terminal (normally the platforms wait until you leave). |
+| Passive terminal | Standing at a terminal shows its gates, each with a number under it. Press 1, 2, 3 and so on (or click) to apply one: no E needed (and no E marker over the terminal), and you can still move and use the flashlight, so it can observe between gates. E or Enter steps into the terminal as usual (flashlight lowered), where the arrow keys then Enter or Space pick a gate, or the number keys still apply one; E steps back out. Exits also open by themselves as soon as every lamp is certain and matches the key, except floor 6's, whose lock runs its own gates before reading. |
+| Canister view | While you hold the canister, a tile in the panel shows it enlarged on black, with its state over it in green (\|0⟩, \|+⟩ and so on), or "Entangled with A" (naming its partners) when it has no state of its own. Its two bands light up like a platform: the top one for 1, the bottom one for 0, dashed when uncertain. At the Professor's box (floor 5) the cat joins it, on the right: alive for 0, upside down with crossed-out eyes for 1, and both at once, see-through, while uncertain. At a terminal that acts on a lock lamp, a second tile shows the exit lock magnified (a live close-up of the game picture, gates included). |
+| Show gates | Each gate you apply pops up for one second over its qubits, drawn like the circuit diagram (a square with its letter, or a CNOT's control dot and target joined by a line), with a glowing white outline. It sits halfway between a platform's two heights, or over the canister in the canister view. A ball is thrown from the terminal to where the gate appears (to the canister too when a two-qubit gate involves it); the gate pops in as it lands, the new state shows at that moment, and the gate pops out a second later. |
+| Swap delay | How long SWAP waits, counting down with its arrows showing, before the platforms set off: 1 to 5 seconds, 3 by default (3, 2, 1, SWAP!). |
+| Panel position | Right (the normal layout) or Bottom: the rack moves under the game, with its modules side by side. |
+| Circuit always adds to the right | Every new step in the circuit gets its own column after everything before it, instead of moving left into the first free column. |
+
+To add an option: put its default in `DEV_DEFAULTS` in `game/game.js`, add a switch to the `dev` block in `index.html`, and list it in `devSwitches` in `game/ui.js`.
 
 ## The seven floors
 
@@ -58,6 +77,49 @@ The rack on the right is live: the **circuit** you have built on this floor (wit
 The last exit leads up to the terrace. There are no qubits there: crank the generator, the building's lights come back, and the Professor, Alice, Bob and the cat come out for a short ending. The final screen offers a return to the start or a replay of any floor.
 
 Exit locks are made of qubit lamps, each labelled with the qubit behind it; those qubits are shown in yellow in the rack. A lock is read by flashlight or by pressing E beside it (E only on floor 6), and opens when the lamps match the key shown above them. A wrong key clears the lamps; on floor 6 it also uses up the teleported key, and a fresh one is prepared.
+
+## Bonus levels
+
+Bonus levels are reached only from "Skip to floor" (on the title screen and in the pause menu), under their own heading. They are not part of the climb: finishing one leads to the next bonus level or back to the title, running out of lives restarts it, and its stars do not count towards the ending.
+
+| Bonus level | What happens | What it teaches |
+| --- | --- | --- |
+| 1 Broken Terminal | Your flashlight is dead and both terminals are broken, stuck in loops you cannot touch. T1 turns platform P by Ry(pi/2) every 1.5 seconds (lowered, superposed, raised, superposed): ride it up as it rises. On the ledge, a weak spare battery whose beam reaches A but not B, and T2 looping H on A, CNOT A to B, CNOT, H. Look at A until it reads 1 at the right point in the loop (caught just before the first H, it stays uncertain through the CNOTs: look again); from then on each cycle raises B for one tick (1.5 seconds), and you jump from A to B to the exit. | A gate sequence that undoes itself never leaves B certain, but one measurement changes what the same gates do: once A is an ordinary 1, the CNOT copies it onto B. |
+| 2 SWAP Shuffle | A, B and C start at 0 0 0 and must read 0 1 1 to make a way across. T1 has only X on A, SWAP A and B, and SWAP B and C, and here the swaps go at once. X, SWAP A B, X, SWAP B C, SWAP A B does it; five gates earns the bonus star. No superposition, no flashlight needed. | SWAP moves a state without copying it: ordinary bits, shuffled down a line. |
+| 3 Quantum Communication | T1 offers H on Alice's platform Q, SWAP with Bob's platform R, Z on R, and X on the shield S. SWAP makes the two platforms trade places (after the swap delay, with arrows showing where each goes), so Q's state really crosses the room, under a backup light. Shielded, H, SWAP, Z, SWAP, H makes Q a certain 1; a last SWAP carries the player on it to the exit above Bob. The flashlight starts switched off, and luck can also win. Stranded down on Bob's side? T2 there swaps Q and R back, so a platform can carry you home. | Any light is a measurement, the way quantum key distribution spots an eavesdropper. SWAP moves a state between qubits. H, Z, H makes an X only if nothing looks in between. |
+| 4 Emergency Channel | The same channel (T2 on Bob's side included) with a red emergency light: any unshielded crossing comes out as 0, even the raised platform you ride. The shield blocks the light in state 0. | Amplitude damping: the environment drains a qubit to 0. |
+| 5 Decoherence Time | Faulty lights over every platform. At T1, H, Z, H raises P before the light collapses it. At T2, A must end lowered and B raised, with H and Z on A, H on B and a CZ between them: H Z H on A, H on B, CZ, H on B, H Z H on A. | Every superposition has a deadline (the decoherence time). CZ applies Z to one qubit when the other is 1. |
+| 6 The Watched Qubit | Cavity waves keep P, A and B turning (Rabi oscillation). Freeze P lowered with the flashlight (it starts off) and stand on it to keep it there. A and B turn together, so Ry(pi/2) twice at T1 puts B half a turn ahead; then X at T2 slides the shield S into the waves as A reaches 0, freezing the pair at 0 and 1, and the flashlight collapses them. | Rabi oscillation, and the quantum watchdog (Zeno) effect: a qubit that is watched all the time cannot change. |
+
+### Bonus level 7: The Beast on the Roof
+
+The last bonus level, listed with the others. It opens like the ending on the terrace, but with a box in the middle of the roof and the terminals switched off. You walk to the generator and crank it, the lights come on, and the Professor, Bob, Alice and the cat come out. This time the cat hides in the box. Bob: "It's OK, here kitty kitty!" The Professor: "Don't open the box!" Bob opens it, and the radiation has turned the cat into a giant monster that rises behind the skyline: white, mangy and ragged, with glowing green slit eyes and long fangs over a shut snarl. The Professor: "Quick, we need to reverse this evolution!" One swipe sends Alice, Bob and the Professor off the building and brings down the string lights, and the lamp posts that held them burst and go dark; the monster screeches at you, mouth wide, and sinks into a mist, and the fight (and its music) begins. Before the generator is on, Space just jumps (over the box, say) and E away from the generator skips the scene; once it is cranked, Space or E skip the rest at any point.
+
+The cat is one qubit: **0 is cute, 1 is monster**, and it starts at 1.
+
+- **The mist.** The monster's face is in plain view at the start. Once the paws start, a mist rolls in over it, and only the flashlight parts it. In the light you see what the cat certainly is, monster or cute; a cat in superposition is measured first (two glowing eyes are all that shows through the mist otherwise).
+- **The paws** (three players wide, no arms) float free. They take turns: one rises to the top of the screen, follows you, stops for a moment to wind up (its shadow turns red), then drops straight down. Three times in ten it swipes instead: it comes down at one end of the roof, a red streak shows its path, and it sweeps along the roof to the other end, low enough to jump over. Caught by a paw (or off the edge), you are flattened and flung off the screen: a life lost, and you are back at the stair door with the cat exactly as you left it (every gate applied so far still applied). Out of lives, the level starts over.
+- **Two terminals**, one on each side of the roof, each apply **RY(pi/8)** with a single press of 1 (shown on the terminal panel, as on other levels with the passive terminal option) or E. The cat answers at once: a paw rises straight over that terminal and smashes it, with no following and no wind-up, so run as soon as you press. The terminal comes back 10 seconds later.
+- **Looking** is a measurement: the flashlight on the cat, which takes no aiming up or jumping, since a beam held level along the roof towards the middle finds it. Cute (0) comes up with chance sin^2(k pi/16) after k turns: a MEOW, and the fight ends. Monster (1) undoes every turn: it SCREECHES, shows itself out of the mist for two full seconds, and brings both paws straight down wherever they are. Eight turns with nobody looking make it certainly cute, and that ends the fight too.
+- **Boss music** plays while it fights: an original chiptune loop (A minor, i VI iv V, 150 bpm), written note by note in `game/audio.js` with Web Audio, so there is no music file and nothing to license.
+- Stars: tamed, no falls, no hints, tamed within 60 seconds of the fight starting (the opening does not count), and deterministically made the cat cute (eight RY turns in a row, no look).
+
+| Bonus level | What happens | What it teaches |
+| --- | --- | --- |
+| 7 The Beast on the Roof | Dodge the paws while turning the cat with RY(pi/8) at two terminals the cat keeps smashing. The cat hides in a mist: gamble on an early look with the flashlight, or make eight turns and be sure. | A coherent change (a rotation) can be undone by the opposite rotation. Looking part way gives the Born-rule odds, and a bad result throws the progress away. |
+
+They bring new pieces, which any floor can use:
+
+- **Backup lights** shine a fixed cone. Solids and certain platforms cast shadows, so the lit area is traced around them. Like the flashlight, a light resting on a superposed platform measures it. A **normal** light is as quick as the flashlight; a **weak** (faulty) one, sparking at its lamp, takes five times as long; a red **emergency** light damps the qubit all the way to 0 (amplitude damping) in the flashlight's time, even from a certain 1. They stand in for decoherence: the environment watching your qubits, so they keep working while you are at a terminal.
+- **Cavities** are a band of waves between two caps, fed with power through a waveguide from the edge of the room, turning every platform in the band round and round (a Rabi oscillation: Ry at a steady rate, 0, +, 1, -, 0). A state part way round is drawn as both pictures at once: the platform at its likelier position, as solid as the state is close to it, over faint 50/50 outlines. A watched platform (lit by the flashlight or a backup light, or stood on) does not turn: the quantum watchdog effect. A cavity is all or nothing: a shield (a `steady` platform) or a solid spanning the band's whole width empties it, and anything narrower does nothing; cleared, it fills again column by column and only drives once full. In a room with a cavity, platforms move while you are at a terminal, since timing is the puzzle there.
+- **SWAP between two platforms** makes them trade places (where the two pass each other at one height, you stay on the one you are riding): after the swap delay, counted down on screen (3, 2, 1, SWAP!) while arrows show where each will go (time to jump on or off), the states are exchanged and each platform carries its old state to the other's place. Every other gate is greyed out until the swap has finished, and lights and cavities act on the platforms as they travel.
+- **Broken terminals** cannot be used (no E): each applies its own gates by itself, one every so often, round and round, whatever you do. Its cracked screen shows the gate it applies next and a bar filling up to it; a spark flies to the qubit just as the gate lands, and the gates show in the circuit as the floor's own (`# done by the floor itself` in the Qiskit code).
+- **Weak spare batteries** (`range` on a battery) refit a dead flashlight with a shorter beam, so you can only observe what is close.
+- **Instant SWAPs**: a SWAP can set its own delay (`delay: 0` sends the platforms off at once, with no countdown), whatever the developer option says.
+- **Sideways platforms** keep one height and slide between two positions for 0 and 1, to open a way through or to block a light.
+- **The I (identity) gate** does nothing to the state, listed as `qc.id()` in the Qiskit code, and **SWAP** is `qc.swap()`.
+- **The Ry gate** turns a qubit part of the way round by an angle (a terminal's Ry(pi/2) is a quarter turn); a cavity's drive shows in the circuit as one dashed RY box per stretch of driving, and as `qc.ry(angle, qubit)` in the Qiskit code.
+- **The CZ gate** applies Z to one qubit when the other is 1 (it works the same both ways round), drawn as two joined dots, `qc.cz()` in the Qiskit code.
 
 ## Where the quantum computing is
 
@@ -84,7 +146,7 @@ tools/build.mjs           generates dist/blackout-lab.html from the files above
 tests/                    engine and level-data tests, browser playthrough bot
 ```
 
-**Adding a floor** needs no code: append an object to `LEVELS` in `game/levels.js` with its qubits (`platform`, `canister`, `sealed`, `box` or `door`), platform positions for state 0 and 1, the gates each terminal or port offers, the exit key, and the hint texts. The comment at the top of that file lists every field. Characters and their lines go in `game/story.js`. Then run `npm test` (which also checks the new floor's data) and `npm run build` to refresh the single-file version.
+**Adding a floor** (or a bonus level, in `BONUS_LEVELS`) needs no code: append an object to `LEVELS` in `game/levels.js` with its qubits (`platform`, `canister`, `sealed`, `box` or `door`), platform positions for state 0 and 1, the gates each terminal or port offers, the exit key, and the hint texts. The comment at the top of that file lists every field. Characters and their lines go in `game/story.js`. Then run `npm test` (which also checks the new floor's data) and `npm run build` to refresh the single-file version.
 
 **The single file** is generated, not written by hand. `tools/build.mjs` places `main.css` in a `<style>` block and every JavaScript file, in dependency order, in one `<script>`, each in its own scope under a banner naming its source file, with nothing minified. It stays readable, and a quick fix can be made in it directly, but edits there are lost at the next build, so make lasting changes in the source files.
 
@@ -127,6 +189,10 @@ node tests/playthrough.cjs https://<you>.github.io/<repo>/   # a published copy
 
 - Only H, X, Z and CNOT. No rotations, no measurement in other bases.
 - Ideal physics only: there is no noise. (An earlier Qiskit version, kept in a separate repository, measured a real backend's noise and fed it into the game.)
+
+## Security and privacy
+
+The game is a static page: no server, no accounts, no analytics, and nothing the player does leaves the browser. The only things it fetches from elsewhere are its fonts, from Google Fonts (which sees the player's IP address, as with any Google Fonts page; without a connection the page falls back to system fonts). A content security policy in `index.html` lets only the page's own scripts run (the single-file build allows its one inline script by hash) and blocks every other request. The developer options are kept in the browser's `localStorage` and are checked field by field when read back.
 
 ## Disclosures
 

@@ -2443,6 +2443,29 @@ export function createRenderer(canvas) {
       ctx.fill();
       if (paw.state === 'windup') label('!', paw.x, roof - 12, '#ff6b6b', 16, 'center', SIGN_FONT);
     }
+    // A swipe about to sweep along the roof: a red streak along its path, chevrons pointing the way.
+    for (const paw of b.paws) {
+      if (b.phase !== 'fight' || (paw.state !== 'swipeWind' && paw.state !== 'swipe')) continue;
+      const end = paw.dir > 0 ? s.edge - 30 : 30;
+      const from = paw.x + paw.dir * (cfg.pawW / 2);
+      if ((end - from) * paw.dir <= 0) continue;
+      const pulse = paw.state === 'swipeWind' ? 0.35 + 0.25 * Math.sin(G.t * 18) : 0.18;
+      ctx.fillStyle = `rgba(255,70,70,${pulse})`;
+      ctx.fillRect(Math.min(from, end), roof - 6, Math.abs(end - from), 6);
+      if (paw.state === 'swipeWind') {
+        ctx.strokeStyle = 'rgba(255,120,120,0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let x = from + paw.dir * 30; (end - x) * paw.dir > 0; x += paw.dir * 60) {
+          const shift = ((G.t * 120) % 60) * paw.dir;
+          ctx.moveTo(x + shift - paw.dir * 7, roof - 22);
+          ctx.lineTo(x + shift, roof - 15);
+          ctx.lineTo(x + shift - paw.dir * 7, roof - 8);
+        }
+        ctx.stroke();
+        label('!', paw.x, roof - 64, '#ff6b6b', 16, 'center', SIGN_FONT);
+      }
+    }
 
     // The player, flattened and flung if a paw caught them.
     if (G.player.visible) {

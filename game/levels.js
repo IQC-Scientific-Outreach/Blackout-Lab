@@ -497,10 +497,13 @@ export const BEAST = {
   tag: 'Bonus level 7',
   beast: {
     head: { x: 480, y: 178 }, // where the head sits once risen, behind the skyline
-    face: { x: 405, y: 118, w: 150, h: 120 }, // what the flashlight has to rest on
+    face: { x: 405, y: 118, w: 150, h: 120 }, // its face, where the exposure ring shows
+    // What the flashlight has to rest on to see the cat: the head and the mist below it down to
+    // the roof, so a beam held level along the roof (no aiming up, no jumping) finds it.
+    sight: { x: 400, y: 110, w: 160, h: 215 },
     pawW: 54, // three players wide
     top: 64, // a raised paw's underside
-    wreck: 15, // seconds a smashed terminal takes to come back
+    wreck: 10, // seconds a smashed terminal takes to come back
   },
   torchOff: true,
   gates: ['ry'],
@@ -521,8 +524,8 @@ export const BEAST = {
   concept:
     'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
   hints: [
-    'Press E at a terminal to turn the cat with RY(\u03c0/8), then run: the cat brings a paw down on that terminal. It comes back after 15 seconds.',
-    'A raised paw follows you, then stops for a moment before it drops straight down. Move as soon as it stops.',
+    'Press 1 (or E) at a terminal to turn the cat with RY(\u03c0/8), then run at once: the cat brings a paw straight down on that terminal. It comes back after 10 seconds.',
+    'A raised paw follows you, then stops for a moment before it drops straight down: move as soon as it stops. A paw that comes down at one end of the roof is about to sweep along it: jump over it.',
     'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. The mist hides the cat until you look, so keep the flashlight off its face until you choose to.',
   ],
   takeaway:

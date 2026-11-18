@@ -6,7 +6,7 @@
 // platforms to wherever the returned snapshot says they are.
 
 import { LEVELS, BONUS_LEVELS, BEAST, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
-import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } from './geometry.js';
+import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, pointLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } from './geometry.js';
 import { STORY } from './story.js';
 import { createQuantum } from './quantum.js';
 import { createInput } from './input.js';
@@ -575,7 +575,9 @@ export function startGame() {
   // Developer option: standing at a terminal shows its gates, and 1 to 9 apply them,
   // without entering the terminal (so the player can still move and look).
   function updatePassive(hit) {
-    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !hit.obj.quick && !(hit.obj.port && !carrying()) ? hit.obj : null;
+    // Quick terminals (bonus level 7) always show their gate this way, with its number key.
+    const near = hit && hit.type === 'terminal' ? hit.obj : null;
+    const term = near && (near.quick || (G.dev.passiveTerminal && !(near.port && !carrying()))) ? near : null;
     if (!hit && G.passive && !G.player.onGround) return; // a hop at the terminal keeps it open
     if (term === G.passive && (!term || G.passiveCarrying === carrying())) return;
     closePassive();
@@ -785,6 +787,10 @@ export function startGame() {
 
   async function applyOp(i) {
     const term = G.terminal || G.passive;
+    if (term && term.quick) {
+      if (term.ops[i]) quickTerminal(term);
+      return;
+    }
     if (!term || G.busy || !term.ops[i]) return;
     const op = term.ops[i];
     if (op.needsCanister && !carrying()) {
@@ -1395,7 +1401,11 @@ export function startGame() {
   // wind-up), drop straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
   // smashing that terminal, which comes back after a while. The flashlight resting on
   // its face measures it: cute ends the fight, monster starts the count again.
-  const PAW = { rise: 0.6, track: [1.3, 2.1], speed: 300, windup: 0.55, fall: 6500, down: 0.55, lift: 0.7, h: 46 };
+  // Times in seconds, speeds in pixels a second. The wind-up (the warning) is not hurried.
+  const PAW = { rise: 0.4, track: [1.3, 2.1], speed: 450, windup: 0.55, fall: 14600, down: 0.37, lift: 0.47, h: 46 };
+  // The low swipe, three attacks in ten: down onto the roof at one end, a moment's warning,
+  // then a sweep along the roof to the other end. Jump over it.
+  const SWIPE = { chance: 0.3, settle: 0.4, windup: 0.6, speed: 600, ends: [30, 850] };
   const PAW_REST_Y = 266;
   const ease = (k) => k * k * (3 - 2 * k);
 
@@ -1543,7 +1553,7 @@ export function startGame() {
     // The flashlight on its face: a measurement, as on any superposed platform.
     const qi = G.qIndex.CAT;
     const torch = G.torch;
-    b.lit = torch.active && rectLit(handOf(G.player), torch.angle, cfg.face, torch.range);
+    b.lit = torch.active && sightLit(cfg.sight, torch);
     b.exposure = b.lit && G.q.definite[qi] === null ? b.exposure + dt : 0;
     if (b.exposure >= TORCH.dwell) {
       b.exposure = 0;
@@ -1557,11 +1567,34 @@ export function startGame() {
     b.reveal = shown ? Math.min(1, b.reveal + dt * 4) : Math.max(0, b.reveal - dt * 1.2);
   }
 
+  // Any part of the cat's column in the beam: a grid of points over it, so the beam finds it
+  // held level from anywhere near the middle of the roof, even from right underneath.
+  function sightLit(r, torch) {
+    const hand = handOf(G.player);
+    for (let i = 0; i <= 4; i += 1) {
+      for (let j = 0; j <= 6; j += 1) {
+        if (pointLit(hand, torch.angle, r.x + (r.w * i) / 4, r.y + (r.h * j) / 6, torch.range)) return true;
+      }
+    }
+    return false;
+  }
+
   function updatePaws(dt) {
     const b = G.beast;
     const cfg = G.level.beast;
     const pl = G.player;
     const clampX = (x) => Math.max(36, Math.min(844, x));
+    // A terminal just used: a free paw (or one still on its way up) goes straight for it and
+    // smashes it at once, with no following and no wind-up.
+    if (b.grudge && !(b.grudge.wreck > 0) && !b.paws.some((p) => p.target === b.grudge)) {
+      const paw = b.paws.find((p) => p.state === 'rest') || b.paws.find((p) => p.state === 'rise' || p.state === 'track');
+      if (paw) {
+        paw.state = 'rise';
+        paw.t = 0;
+        paw.from = { x: paw.x, y: paw.y };
+        paw.target = b.grudge;
+      }
+    }
     if (b.paws.every((p) => p.state === 'rest')) {
       b.wait -= dt;
       if (b.wait <= 0) {
@@ -1571,8 +1604,12 @@ export function startGame() {
         paw.state = 'rise';
         paw.t = 0;
         paw.from = { x: paw.x, y: paw.y };
-        paw.target = b.grudge && !(b.grudge.wreck > 0) ? b.grudge : null;
-        paw.track = paw.target ? 0.6 : PAW.track[0] + Math.random() * (PAW.track[1] - PAW.track[0]);
+        paw.target = null;
+        paw.track = PAW.track[0] + Math.random() * (PAW.track[1] - PAW.track[0]);
+        if (Math.random() < SWIPE.chance) {
+          paw.state = 'swipeIn';
+          paw.dir = paw.side < 0 ? 1 : -1; // from its own side across to the other
+        }
       }
     }
     for (const paw of b.paws) {
@@ -1582,7 +1619,12 @@ export function startGame() {
         const k = ease(Math.min(1, paw.t / PAW.rise));
         paw.x = paw.from.x + (aim - paw.from.x) * k;
         paw.y = paw.from.y + (cfg.top - paw.from.y) * k;
-        if (paw.t >= PAW.rise) {
+        if (paw.t >= PAW.rise && paw.target) {
+          paw.state = 'slam'; // over the terminal: straight down
+          paw.t = 0;
+          paw.vy = 250;
+          audio.play('roar');
+        } else if (paw.t >= PAW.rise) {
           paw.state = 'track';
           paw.t = 0;
         }
@@ -1590,8 +1632,7 @@ export function startGame() {
         const gap = aim - paw.x;
         paw.x += Math.sign(gap) * Math.min(Math.abs(gap), PAW.speed * dt);
         paw.y = cfg.top + Math.sin(paw.t * 6) * 3;
-        // Going for a terminal, it waits until it is right over it.
-        if (paw.t >= paw.track && (!paw.target || Math.abs(aim - paw.x) < 2)) {
+        if (paw.t >= paw.track) {
           paw.state = 'windup';
           paw.t = 0;
           audio.play('windup');
@@ -1612,6 +1653,31 @@ export function startGame() {
           paw.state = 'down';
           paw.t = 0;
           pawLands(paw);
+        }
+      } else if (paw.state === 'swipeIn') {
+        const k = ease(Math.min(1, paw.t / SWIPE.settle));
+        const startX = paw.dir > 0 ? SWIPE.ends[0] : SWIPE.ends[1];
+        paw.x = paw.from.x + (startX - paw.from.x) * k;
+        paw.y = paw.from.y + (b.roof - paw.from.y) * k;
+        if (paw.t >= SWIPE.settle) {
+          paw.state = 'swipeWind';
+          paw.t = 0;
+          audio.play('windup');
+        }
+      } else if (paw.state === 'swipeWind') {
+        if (paw.t >= SWIPE.windup) {
+          paw.state = 'swipe';
+          paw.t = 0;
+          audio.play('swoosh');
+        }
+      } else if (paw.state === 'swipe') {
+        paw.x += paw.dir * SWIPE.speed * dt;
+        const r = { x: paw.x - cfg.pawW / 2, y: b.roof - PAW.h, w: cfg.pawW, h: PAW.h };
+        if (G.mode === 'play' && overlap(r, { x: pl.x, y: pl.y, w: PLAYER.w, h: PLAYER.h })) smush(paw);
+        if (paw.dir > 0 ? paw.x >= SWIPE.ends[1] : paw.x <= SWIPE.ends[0]) {
+          paw.state = 'lift';
+          paw.t = 0;
+          paw.from = { x: paw.x, y: paw.y };
         }
       } else if (paw.state === 'down') {
         if (paw.t >= PAW.down) {
@@ -1653,7 +1719,8 @@ export function startGame() {
   // Flattened: squashed for a moment under the paw, then sent spinning off the screen.
   function smush(paw) {
     const pl = G.player;
-    G.flung = { t: 0, dir: pl.x + PLAYER.w / 2 < paw.x ? -1 : 1, vx: 0, vy: 0, spin: 0, launched: false };
+    const dir = paw.state === 'swipe' ? paw.dir : pl.x + PLAYER.w / 2 < paw.x ? -1 : 1; // a swipe bats you along
+    G.flung = { t: 0, dir, vx: 0, vy: 0, spin: 0, launched: false };
     audio.play('fling');
     G.stats.falls += 1;
     if (!G.infinite) G.lives -= 1;
@@ -1695,13 +1762,7 @@ export function startGame() {
     audio.play('gate');
     const head = G.level.beast.head;
     G.fx.push({ type: 'spark', from: center(screenRect(term)), to: { x: head.x, y: head.y }, t: 0, dur: 0.45, color: COLOR_OF(op.gate) });
-    // It goes for the terminal: a paw on its way up turns to it; otherwise the next one does.
-    b.grudge = term;
-    const paw = b.paws.find((p) => p.state === 'rise' || p.state === 'track');
-    if (paw) {
-      paw.target = term;
-      paw.track = Math.min(paw.track, paw.t + 0.5);
-    }
+    b.grudge = term; // it goes for the terminal at once (updatePaws)
     if (res.state.definite[op.qi[0]] === 0) {
       // Eight turns with nobody looking: certainly cute, no gamble needed.
       audio.play('collapse0');
@@ -1754,7 +1815,7 @@ export function startGame() {
     const p0 = 1 - G.q.p1[qi];
     const superposed = G.q.definite[qi] === null;
     if (b.exposure > 0) ui.setPrompt('Looking at the cat. Hold the light on its face.');
-    else if (hit && hit.type === 'terminal') ui.setPrompt(`Press <b>E</b> to turn the cat with RY(π/8) at <b>${hit.obj.id}</b>. Then run.`);
+    else if (hit && hit.type === 'terminal') ui.setPrompt(`Press <b>1</b> or <b>E</b> to turn the cat with RY(π/8) at <b>${hit.obj.id}</b>. Then run.`);
     else if (term && term.wreck > 0) ui.setPrompt(`<b>${term.id}</b> is smashed. It comes back in <b>${Math.ceil(term.wreck)}</b> s.`);
     else if (term && term.used) ui.setPrompt(`The cat is going for <b>${term.id}</b>: get away from it!`);
     else if (superposed) {

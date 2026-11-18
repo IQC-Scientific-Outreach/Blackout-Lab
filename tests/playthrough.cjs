@@ -1055,11 +1055,21 @@ async function main() {
     // Walk to x while keeping clear of any paw that has stopped to drop; until done() holds with no paw about to drop.
     const threat = () => b().paws.find((p) => (p.state === 'windup' || p.state === 'slam') && Math.abs(p.x - (g.player.x + 9)) < 64);
     let dodged = 0;
+    let jumped = 0;
     const seenThreat = new Set();
+    const swiping = () => b().paws.some((p) => p.state === 'swipeWind' || p.state === 'swipe');
     async function go(x, done, ms, what) {
       await until(() => {
-        if (g.mode !== 'play') return done();
+        const finished = done(); // checked every frame, so a passing moment is not missed
+        if (g.mode !== 'play') return finished;
         const cx = g.player.x + 9;
+        // A swipe along the roof: jump as it comes close.
+        const sw = b().paws.find((p) => p.state === 'swipe' && (cx - p.x) * p.dir > 0 && (cx - p.x) * p.dir < 105);
+        if (sw && g.player.onGround && !seenThreat.has(sw)) {
+          seenThreat.add(sw);
+          jumped += 1;
+          key('Space', true);
+        } else key('Space', false);
         const p = threat();
         let goal = x;
         if (p) {
@@ -1073,10 +1083,11 @@ async function main() {
         } else seenThreat.clear();
         key('ArrowRight', goal - cx > 4);
         key('ArrowLeft', goal - cx < -4);
-        return !p && Math.abs(goal - cx) <= 6 && done();
+        return !p && !swiping() && g.player.onGround && Math.abs(goal - cx) <= 6 && finished;
       }, ms, what);
       key('ArrowRight', false);
       key('ArrowLeft', false);
+      key('Space', false);
     }
     // Flattened: stand still under the paws until one comes down on the player.
     const lives = g.lives;
@@ -1089,27 +1100,40 @@ async function main() {
     const fallsBefore = g.stats.falls;
     let drops = 0;
     for (let k = 0; k < 2; k += 1) {
-      await go(480, () => b().paws.some((p) => p.state === 'down'), 15000, 'a paw to come down');
+      let landed = false;
+      await go(480, () => (landed = landed || b().paws.some((p) => p.state === 'down')), 15000, 'a paw to come down');
       drops += 1;
       await until(() => !b().paws.some((p) => p.state === 'down'), 3000, 'the paw to lift');
     }
     if (g.stats.falls !== fallsBefore || g.mode !== 'play') throw new Error('moving when a paw stops should avoid it');
+    // A swipe along the roof, made to happen here: jump it.
+    await until(() => b().paws.every((p) => p.state === 'rest'), 6000, 'the paws to rest');
+    const sweeper = b().paws[0];
+    Object.assign(sweeper, { state: 'swipeIn', t: 0, dir: 1, from: { x: sweeper.x, y: sweeper.y }, target: null });
+    b().grudge = null;
+    let passed = false;
+    await go(480, () => (passed = passed || sweeper.state === 'lift' || sweeper.state === 'rest'), 10000, 'the swipe to pass');
+    if (g.stats.falls !== fallsBefore || g.mode !== 'play' || jumped < 1) throw new Error(`jumping should clear a swipe: falls ${g.stats.falls - fallsBefore}, jumps ${jumped}`);
     // One turn at T1: a little cute, and the cat smashes T1.
     const [t1, t2] = g.room.terminals;
     await go(t1.x, () => t1.near, 15000, 'stand at T1');
-    await bot.tap('KeyE');
+    // Standing at a quick terminal shows its gate with its number key, as on other levels.
+    const keyShown = document.querySelector('#term-ops kbd');
+    if (!keyShown || keyShown.textContent !== '1' || document.getElementById('dock-terminal').hidden) throw new Error('T1 should show its gate with the key 1');
+    await bot.tap('Digit1');
     if (g.q.ops.length !== 1 || g.q.ops[0].gate !== 'ry' || !close(cute(), Math.sin(Math.PI / 16) ** 2)) throw new Error(`RY(pi/8) should make the cat ${Math.sin(Math.PI / 16) ** 2} cute: ${cute()}`);
     if (!t1.used || b().grudge !== t1) throw new Error('the cat should go for T1');
     await go(480, () => t1.wreck > 0, 15000, 'the cat to smash T1');
     if (g.stats.falls !== fallsBefore) throw new Error('the player should have got away from T1');
-    // Smashed terminals come back after 15 s; here the wait is cut short.
+    // Smashed terminals come back after 10 s; here the wait is cut short.
     t1.wreck = 0.2;
     await until(() => t1.wreck === 0 && !t1.used, 2000, 'T1 to come back');
     // A look at 4% cute: almost surely a monster again, every turn undone.
+    // The beam held level along the roof finds it: no aiming up, no jumping.
     await bot.tap('KeyF');
-    const face = g.level.beast.face;
-    bot.aim(face.x + face.w / 2, face.y + face.h / 2);
-    await go(400, () => cat() !== null || g.mode !== 'play', 6000, 'the look');
+    bot.aim(700, b().roof - 22);
+    await go(330, () => cat() !== null || g.mode !== 'play', 6000, 'the look');
+    if (!b().lit && b().phase === 'fight') throw new Error('a level beam towards the cat should find it');
     for (let k = 0; k < 20 && g.mode === 'play'; k += 1) await frame(); // hold the light: it shows what it found
     const revealed = { seen: b().seen, reveal: b().reveal };
     bot.aim(g.player.x, 500);
@@ -1139,7 +1163,7 @@ async function main() {
     await until(() => g.mode === 'complete', 8000, 'bonus level 7 to be cleared');
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
     if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
-    return `bonus level 7: the intro skipped; the face in plain view, then lost in the mist as the paws began; flattened and flung off the roof (a life lost, the cat back at 1); ${drops} drops dodged (${dodged} paws stepped away from); T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; a look came out monster; eight turns then tamed it with no look; stars ${stars.join(', ')}`;
+    return `bonus level 7: the intro skipped; the face in plain view, then lost in the mist as the paws began; flattened and flung off the roof (a life lost, the cat back at 1); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; a look came out monster; eight turns then tamed it with no look; stars ${stars.join(', ')}`;
   });
   await shot('15c-beast-cleared');
   await page.click('#btn-next');

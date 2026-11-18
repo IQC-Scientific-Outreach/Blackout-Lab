@@ -103,6 +103,10 @@ export function createAudio() {
       tone(60, 0, 0.35, 'sine', 0.1, 30);
     },
     windup: () => tone(180, 0, 0.3, 'triangle', 0.04, 360),
+    swoosh: () => {
+      tone(500, 0, 0.35, 'sawtooth', 0.035, 140);
+      tone(90, 0, 0.4, 'sine', 0.07, 50);
+    },
     fling: () => tone(700, 0, 0.6, 'triangle', 0.06, 1500),
     purr: () => {
       tone(30, 0, 0.9, 'sawtooth', 0.025, 28);

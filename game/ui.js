@@ -159,6 +159,10 @@ export function createUI(dom, handlers) {
         );
       })
       .join('');
+    if (passive && term.quick) {
+      setTerminalStatus('Press 1 or E, or click the gate. Then run: the cat comes for this terminal.', '');
+      return;
+    }
     if (passive) {
       setTerminalStatus(`Press ${range}, or click a gate. Your flashlight stays on here. E or Enter steps in to pick with the arrow keys.`, '');
       return;

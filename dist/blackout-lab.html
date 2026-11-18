@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-EEGoXk/9G/TNMfaMY/+b5oVgKgqEuxILSsJWWo2ORGk='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Gf6iI6o0etTBEk1vRzS9GFIpOoWuONIdxqNbI5bKgOM='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -1155,10 +1155,13 @@ const BEAST = {
   tag: 'Bonus level 7',
   beast: {
     head: { x: 480, y: 178 }, // where the head sits once risen, behind the skyline
-    face: { x: 405, y: 118, w: 150, h: 120 }, // what the flashlight has to rest on
+    face: { x: 405, y: 118, w: 150, h: 120 }, // its face, where the exposure ring shows
+    // What the flashlight has to rest on to see the cat: the head and the mist below it down to
+    // the roof, so a beam held level along the roof (no aiming up, no jumping) finds it.
+    sight: { x: 400, y: 110, w: 160, h: 215 },
     pawW: 54, // three players wide
     top: 64, // a raised paw's underside
-    wreck: 15, // seconds a smashed terminal takes to come back
+    wreck: 10, // seconds a smashed terminal takes to come back
   },
   torchOff: true,
   gates: ['ry'],
@@ -1179,8 +1182,8 @@ const BEAST = {
   concept:
     'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
   hints: [
-    'Press E at a terminal to turn the cat with RY(\u03c0/8), then run: the cat brings a paw down on that terminal. It comes back after 15 seconds.',
-    'A raised paw follows you, then stops for a moment before it drops straight down. Move as soon as it stops.',
+    'Press 1 (or E) at a terminal to turn the cat with RY(\u03c0/8), then run at once: the cat brings a paw straight down on that terminal. It comes back after 10 seconds.',
+    'A raised paw follows you, then stops for a moment before it drops straight down: move as soon as it stops. A paw that comes down at one end of the roof is about to sweep along it: jump over it.',
     'Eight turns make the cat certainly cute (0). Looking earlier is a gamble: after four turns it is 50/50, and a monster result starts the count again. The mist hides the cat until you look, so keep the flashlight off its face until you choose to.',
   ],
   takeaway:
@@ -2576,6 +2579,10 @@ function createAudio() {
       tone(60, 0, 0.35, 'sine', 0.1, 30);
     },
     windup: () => tone(180, 0, 0.3, 'triangle', 0.04, 360),
+    swoosh: () => {
+      tone(500, 0, 0.35, 'sawtooth', 0.035, 140);
+      tone(90, 0, 0.4, 'sine', 0.07, 50);
+    },
     fling: () => tone(700, 0, 0.6, 'triangle', 0.06, 1500),
     purr: () => {
       tone(30, 0, 0.9, 'sawtooth', 0.025, 28);
@@ -5068,6 +5075,29 @@ function createRenderer(canvas) {
       ctx.fill();
       if (paw.state === 'windup') label('!', paw.x, roof - 12, '#ff6b6b', 16, 'center', SIGN_FONT);
     }
+    // A swipe about to sweep along the roof: a red streak along its path, chevrons pointing the way.
+    for (const paw of b.paws) {
+      if (b.phase !== 'fight' || (paw.state !== 'swipeWind' && paw.state !== 'swipe')) continue;
+      const end = paw.dir > 0 ? s.edge - 30 : 30;
+      const from = paw.x + paw.dir * (cfg.pawW / 2);
+      if ((end - from) * paw.dir <= 0) continue;
+      const pulse = paw.state === 'swipeWind' ? 0.35 + 0.25 * Math.sin(G.t * 18) : 0.18;
+      ctx.fillStyle = `rgba(255,70,70,${pulse})`;
+      ctx.fillRect(Math.min(from, end), roof - 6, Math.abs(end - from), 6);
+      if (paw.state === 'swipeWind') {
+        ctx.strokeStyle = 'rgba(255,120,120,0.85)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let x = from + paw.dir * 30; (end - x) * paw.dir > 0; x += paw.dir * 60) {
+          const shift = ((G.t * 120) % 60) * paw.dir;
+          ctx.moveTo(x + shift - paw.dir * 7, roof - 22);
+          ctx.lineTo(x + shift, roof - 15);
+          ctx.lineTo(x + shift - paw.dir * 7, roof - 8);
+        }
+        ctx.stroke();
+        label('!', paw.x, roof - 64, '#ff6b6b', 16, 'center', SIGN_FONT);
+      }
+    }
 
     // The player, flattened and flung if a paw caught them.
     if (G.player.visible) {
@@ -5872,6 +5902,10 @@ function createUI(dom, handlers) {
         );
       })
       .join('');
+    if (passive && term.quick) {
+      setTerminalStatus('Press 1 or E, or click the gate. Then run: the cat comes for this terminal.', '');
+      return;
+    }
     if (passive) {
       setTerminalStatus(`Press ${range}, or click a gate. Your flashlight stays on here. E or Enter steps in to pick with the arrow keys.`, '');
       return;
@@ -6111,7 +6145,7 @@ return { grabDom, createUI };
 // ============================================================================
 const module_game_game = (() => {
 const { LEVELS, BONUS_LEVELS, BEAST, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } = module_game_levels;
-const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } = module_game_geometry;
+const { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, pointLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } = module_game_geometry;
 const { STORY } = module_game_story;
 const { createQuantum } = module_game_quantum;
 const { createInput } = module_game_input;
@@ -6696,7 +6730,9 @@ function startGame() {
   // Developer option: standing at a terminal shows its gates, and 1 to 9 apply them,
   // without entering the terminal (so the player can still move and look).
   function updatePassive(hit) {
-    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !hit.obj.quick && !(hit.obj.port && !carrying()) ? hit.obj : null;
+    // Quick terminals (bonus level 7) always show their gate this way, with its number key.
+    const near = hit && hit.type === 'terminal' ? hit.obj : null;
+    const term = near && (near.quick || (G.dev.passiveTerminal && !(near.port && !carrying()))) ? near : null;
     if (!hit && G.passive && !G.player.onGround) return; // a hop at the terminal keeps it open
     if (term === G.passive && (!term || G.passiveCarrying === carrying())) return;
     closePassive();
@@ -6906,6 +6942,10 @@ function startGame() {
 
   async function applyOp(i) {
     const term = G.terminal || G.passive;
+    if (term && term.quick) {
+      if (term.ops[i]) quickTerminal(term);
+      return;
+    }
     if (!term || G.busy || !term.ops[i]) return;
     const op = term.ops[i];
     if (op.needsCanister && !carrying()) {
@@ -7516,7 +7556,11 @@ function startGame() {
   // wind-up), drop straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
   // smashing that terminal, which comes back after a while. The flashlight resting on
   // its face measures it: cute ends the fight, monster starts the count again.
-  const PAW = { rise: 0.6, track: [1.3, 2.1], speed: 300, windup: 0.55, fall: 6500, down: 0.55, lift: 0.7, h: 46 };
+  // Times in seconds, speeds in pixels a second. The wind-up (the warning) is not hurried.
+  const PAW = { rise: 0.4, track: [1.3, 2.1], speed: 450, windup: 0.55, fall: 14600, down: 0.37, lift: 0.47, h: 46 };
+  // The low swipe, three attacks in ten: down onto the roof at one end, a moment's warning,
+  // then a sweep along the roof to the other end. Jump over it.
+  const SWIPE = { chance: 0.3, settle: 0.4, windup: 0.6, speed: 600, ends: [30, 850] };
   const PAW_REST_Y = 266;
   const ease = (k) => k * k * (3 - 2 * k);
 
@@ -7664,7 +7708,7 @@ function startGame() {
     // The flashlight on its face: a measurement, as on any superposed platform.
     const qi = G.qIndex.CAT;
     const torch = G.torch;
-    b.lit = torch.active && rectLit(handOf(G.player), torch.angle, cfg.face, torch.range);
+    b.lit = torch.active && sightLit(cfg.sight, torch);
     b.exposure = b.lit && G.q.definite[qi] === null ? b.exposure + dt : 0;
     if (b.exposure >= TORCH.dwell) {
       b.exposure = 0;
@@ -7678,11 +7722,34 @@ function startGame() {
     b.reveal = shown ? Math.min(1, b.reveal + dt * 4) : Math.max(0, b.reveal - dt * 1.2);
   }
 
+  // Any part of the cat's column in the beam: a grid of points over it, so the beam finds it
+  // held level from anywhere near the middle of the roof, even from right underneath.
+  function sightLit(r, torch) {
+    const hand = handOf(G.player);
+    for (let i = 0; i <= 4; i += 1) {
+      for (let j = 0; j <= 6; j += 1) {
+        if (pointLit(hand, torch.angle, r.x + (r.w * i) / 4, r.y + (r.h * j) / 6, torch.range)) return true;
+      }
+    }
+    return false;
+  }
+
   function updatePaws(dt) {
     const b = G.beast;
     const cfg = G.level.beast;
     const pl = G.player;
     const clampX = (x) => Math.max(36, Math.min(844, x));
+    // A terminal just used: a free paw (or one still on its way up) goes straight for it and
+    // smashes it at once, with no following and no wind-up.
+    if (b.grudge && !(b.grudge.wreck > 0) && !b.paws.some((p) => p.target === b.grudge)) {
+      const paw = b.paws.find((p) => p.state === 'rest') || b.paws.find((p) => p.state === 'rise' || p.state === 'track');
+      if (paw) {
+        paw.state = 'rise';
+        paw.t = 0;
+        paw.from = { x: paw.x, y: paw.y };
+        paw.target = b.grudge;
+      }
+    }
     if (b.paws.every((p) => p.state === 'rest')) {
       b.wait -= dt;
       if (b.wait <= 0) {
@@ -7692,8 +7759,12 @@ function startGame() {
         paw.state = 'rise';
         paw.t = 0;
         paw.from = { x: paw.x, y: paw.y };
-        paw.target = b.grudge && !(b.grudge.wreck > 0) ? b.grudge : null;
-        paw.track = paw.target ? 0.6 : PAW.track[0] + Math.random() * (PAW.track[1] - PAW.track[0]);
+        paw.target = null;
+        paw.track = PAW.track[0] + Math.random() * (PAW.track[1] - PAW.track[0]);
+        if (Math.random() < SWIPE.chance) {
+          paw.state = 'swipeIn';
+          paw.dir = paw.side < 0 ? 1 : -1; // from its own side across to the other
+        }
       }
     }
     for (const paw of b.paws) {
@@ -7703,7 +7774,12 @@ function startGame() {
         const k = ease(Math.min(1, paw.t / PAW.rise));
         paw.x = paw.from.x + (aim - paw.from.x) * k;
         paw.y = paw.from.y + (cfg.top - paw.from.y) * k;
-        if (paw.t >= PAW.rise) {
+        if (paw.t >= PAW.rise && paw.target) {
+          paw.state = 'slam'; // over the terminal: straight down
+          paw.t = 0;
+          paw.vy = 250;
+          audio.play('roar');
+        } else if (paw.t >= PAW.rise) {
           paw.state = 'track';
           paw.t = 0;
         }
@@ -7711,8 +7787,7 @@ function startGame() {
         const gap = aim - paw.x;
         paw.x += Math.sign(gap) * Math.min(Math.abs(gap), PAW.speed * dt);
         paw.y = cfg.top + Math.sin(paw.t * 6) * 3;
-        // Going for a terminal, it waits until it is right over it.
-        if (paw.t >= paw.track && (!paw.target || Math.abs(aim - paw.x) < 2)) {
+        if (paw.t >= paw.track) {
           paw.state = 'windup';
           paw.t = 0;
           audio.play('windup');
@@ -7733,6 +7808,31 @@ function startGame() {
           paw.state = 'down';
           paw.t = 0;
           pawLands(paw);
+        }
+      } else if (paw.state === 'swipeIn') {
+        const k = ease(Math.min(1, paw.t / SWIPE.settle));
+        const startX = paw.dir > 0 ? SWIPE.ends[0] : SWIPE.ends[1];
+        paw.x = paw.from.x + (startX - paw.from.x) * k;
+        paw.y = paw.from.y + (b.roof - paw.from.y) * k;
+        if (paw.t >= SWIPE.settle) {
+          paw.state = 'swipeWind';
+          paw.t = 0;
+          audio.play('windup');
+        }
+      } else if (paw.state === 'swipeWind') {
+        if (paw.t >= SWIPE.windup) {
+          paw.state = 'swipe';
+          paw.t = 0;
+          audio.play('swoosh');
+        }
+      } else if (paw.state === 'swipe') {
+        paw.x += paw.dir * SWIPE.speed * dt;
+        const r = { x: paw.x - cfg.pawW / 2, y: b.roof - PAW.h, w: cfg.pawW, h: PAW.h };
+        if (G.mode === 'play' && overlap(r, { x: pl.x, y: pl.y, w: PLAYER.w, h: PLAYER.h })) smush(paw);
+        if (paw.dir > 0 ? paw.x >= SWIPE.ends[1] : paw.x <= SWIPE.ends[0]) {
+          paw.state = 'lift';
+          paw.t = 0;
+          paw.from = { x: paw.x, y: paw.y };
         }
       } else if (paw.state === 'down') {
         if (paw.t >= PAW.down) {
@@ -7774,7 +7874,8 @@ function startGame() {
   // Flattened: squashed for a moment under the paw, then sent spinning off the screen.
   function smush(paw) {
     const pl = G.player;
-    G.flung = { t: 0, dir: pl.x + PLAYER.w / 2 < paw.x ? -1 : 1, vx: 0, vy: 0, spin: 0, launched: false };
+    const dir = paw.state === 'swipe' ? paw.dir : pl.x + PLAYER.w / 2 < paw.x ? -1 : 1; // a swipe bats you along
+    G.flung = { t: 0, dir, vx: 0, vy: 0, spin: 0, launched: false };
     audio.play('fling');
     G.stats.falls += 1;
     if (!G.infinite) G.lives -= 1;
@@ -7816,13 +7917,7 @@ function startGame() {
     audio.play('gate');
     const head = G.level.beast.head;
     G.fx.push({ type: 'spark', from: center(screenRect(term)), to: { x: head.x, y: head.y }, t: 0, dur: 0.45, color: COLOR_OF(op.gate) });
-    // It goes for the terminal: a paw on its way up turns to it; otherwise the next one does.
-    b.grudge = term;
-    const paw = b.paws.find((p) => p.state === 'rise' || p.state === 'track');
-    if (paw) {
-      paw.target = term;
-      paw.track = Math.min(paw.track, paw.t + 0.5);
-    }
+    b.grudge = term; // it goes for the terminal at once (updatePaws)
     if (res.state.definite[op.qi[0]] === 0) {
       // Eight turns with nobody looking: certainly cute, no gamble needed.
       audio.play('collapse0');
@@ -7875,7 +7970,7 @@ function startGame() {
     const p0 = 1 - G.q.p1[qi];
     const superposed = G.q.definite[qi] === null;
     if (b.exposure > 0) ui.setPrompt('Looking at the cat. Hold the light on its face.');
-    else if (hit && hit.type === 'terminal') ui.setPrompt(`Press <b>E</b> to turn the cat with RY(π/8) at <b>${hit.obj.id}</b>. Then run.`);
+    else if (hit && hit.type === 'terminal') ui.setPrompt(`Press <b>1</b> or <b>E</b> to turn the cat with RY(π/8) at <b>${hit.obj.id}</b>. Then run.`);
     else if (term && term.wreck > 0) ui.setPrompt(`<b>${term.id}</b> is smashed. It comes back in <b>${Math.ceil(term.wreck)}</b> s.`);
     else if (term && term.used) ui.setPrompt(`The cat is going for <b>${term.id}</b>: get away from it!`);
     else if (superposed) {

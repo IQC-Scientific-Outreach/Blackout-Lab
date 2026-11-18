@@ -508,7 +508,7 @@ export const BEAST = {
   torchOff: true,
   gates: ['ry'],
   qubits: [{ id: 'CAT', init: '1', role: 'beast' }],
-  spawn: { x: 150, y: 330 },
+  spawn: { x: 176, y: 330 }, // where the terrace starts too
   solids: [{ kind: 'ground', x: 0, y: 330, w: 880, h: 210 }],
   platforms: [],
   // quick: E applies the gate at once, with no terminal screen (there is no time).

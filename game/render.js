@@ -1997,26 +1997,23 @@ export function createRenderer(canvas) {
     }
   }
 
-  // The mutated cat: white, mangy and torn, with raw wounds, glowing green slit eyes and a
-  // wide snarl. Drawn in flat shapes, like the rest of the game.
+  // The mutated cat: white, mangy and ragged, with glowing green slit eyes and long fangs.
+  // The mouth is shut in a snarl (open 0) until it screeches (open 1). Flat shapes, like the
+  // rest of the game.
   const MONSTER = {
     fur: '#e8ebef',
     shade: '#c3c9d2',
     mange: '#aab1bc',
     line: '#59606b',
     ear: '#b8444f',
-    wound: '#6e1119',
-    woundRim: '#b5474f',
-    blood: '#8a1c25',
     mouth: '#3a0a12',
     gum: '#c2566a',
     tongue: '#d8718a',
     fang: '#f1e8d0',
     fangLine: '#a59775',
   };
-  const WOUNDS = [[-90, -28, 19, 10, 0.5], [72, -72, 14, 8, -0.4], [98, 38, 15, 10, 0.9], [-42, -98, 10, 6, 0.2], [-104, 52, 11, 7, -0.6]];
 
-  function paintMonsterHead(c, x, y, s, t) {
+  function paintMonsterHead(c, x, y, s, t, opened) {
     const M = MONSTER;
     glow(x, y, 235 * s, 'rgba(150,255,170,0.14)');
     // Ears: tall, ragged, raw inside.
@@ -2075,20 +2072,6 @@ export function createRenderer(canvas) {
       c.lineTo(x + (dx + 6) * s, y + (dy + 12) * s);
     }
     c.stroke();
-    // Raw wounds, one of them bleeding.
-    for (const [dx, dy, rx, ry, rot] of WOUNDS) {
-      c.fillStyle = M.woundRim;
-      c.beginPath();
-      c.ellipse(x + dx * s, y + dy * s, (rx + 3) * s, (ry + 3) * s, rot, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = M.wound;
-      c.beginPath();
-      c.ellipse(x + dx * s, y + dy * s, rx * s, ry * s, rot, 0, Math.PI * 2);
-      c.fill();
-    }
-    c.fillStyle = M.blood;
-    const drip = (t * 18) % 26;
-    c.fillRect(x + (-92 + 6) * s, y + (-22) * s, 3 * s, (10 + drip) * s);
     // Brows, eyes.
     for (const side of [-1, 1]) {
       const ex = x + side * 52 * s;
@@ -2127,24 +2110,36 @@ export function createRenderer(canvas) {
     c.lineTo(x, y + 28 * s);
     c.closePath();
     c.fill();
-    // The snarl: wide open, gums, tongue, long fangs.
+    // The mouth: a shut snarl, the long upper fangs down over the chin; it gapes as it screeches.
+    const open = Math.max(0, Math.min(1, opened || 0));
+    const low = y + (58 + 66 * open) * s; // how far down the jaw has dropped
     c.fillStyle = M.mouth;
     c.beginPath();
     c.moveTo(x - 74 * s, y + 34 * s);
     c.quadraticCurveTo(x, y + 52 * s, x + 74 * s, y + 34 * s);
-    c.quadraticCurveTo(x + 40 * s, y + 122 * s, x, y + 124 * s);
-    c.quadraticCurveTo(x - 40 * s, y + 122 * s, x - 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x + 40 * s, low, x, low + 2 * s);
+    c.quadraticCurveTo(x - 40 * s, low, x - 74 * s, y + 34 * s);
     c.fill();
-    c.strokeStyle = M.gum;
-    c.lineWidth = 6 * s;
+    if (open > 0.2) {
+      c.globalAlpha *= Math.min(1, (open - 0.2) * 3);
+      c.strokeStyle = M.gum;
+      c.lineWidth = 6 * s;
+      c.beginPath();
+      c.moveTo(x - 70 * s, y + 38 * s);
+      c.quadraticCurveTo(x, y + 56 * s, x + 70 * s, y + 38 * s);
+      c.stroke();
+      c.fillStyle = M.tongue;
+      c.beginPath();
+      c.ellipse(x, low - 18 * s, 30 * open * s, 13 * open * s, 0, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha /= Math.min(1, (open - 0.2) * 3);
+    }
+    c.strokeStyle = M.line; // the lips
+    c.lineWidth = 3 * s;
     c.beginPath();
-    c.moveTo(x - 70 * s, y + 38 * s);
-    c.quadraticCurveTo(x, y + 56 * s, x + 70 * s, y + 38 * s);
+    c.moveTo(x - 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x, y + 52 * s, x + 74 * s, y + 34 * s);
     c.stroke();
-    c.fillStyle = M.tongue;
-    c.beginPath();
-    c.ellipse(x, y + 102 * s, 32 * s, 15 * s, 0, 0, Math.PI * 2);
-    c.fill();
     const fang = (fx, fy, len, dir) => {
       c.beginPath();
       c.moveTo(fx - 7 * s, fy);
@@ -2158,11 +2153,12 @@ export function createRenderer(canvas) {
       c.stroke();
     };
     for (const side of [-1, 1]) {
-      fang(x + side * 44 * s, y + 44 * s, 42, 1); // the long upper canines
-      fang(x + side * 22 * s, y + 50 * s, 14, 1);
-      fang(x + side * 36 * s, y + 114 * s, 26, -1); // lower canines
+      fang(x + side * 44 * s, y + 44 * s, 36 + 8 * open, 1); // the long upper canines, always out
+      if (open > 0.2) {
+        fang(x + side * 22 * s, y + 50 * s, 14 * open, 1);
+        fang(x + side * 36 * s, low - 6 * s, 26 * open, -1); // lower canines
+      }
     }
-    fang(x, y + 52 * s, 10, 1);
     // Whiskers, some snapped.
     c.strokeStyle = '#f6f8fa';
     c.lineWidth = 1.8 * s;
@@ -2251,12 +2247,12 @@ export function createRenderer(canvas) {
 
   // The head, as both pictures at once while the cat is superposed: each as solid as its odds.
   // `shade` (0 to 1) hides it in the dark when the flashlight is not on it.
-  function paintBeastHead(c, x, y, s, p0, t, shade) {
+  function paintBeastHead(c, x, y, s, p0, t, shade, open) {
     c.save();
     const jitter = p0 > 0.001 && p0 < 0.999 ? Math.sin(t * 9) * 1.5 : 0;
     if (p0 < 0.999) {
       c.globalAlpha = 1 - p0;
-      paintMonsterHead(c, x + jitter, y, s, t);
+      paintMonsterHead(c, x + jitter, y, s, t, open);
     }
     if (p0 > 0.001) {
       c.globalAlpha = p0;
@@ -2284,14 +2280,6 @@ export function createRenderer(canvas) {
       c.fillStyle = look === 'monster' ? BEAST_FUR.monsterDark : BEAST_FUR.cuteDark;
       for (const dx of [-w / 4, 0, w / 4]) c.fillRect(x + dx - 1, bottom - 16, 2, 14); // toes
       if (look === 'monster') {
-        c.fillStyle = MONSTER.woundRim; // a raw patch on the back of the paw
-        c.beginPath();
-        c.ellipse(x + w / 6, bottom - h + 14, 9, 5, 0.4, 0, Math.PI * 2);
-        c.fill();
-        c.fillStyle = MONSTER.wound;
-        c.beginPath();
-        c.ellipse(x + w / 6, bottom - h + 14, 6, 3, 0.4, 0, Math.PI * 2);
-        c.fill();
         for (const dx of [-w / 3, -w / 9, w / 9, w / 3]) {
           c.fillStyle = '#2b2320'; // long dark hooked claws
           c.beginPath();
@@ -2379,7 +2367,7 @@ export function createRenderer(canvas) {
     if (b.rise > 0 && tame < 1) {
       ctx.save();
       ctx.globalAlpha = (1 - tame) * (1 - hidden);
-      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked || b.t < b.showUntil ? 0.04 : 0.3);
+      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked || b.t < b.showUntil ? 0.04 : 0.3, b.mouth);
       ctx.restore();
     }
     drawMist(G, cfg.head.x, headY, b.mist * (1 - 0.75 * b.reveal) * (1 - tame));
@@ -2396,16 +2384,17 @@ export function createRenderer(canvas) {
       for (let k = 0; k < 4; k += 1) ctx.fillRect(x + 8 + ((n * 17 + k * 23) % Math.max(1, w - 16)), roof - h + 10 + ((n * 29 + k * 31) % Math.max(1, h - 4)), 3, 4);
     });
 
-    // The building and the roof, lights on.
+    // The building and the roof; the lights come on with the generator.
+    const power = b.power;
     const rows = [roof + 48, roof + 170];
     ctx.fillStyle = '#1c2742';
     ctx.fillRect(0, roof + 14, s.edge, WORLD.h - roof - 14);
-    rows.forEach((y) => {
-      for (const x of FACADE_WINDOWS) {
+    rows.forEach((y, row) => {
+      FACADE_WINDOWS.forEach((x, i) => {
         ctx.fillStyle = '#0a1120';
         ctx.fillRect(x - 4, y - 4, WINDOW.w + 8, WINDOW.h + 8);
-        drawPane(x, y, true);
-      }
+        drawPane(x, y, windowLit(i, row, power));
+      });
     });
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.fillRect(s.edge - 8, roof + 14, 8, WORLD.h);
@@ -2418,7 +2407,7 @@ export function createRenderer(canvas) {
     ctx.fillRect(56, roof - 94, 112, 94);
     ctx.fillStyle = '#3a4b6c';
     ctx.fillRect(50, roof - 101, 124, 8);
-    drawDoorLeaf(doorRect(s.door), false, '#44597f');
+    drawDoorLeaf(doorRect(s.door), b.doorOpen, '#44597f');
     const { spans, bulbs } = festoon(s);
     for (const x of s.lamps) {
       ctx.fillStyle = '#2f4062';
@@ -2428,29 +2417,62 @@ export function createRenderer(canvas) {
     ctx.strokeStyle = '#0d1424';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
-    for (const [a, mid, z] of spans) {
-      ctx.moveTo(a.x, a.y);
-      ctx.quadraticCurveTo(mid.x, mid.y, z.x, z.y);
+    if (!b.lightsBroken) {
+      for (const [a, mid, z] of spans) {
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(mid.x, mid.y, z.x, z.y);
+      }
+    } else {
+      // Torn down by the swipe: snapped wires dangling from the lamp posts.
+      for (const [a, , z] of spans) {
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(a.x + 6, a.y + 30, a.x + 2 + Math.sin(G.t * 2 + a.x) * 2, a.y + 52);
+        ctx.moveTo(z.x, z.y);
+        ctx.quadraticCurveTo(z.x - 6, z.y + 24, z.x - 3 + Math.sin(G.t * 2.3 + z.x) * 2, z.y + 40);
+      }
     }
     ctx.stroke();
-    drawGenerator(G, s.generator, true);
+    drawGenerator(G, s.generator, power > 0);
     for (const x of s.lamps) {
+      ctx.fillStyle = '#16213a';
+      rr(ctx, x - 6, roof - 116, 12, 14, 3);
+      ctx.fill();
+      if (!litAt(x, power)) continue;
       glow(x, roof - 109, 46, 'rgba(255,214,140,0.5)');
       ctx.fillStyle = '#fff1c2';
       rr(ctx, x - 4, roof - 114, 8, 10, 2);
       ctx.fill();
     }
-    for (const bulb of bulbs) {
-      ctx.fillStyle = '#fff1c2';
-      ctx.beginPath();
-      ctx.arc(bulb.x, bulb.y, 2.4, 0, Math.PI * 2);
-      ctx.fill();
+    if (!b.lightsBroken) {
+      for (const bulb of bulbs) {
+        const on = litAt(bulb.x, power);
+        if (on) glow(bulb.x, bulb.y, 13, 'rgba(255,214,140,0.45)');
+        ctx.fillStyle = on ? '#fff1c2' : '#56627e';
+        ctx.beginPath();
+        ctx.arc(bulb.x, bulb.y, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = '#56627e'; // a few dead bulbs on the roof
+      for (const bx of [214, 318, 472, 566, 690]) ctx.fillRect(bx, roof - 3, 4, 3);
+    }
+    if (b.phase === 'intro' && b.step === 'walk') {
+      const bob = Math.sin(G.t * 5) * 2;
+      tag('GENERATOR', s.generator.x, roof - 108, C.ok);
+      if (b.near) tag('E', s.generator.x - 36, roof - 46 + bob, C.torch);
     }
 
     // Terminals: working, waiting to be smashed, or smashed and rebuilding.
     for (const term of G.room.terminals) {
       if (term.wreck > 0) drawWreck(G, term, cfg.wreck);
-      else {
+      else if (!b.termsOn) {
+        drawTerminal(G, term); // switched off: a dark screen
+        const r = screenRect(term);
+        ctx.fillStyle = '#0b1220';
+        rr(ctx, r.x, r.y, r.w, r.h, 2);
+        ctx.fill();
+        label('OFF', r.x + r.w / 2, r.y + r.h / 2 + 0.5, '#3d4a63', 8);
+      } else {
         drawTerminal(G, term);
         drawTerminalGlow(G, term);
         if (term.used && Math.sin(G.t * 12) > 0) {
@@ -2465,16 +2487,20 @@ export function createRenderer(canvas) {
 
     // The intro: the cat, the box and its radiation.
     const box = b.box;
-    if (box.state === 'shut' || box.state === 'burst') {
+    if (box.state === 'shut' || box.state === 'open' || box.state === 'burst') {
       ctx.save();
-      const jig = box.state === 'shut' ? Math.sin(G.t * 40) * 3 * box.shake : 0;
+      const jig = box.state !== 'burst' ? Math.sin(G.t * 40) * 3 * box.shake : 0;
       ctx.translate(box.x + jig, roof);
       if (box.glow > 0) glow(0, -20, 40 + 70 * box.glow, `rgba(125,255,106,${0.25 + 0.4 * box.glow})`);
-      if (box.state === 'shut') {
+      if (box.state !== 'burst') {
         ctx.fillStyle = '#7a5a3a';
         ctx.fillRect(-24, -34, 48, 34);
         ctx.fillStyle = '#8d6a45';
-        ctx.fillRect(-26, -39, 52, 6);
+        ctx.save(); // the lid, hinged at the back right
+        ctx.translate(26, -39);
+        ctx.rotate(-1.9 * (box.lid || 0));
+        ctx.fillRect(-52, 0, 52, 6);
+        ctx.restore();
         ctx.fillStyle = '#5d4329';
         ctx.fillRect(-24, -26, 48, 2);
         ctx.fillStyle = '#f2d14a'; // the radiation sign
@@ -2495,7 +2521,7 @@ export function createRenderer(canvas) {
         ctx.fill();
       } else {
         ctx.fillStyle = '#7a5a3a'; // splinters
-        const k = Math.min(1, b.t - 3.6);
+        const k = b.step === 'open' ? Math.max(0, Math.min(1, b.st - 0.6)) : 1;
         for (let i = 0; i < 8; i += 1) {
           const a = -Math.PI * (0.1 + 0.8 * (i / 7));
           ctx.save();
@@ -2514,9 +2540,35 @@ export function createRenderer(canvas) {
       ctx.globalAlpha = Math.max(0, alpha);
       drawCat(cat.x, roof - 1);
       ctx.restore();
+    } else if (cat.state === 'trot') {
+      drawCatRun(cat.x, roof, Math.sin(cat.k * 18), 0);
     } else if (cat.state === 'jump') {
-      const k = Math.min(1, cat.k);
-      drawCatRun(cat.x + 52 * k, roof - Math.sin(k * Math.PI) * 74 - 20 * k, 0.9, (k - 0.5) * 1.6);
+      const k = Math.min(1, cat.k); // a hop from where it sat into the box
+      drawCatRun(cat.from + (box.x - cat.from) * k, roof - Math.sin(k * Math.PI) * 60 - 14 * k, 0.9, (k - 0.5) * 1.6);
+    }
+    // The Professor, Bob and Alice, until the swipe sends them off the roof.
+    for (const a of b.actors) {
+      if (!a.out) continue;
+      const fy = a.flung ? a.flung.y : 0;
+      if (roof + fy < -80) continue;
+      ctx.save();
+      if (a.flung) {
+        ctx.translate(a.x, roof + fy - 17);
+        ctx.rotate(a.flung.spin);
+        ctx.translate(-a.x, -(roof + fy - 17));
+      }
+      drawPerson(a.x, roof + fy, PEOPLE[a.kind], { armsUp: a.alarm, step: a.moving ? Math.sin(a.anim * 12) : 0 });
+      ctx.restore();
+      if (a.flung) continue;
+      tag(a.name, a.x, roof - 46, C.ink);
+      if (a.alarm) {
+        const hop = Math.abs(Math.sin(G.t * 9 + a.x)) * 3;
+        ctx.fillStyle = 'rgba(7,11,20,0.85)';
+        ctx.beginPath();
+        ctx.arc(a.x, roof - 70 - hop, 10, 0, Math.PI * 2);
+        ctx.fill();
+        label('!', a.x, roof - 69 - hop, C.torch, 17, 'center', SIGN_FONT);
+      }
     }
 
     // Shadows of the raised paws: they turn red as a paw winds up to drop.
@@ -2601,7 +2653,8 @@ export function createRenderer(canvas) {
     }
     drawFx(G);
     if (b.line) {
-      const at = b.cat.state === 'sit' ? { x: b.cat.x + 6, y: roof - 30 } : { x: b.box.x, y: roof - 50 };
+      const who = b.actors.find((a) => a.id === b.line.follow);
+      const at = who ? { x: who.x, y: roof - 58 } : { x: b.cat.x + 6, y: roof - 30 };
       speech(at.x, at.y, b.line.text, b.line.who, 1, undefined, b.line.text === 'MEOW');
     }
     drawSpeech(G);

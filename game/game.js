@@ -1308,7 +1308,8 @@ export function startGame() {
         pl.vx = 0;
       }
     }
-    pl.x = Math.max(0, Math.min((G.level.outdoor ? CRANK_X + PLAYER.w / 2 : WORLD.w) - PLAYER.w, pl.x));
+    const fenced = G.level.outdoor || (G.beast && G.beast.phase === 'intro');
+    pl.x = Math.max(0, Math.min((fenced ? CRANK_X + PLAYER.w / 2 : WORLD.w) - PLAYER.w, pl.x));
 
     const feetBefore = pl.y + PLAYER.h;
     const wasOnGround = pl.onGround;
@@ -1431,27 +1432,62 @@ export function startGame() {
   const PAW_REST_Y = 266;
   const ease = (k) => k * k * (3 - 2 * k);
 
+  // The intro, like the terrace's ending at first: walk to the generator and crank it, and
+  // everyone comes out onto the roof. Then the cat hides in the box, Bob opens it, and the
+  // monster rises; one swipe sends Alice, Bob and the Professor off the building and brings
+  // down the string lights; it screeches at you and hides in the mist. Space, or E away from
+  // the generator, skips it while walking; E or Space skip it during the scene.
+  const INTRO = [
+    ['crank', 2.4],
+    ['power', 3.2],
+    ['arrive', 0], // until everyone has come out and stopped
+    ['talk1', 3.0],
+    ['talk2', 3.4],
+    ['meow', 1.9],
+    ['kitty', 2.8],
+    ['dont', 2.2],
+    ['open', 3.4],
+    ['reverse', 2.6],
+    ['swipe', 0], // until the paw is back
+    ['roar', 2.0],
+    ['mist', 1.2],
+  ];
+
   function startBeast(intro) {
     const cfg = G.level.beast;
+    const s = G.level.scene;
     const roof = G.level.solids[0].y;
     const paw = (side) => ({ side, x: cfg.head.x + side * 175, y: PAW_REST_Y, state: 'rest', t: 0, from: null, track: 0, target: null, vy: 0 });
+    const walker = (id, name, delay) => ({ id, kind: id, name, x: s.door.x, target: s.line[id], delay, out: false, moving: false, anim: 0, alarm: false, flung: null });
     for (const t of G.room.terminals) {
       t.wreck = 0;
       t.used = false;
     }
     G.beast = {
       phase: intro ? 'intro' : 'fight', // intro | fight | tamed
+      step: intro ? 'walk' : null, // the intro's step (INTRO), 'walk' before the crank
+      st: 0, // time in this step
       t: 0,
       roof,
+      power: intro ? 0 : 1,
+      crank: 0,
+      tick: 0,
+      near: false,
+      doorOpen: false,
+      lightsBroken: !intro, // the string lights, until the swipe
+      termsOn: !intro,
+      actors: intro ? [walker('professor', 'Professor', 0.5), walker('bob', 'Bob', 1.5), walker('alice', 'Alice', 2.5)] : [],
       rise: intro ? 0 : 1, // the head coming up behind the skyline
       flash: 0,
       tame: 0, // 0 to 1 as it shrinks back to a cat
-      cat: { x: cfg.head.x - 52, y: roof, state: intro ? 'sit' : 'in', k: 0 },
-      box: { x: cfg.head.x, state: intro ? 'shut' : 'gone', shake: 0, glow: 0 },
-      line: null, // a speech bubble: { text, x, y, until }
+      mouth: 0, // 0 shut, 1 wide open (screeching)
+      mouthOpen: false,
+      cat: { x: s.door.x, y: roof, state: intro ? 'inside' : 'gone', k: 0, delay: 3.5, from: 0 },
+      box: { x: cfg.head.x, state: intro ? 'shut' : 'gone', shake: 0, glow: 0, lid: 0 },
+      line: null, // a speech bubble: { text, who, follow, until }
       paws: [paw(-1), paw(1)],
       next: Math.random() < 0.5 ? 0 : 1,
-      wait: intro ? 0 : 1.4,
+      wait: 1.4,
       grudge: null, // the terminal it is going for
       exposure: 0,
       lit: false,
@@ -1464,9 +1500,31 @@ export function startGame() {
     };
     G.torch.active = false; // the title screen's backdrop may have left it shining
     if (intro) {
-      setMode('cutscene');
-      ui.setPrompt('The cat looks at you, then at the box. <b>E</b> or <b>Space</b> skips.');
+      G.torch.on = false;
+      ui.setPrompt('The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>Space</b> skips the scene.');
+    } else {
+      b0Fight();
     }
+  }
+
+  // Straight into the fight (a restart, or the intro skipped or over).
+  function b0Fight() {
+    const b = G.beast;
+    b.phase = 'fight';
+    b.step = null;
+    b.power = 1;
+    b.doorOpen = false;
+    b.lightsBroken = true;
+    b.termsOn = true;
+    b.actors = [];
+    b.cat.state = 'gone';
+    b.box.state = 'gone';
+    b.rise = 1;
+    b.line = null;
+    b.mouthOpen = false;
+    b.attacked = true; // the mist rolls in at once
+    for (const paw of b.paws) Object.assign(paw, { state: 'rest', t: 0, target: null, x: G.level.beast.head.x + paw.side * 175, y: PAW_REST_Y });
+    b.wait = 1.6;
   }
 
   function cue(name, at, fn) {
@@ -1478,63 +1536,247 @@ export function startGame() {
   }
 
   function endIntro() {
-    const b = G.beast;
-    b.phase = 'fight';
-    b.rise = 1;
-    b.flash = Math.max(b.flash, 0.3);
-    b.cat.state = 'in';
-    b.box.state = 'gone';
-    b.line = null;
-    b.wait = 1.4;
+    b0Fight();
+    G.player.vx = 0;
     setMode('play');
     say('The radiation made the cat a monster: state 1. Turn it back to cute (0) at T1 and T2, and dodge the paws.', 'quantum', true);
   }
 
-  // The intro and the ending, in cutscene mode.
+  function beastLine(who, text, follow, dur) {
+    const b = G.beast;
+    b.line = { who, text, follow, until: b.st + (dur || 99) };
+    panel.log(`${who}: ${text}`, 'info');
+    ui.announce(`${who}: ${text}`);
+    ui.setPrompt(`<b>${esc(who)}:</b> ${esc(text)} <span class="fine">(E or Space skips)</span>`);
+  }
+
+  function nextIntroStep() {
+    const b = G.beast;
+    const i = INTRO.findIndex(([name]) => name === b.step);
+    if (i === INTRO.length - 1) {
+      endIntro();
+      return;
+    }
+    b.step = INTRO[i + 1][0];
+    b.st = 0;
+    b.line = null;
+    enterIntroStep(b.step);
+  }
+
+  function enterIntroStep(step) {
+    const b = G.beast;
+    const pl = G.player;
+    const actor = (id) => b.actors.find((a) => a.id === id);
+    if (step === 'crank') {
+      setMode('cutscene');
+      b.near = false;
+      b.fromX = pl.x;
+      pl.vx = 0;
+      pl.facing = 1;
+      say('You lean into the crank of the generator.', 'info');
+      ui.setPrompt('You lean into the crank. <span class="fine">(E or Space skips)</span>');
+    } else if (step === 'power') {
+      audio.play('power');
+      say('The generator catches. The lights are coming back on.', 'good');
+    } else if (step === 'arrive') {
+      b.doorOpen = true;
+      b.termsOn = true;
+      pl.facing = -1;
+      audio.play('click');
+      say('The stair door opens. The Professor, Bob, Alice and the cat come out onto the roof.', 'info');
+    } else if (step === 'talk1') beastLine('Professor', 'You restored power! Hurray!', 'professor');
+    else if (step === 'talk2') beastLine('Alice', 'Can we now test the cat teleportation protocol?', 'alice');
+    else if (step === 'meow') {
+      audio.play('meow');
+      beastLine('Cat', 'MEOW', 'cat', 1.0);
+      b.cat.from = b.cat.x;
+    } else if (step === 'kitty') beastLine('Bob', "It's OK, here kitty kitty!", 'bob');
+    else if (step === 'dont') {
+      beastLine('Professor', "Don't open the box!", 'professor');
+      actor('professor').alarm = true;
+    } else if (step === 'open') {
+      b.line = null;
+      ui.setPrompt('Bob opens the box. <span class="fine">(E or Space skips)</span>');
+    } else if (step === 'reverse') beastLine('Professor', 'Quick, we need to reverse this evolution!', 'professor');
+    else if (step === 'swipe') {
+      const paw = b.paws[1];
+      Object.assign(paw, { state: 'swipeIn', t: 0, dir: -1, startX: 640, from: { x: paw.x, y: paw.y }, target: null });
+      ui.setPrompt('The cat swipes. <span class="fine">(E or Space skips)</span>');
+    } else if (step === 'roar') {
+      b.mouthOpen = true;
+      b.flash = 0.35;
+      G.shake = Math.max(G.shake, 0.8);
+      audio.play('screech');
+      audio.play('roar');
+      pl.facing = 1;
+      ui.setPrompt('It screeches at you. <span class="fine">(E or Space skips)</span>');
+    } else if (step === 'mist') {
+      b.mouthOpen = false;
+      b.attacked = true;
+      ui.setPrompt('It sinks back into a mist. <span class="fine">(E or Space skips)</span>');
+    }
+  }
+
+  function updateIntro(dt) {
+    const b = G.beast;
+    const pl = G.player;
+    const s = G.level.scene;
+    const step = b.step;
+    const dur = (INTRO.find(([name]) => name === step) || [null, 0])[1];
+    if (step !== 'walk' && step !== 'crank') b.crank += dt * 11; // the flywheel keeps spinning
+    for (const a of b.actors) {
+      if (!a.flung) continue;
+      a.flung.vy += 1500 * dt;
+      a.x += a.flung.vx * dt;
+      a.flung.y += a.flung.vy * dt;
+      a.flung.spin += -13 * dt;
+    }
+    if (step === 'crank') {
+      pl.x = b.fromX + (CRANK_X - PLAYER.w / 2 - b.fromX) * Math.min(1, b.st / 0.25);
+      b.crank += dt * (4 + b.st * 3.5);
+      b.tick -= dt;
+      if (b.tick <= 0) {
+        audio.play('crank');
+        b.tick = Math.max(0.12, 0.34 - b.st * 0.09);
+      }
+    } else if (step === 'power') {
+      b.power = Math.min(1, b.st / 2.2);
+    } else if (step === 'arrive') {
+      let settled = true;
+      for (const a of b.actors) {
+        if (b.st < a.delay) {
+          settled = false;
+          continue;
+        }
+        a.out = true;
+        const gap = a.target - a.x;
+        const move = Math.min(Math.abs(gap), 125 * dt);
+        a.moving = move > 0.001;
+        a.x += Math.sign(gap) * move;
+        if (a.moving) {
+          a.anim += dt;
+          settled = false;
+        }
+      }
+      const cat = b.cat;
+      if (b.st >= cat.delay && cat.state !== 'sit') {
+        cat.state = 'trot';
+        const move = Math.min(s.line.cat - cat.x, 190 * dt);
+        cat.x += move;
+        cat.k += dt;
+        if (move <= 0.001) cat.state = 'sit';
+      }
+      if (cat.state !== 'sit') settled = false;
+      b.rest = settled ? (b.rest || 0) + dt : 0;
+      if (b.rest > 0.6) nextIntroStep();
+      return;
+    } else if (step === 'meow') {
+      // A dash to the box and a hop inside.
+      const cat = b.cat;
+      if (b.st >= 0.6 && b.st < 1.3) {
+        cat.state = 'jump';
+        cat.k = (b.st - 0.6) / 0.7;
+        cue('hop', 0, () => audio.play('jump'));
+      } else if (b.st >= 1.3 && cat.state !== 'in') {
+        cat.state = 'in';
+        b.box.shake = 0.5;
+        audio.play('land');
+        say('The cat hides in the box. The box that is still full of radiation.', 'info');
+      }
+      b.box.shake = Math.max(0, b.box.shake - dt);
+    } else if (step === 'kitty') {
+      const bob = b.actors.find((a) => a.id === 'bob');
+      const goal = b.box.x - 32;
+      const move = Math.min(Math.abs(goal - bob.x), 110 * dt);
+      bob.moving = move > 0.001;
+      bob.x += Math.sign(goal - bob.x) * move;
+      if (bob.moving) bob.anim += dt;
+    } else if (step === 'open') {
+      const box = b.box;
+      if (b.st < 0.6) {
+        box.state = 'open';
+        box.lid = b.st / 0.6;
+        box.glow = box.lid;
+      } else if (box.state === 'open') {
+        box.state = 'burst';
+        b.flash = 1;
+        G.shake = 0.9;
+        audio.play('smash');
+        audio.play('roar');
+        for (const a of b.actors) a.alarm = true;
+        say('Bob opens the box, and the monster comes out.', 'bad');
+      }
+      if (b.st >= 0.6) b.rise = ease(Math.min(1, (b.st - 0.6) / 2.2));
+      if (b.st >= 1.2) box.state = 'gone';
+    } else if (step === 'swipe') {
+      const paw = b.paws[1];
+      if (paw.state === 'swipe' && !b.lightsBroken) {
+        b.lightsBroken = true;
+        audio.play('smash');
+        for (const x of [260, 420, 600]) addRing({ x, y: b.roof - 100 }, '#ffd36b', 30);
+      }
+      for (const a of b.actors) {
+        if (!a.flung && paw.state === 'swipe' && Math.abs(paw.x - a.x) < G.level.beast.pawW / 2 + 9) {
+          a.flung = { vx: -420 - Math.random() * 160, vy: -760 - Math.random() * 120, y: 0, spin: 0 };
+          audio.play('fling');
+        }
+      }
+      if (b.st > 0.2 && paw.state === 'rest') nextIntroStep();
+      return;
+    }
+    if (dur && b.st >= dur) nextIntroStep();
+  }
+
+  // The intro, and the ending once the cat is cute again.
   function updateBeastScene(dt) {
     const b = G.beast;
     if (input.take('pause')) {
       pause();
       return;
     }
-    const skip = input.take('use') || input.take('jump');
+    if (input.take('restart')) {
+      restartFloor();
+      return;
+    }
     b.t += dt;
+    b.st += dt;
     b.flash = Math.max(0, b.flash - dt * 1.4);
-    if (b.line && b.t > b.line.until) b.line = null;
+    b.mouth += ((b.mouthOpen || b.t < b.showUntil ? 1 : 0) - b.mouth) * Math.min(1, dt * 10);
+    if (b.line && b.st > b.line.until) b.line = null;
     if (b.phase === 'intro') {
-      const cat = b.cat;
-      const box = b.box;
-      cue('meow', 0.4, () => {
-        audio.play('meow');
-        b.line = { text: 'MEOW', who: 'Cat', until: 1.5 };
-        panel.log('Cat: MEOW', 'info');
-      });
-      if (b.t >= 1.5 && b.t < 2.1) {
-        cat.state = 'jump';
-        cat.k = (b.t - 1.5) / 0.6;
-        cue('hop', 1.5, () => audio.play('jump'));
-      } else if (b.t >= 2.1 && cat.state !== 'in') {
-        cat.state = 'in';
-        audio.play('land');
-        say('The cat jumped back into the box, and the box is still full of radiation.', 'info');
+      const pl = G.player;
+      if (b.step === 'walk') {
+        // Walking to the generator, as on the terrace. Space skips; so does E away from it.
+        const jumpKey = input.take('jump');
+        let left = dt;
+        while (left > 1e-6) {
+          const step = Math.min(PHYS.step, left);
+          physicsStep(step);
+          left -= step;
+        }
+        if (Math.abs(pl.vx) > 5) pl.facing = Math.sign(pl.vx);
+        b.near = pl.onGround && pl.x + PLAYER.w / 2 > CRANK_X - 30;
+        const used = input.take('use');
+        if (used && b.near) {
+          b.step = 'crank';
+          b.st = 0;
+          enterIntroStep('crank');
+        } else if (used || jumpKey) endIntro();
+        else ui.setPrompt(b.near ? 'Press <b>E</b> to crank the generator.' : 'The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>Space</b> skips the scene.');
+        G.torch.active = false;
+        return;
       }
-      if (b.t >= 2.1 && b.t < 3.6) {
-        box.shake = (b.t - 2.1) / 1.5;
-        box.glow = box.shake;
-        cue('hum', 2.4, () => audio.play('windup'));
-        cue('hum2', 3.0, () => audio.play('windup'));
+      if (input.take('use') || input.take('jump')) {
+        endIntro();
+        return;
       }
-      cue('burst', 3.6, () => {
-        box.state = 'burst';
-        b.flash = 1;
-        G.shake = 0.8;
-        audio.play('smash');
-        audio.play('roar');
-      });
-      if (b.t >= 3.6) b.rise = ease(Math.min(1, (b.t - 3.6) / 2.2));
-      if (b.t >= 4.2) box.state = 'gone';
-      if (b.t >= 6.2 || skip) endIntro();
-    } else if (b.phase === 'tamed') {
+      if (b.step === 'swipe') updatePaws(dt); // the one swipe, moved by the fight's own rules
+      updateIntro(dt);
+      G.torch.active = false;
+      return;
+    }
+    if (b.phase === 'tamed') {
+      const skip = input.take('use') || input.take('jump');
       b.tame = ease(Math.min(1, b.t / 2.2));
       b.seen = 'cute';
       b.reveal = Math.min(1, b.reveal + dt * 4);
@@ -1544,7 +1786,7 @@ export function startGame() {
         b.cat.state = 'sit';
         b.cat.x = G.level.beast.head.x;
         audio.play('purr');
-        b.line = { text: 'mew', who: 'Cat', until: 99 };
+        b.line = { text: 'mew', who: 'Cat', follow: 'cat', until: b.st + 99 };
         panel.log('Cat: mew', 'info');
       });
       if (b.t >= 4.4 || (skip && b.t > 2.4)) {
@@ -1582,6 +1824,7 @@ export function startGame() {
       b.exposure = 0;
       lookAtBeast(qi);
     }
+    b.mouth += ((b.t < b.showUntil ? 1 : 0) - b.mouth) * Math.min(1, dt * 10); // it screeches with its mouth open
     // The mist: in once the paws start, parted by the light on a cat that is certain.
     const certain = G.q.definite[qi];
     if (certain !== null && b.lit) b.seen = certain === 0 ? 'cute' : 'monster';
@@ -1609,7 +1852,7 @@ export function startGame() {
     const clampX = (x) => Math.max(36, Math.min(844, x));
     // A terminal just used: a free paw (or one still on its way up) goes straight for it and
     // smashes it at once, with no following and no wind-up.
-    if (b.grudge && !(b.grudge.wreck > 0) && !b.paws.some((p) => p.target === b.grudge)) {
+    if (b.phase === 'fight' && b.grudge && !(b.grudge.wreck > 0) && !b.paws.some((p) => p.target === b.grudge)) {
       const paw = b.paws.find((p) => p.state === 'rest') || b.paws.find((p) => p.state === 'rise' || p.state === 'track');
       if (paw) {
         paw.state = 'rise';
@@ -1618,7 +1861,7 @@ export function startGame() {
         paw.target = b.grudge;
       }
     }
-    if (b.paws.every((p) => p.state === 'rest')) {
+    if (b.phase === 'fight' && b.paws.every((p) => p.state === 'rest')) {
       b.wait -= dt;
       if (b.wait <= 0) {
         const paw = b.paws[b.next];
@@ -1679,7 +1922,7 @@ export function startGame() {
         }
       } else if (paw.state === 'swipeIn') {
         const k = ease(Math.min(1, paw.t / SWIPE.settle));
-        const startX = paw.dir > 0 ? SWIPE.ends[0] : SWIPE.ends[1];
+        const startX = paw.startX !== undefined ? paw.startX : paw.dir > 0 ? SWIPE.ends[0] : SWIPE.ends[1];
         paw.x = paw.from.x + (startX - paw.from.x) * k;
         paw.y = paw.from.y + (b.roof - paw.from.y) * k;
         if (paw.t >= SWIPE.settle) {
@@ -1716,6 +1959,7 @@ export function startGame() {
         if (paw.t >= PAW.lift) {
           paw.state = 'rest';
           paw.target = null;
+          paw.startX = undefined;
           b.wait = 0.45 + Math.random() * 0.6;
         }
       }
@@ -1801,6 +2045,7 @@ export function startGame() {
     const b = G.beast;
     b.phase = 'tamed';
     b.t = 0;
+    b.st = 0;
     b.cues = {};
     b.grudge = null;
     b.exposure = 0;
@@ -2325,7 +2570,7 @@ export function startGame() {
       updateTerrace(dt);
       return;
     }
-    if (G.level && G.level.beast && G.mode === 'cutscene') {
+    if (G.beast && (G.mode === 'cutscene' || (G.mode === 'play' && G.beast.phase === 'intro'))) {
       updateBeastScene(dt);
       return;
     }

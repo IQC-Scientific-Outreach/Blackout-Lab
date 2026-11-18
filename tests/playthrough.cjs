@@ -1038,7 +1038,7 @@ async function main() {
   });
   // Bonus level 7, the beast on the roof: straight on from bonus level 6.
   await page.click('#btn-next');
-  await page.waitForFunction(() => window.blackoutLab.state.level && window.blackoutLab.state.level.id === 'beast' && window.blackoutLab.state.mode === 'cutscene');
+  await page.waitForFunction(() => window.blackoutLab.state.level && window.blackoutLab.state.level.id === 'beast' && window.blackoutLab.state.beast && window.blackoutLab.state.beast.step === 'walk');
   await step('bonus level 7', async () => {
     const g = bot.G();
     const { key, until, frame } = bot;
@@ -1047,11 +1047,20 @@ async function main() {
     const cute = () => 1 - g.q.p1[0];
     const close = (a, z) => Math.abs(a - z) < 1e-9;
     if (b().phase !== 'intro' || cat() !== 1) throw new Error('it should open on the intro, with the cat a monster (1)');
-    await until(() => b().cat.state === 'in', 4000, 'the cat to jump into the box');
+    // As on the terrace: the power is off, the terminals too, and a box sits in the middle of the roof.
+    if (b().power !== 0 || b().termsOn || b().box.state !== 'shut' || g.room.terminals.some((t) => t.near)) throw new Error('the roof should start dark, with the terminals off and the box shut');
+    await bot.walkTo(700);
+    await until(() => b().near, 2000, 'the generator');
+    await bot.tap('KeyE');
+    await until(() => g.mode === 'cutscene' && b().step === 'crank', 1000, 'the crank');
+    await until(() => b().step === 'kitty', 25000, 'everyone out, the cat in the box, and Bob calling it');
+    if (b().power !== 1 || !b().termsOn || b().cat.state !== 'in' || b().actors.length !== 3 || b().line.text !== "It's OK, here kitty kitty!") {
+      throw new Error(`the scene so far: power ${b().power}, terminals ${b().termsOn}, cat ${b().cat.state}, line ${b().line && b().line.text}`);
+    }
     await bot.tap('KeyE'); // skip the rest
     await until(() => g.mode === 'play' && b().phase === 'fight' && b().rise === 1, 2000, 'the fight to start');
-    if (b().mist > 0 || b().reveal !== 1) throw new Error('the face should be in plain view until the attacks begin');
-    await until(() => b().mist === 1 && b().reveal < 0.05, 8000, 'the mist to roll in once the paws start');
+    if (b().actors.length || !b().lightsBroken || b().box.state !== 'gone') throw new Error('skipping should leave the roof as the scene ends: the others gone, the string lights down');
+    await until(() => b().mist === 1 && b().reveal < 0.05, 8000, 'the mist to roll in');
     // Walk to x while keeping clear of any paw that has stopped to drop; until done() holds with no paw about to drop.
     const threat = () => b().paws.find((p) => (p.state === 'windup' || p.state === 'slam') && Math.abs(p.x - (g.player.x + 9)) < 64);
     let dodged = 0;
@@ -1187,7 +1196,7 @@ async function main() {
     await until(() => g.mode === 'complete', 8000, 'bonus level 7 to be cleared');
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
     if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
-    return `bonus level 7: the intro skipped; the face in plain view, then lost in the mist as the paws began; flattened and flung off the roof (a life lost, back at the stair door); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; flattened again with the turn kept; a look came out monster (a screech, both paws down, the monster in view for 2 s); eight turns then tamed it with no look; stars ${stars.join(', ')}`;
+    return `bonus level 7: the generator cranked, everyone out, the cat in the box, Bob calling it, then the rest skipped; the mist rolled in; flattened and flung off the roof (a life lost, back at the stair door); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; flattened again with the turn kept; a look came out monster (a screech, both paws down, the monster in view for 2 s); eight turns then tamed it with no look; stars ${stars.join(', ')}`;
   });
   await shot('15c-beast-cleared');
   await page.click('#btn-next');

@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-Gf6iI6o0etTBEk1vRzS9GFIpOoWuONIdxqNbI5bKgOM='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-YEzi8TzXokBYrPDlojPRzTwFlUYScotqnj/AER94DTI='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -2514,6 +2514,36 @@ function createAudio() {
     }
   }
 
+  // A burst of filtered white noise: drums, and the beast's screech.
+  let noiseBuffer = null;
+  function noise(start, length, gain, filter, freq) {
+    const audio = ensure();
+    if (!audio || muted) return;
+    try {
+      if (!noiseBuffer) {
+        noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+      }
+      const t0 = audio.currentTime + start;
+      const src = audio.createBufferSource();
+      src.buffer = noiseBuffer;
+      const shape = audio.createBiquadFilter();
+      shape.type = filter;
+      shape.frequency.value = freq;
+      const amp = audio.createGain();
+      amp.gain.setValueAtTime(gain, t0);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t0 + length);
+      src.connect(shape);
+      shape.connect(amp);
+      amp.connect(audio.destination);
+      src.start(t0);
+      src.stop(t0 + length + 0.02);
+    } catch (err) {
+      // ignore
+    }
+  }
+
   const sounds = {
     jump: () => tone(300, 0, 0.14, 'triangle', 0.05, 520),
     land: () => tone(120, 0, 0.07, 'sine', 0.05, 70),
@@ -2579,6 +2609,19 @@ function createAudio() {
       tone(60, 0, 0.35, 'sine', 0.1, 30);
     },
     windup: () => tone(180, 0, 0.3, 'triangle', 0.04, 360),
+    // The beast caught by the light as a monster: a ragged scream.
+    screech: () => {
+      tone(1400, 0, 0.9, 'sawtooth', 0.06, 2600);
+      tone(1900, 0.05, 0.8, 'square', 0.03, 1100);
+      tone(700, 0, 1.0, 'sawtooth', 0.04, 380);
+      noise(0, 0.9, 0.12, 'bandpass', 2400);
+    },
+    // ...and as a cat again: a proper MEOW.
+    bigMeow: () => {
+      tone(520, 0, 0.22, 'triangle', 0.1, 900);
+      tone(900, 0.2, 0.5, 'triangle', 0.1, 480);
+      tone(1040, 0.2, 0.5, 'sine', 0.03, 960);
+    },
     swoosh: () => {
       tone(500, 0, 0.35, 'sawtooth', 0.035, 140);
       tone(90, 0, 0.4, 'sine', 0.07, 50);
@@ -2595,9 +2638,62 @@ function createAudio() {
     },
   };
 
+  // Boss music (bonus level 7): an original chiptune loop, written here note by note, so
+  // there is no file and nothing to license. A minor, i VI iv V (Am F Dm E), 150 beats a
+  // minute: driving octave bass, a sixteenth-note arpeggio, kick, snare and hats.
+  const BOSS = {
+    step: 0.1, // a sixteenth note
+    chords: [
+      { root: 110, arp: [440, 523.25, 659.25] }, // Am
+      { root: 87.31, arp: [349.23, 440, 523.25] }, // F
+      { root: 73.42, arp: [293.66, 349.23, 440] }, // Dm
+      { root: 82.41, arp: [329.63, 415.3, 493.88] }, // E
+    ],
+    arp: [0, 1, 2, 1, 2, 0, 1, 2, 0, 1, 2, 1, 2, 1, 0, 2],
+    // A short lead line over the second time round, in sixteenths (0: rest).
+    lead: [880, 0, 0, 0, 783.99, 0, 659.25, 0, 698.46, 0, 0, 0, 659.25, 0, 587.33, 0,
+      587.33, 0, 0, 0, 523.25, 0, 587.33, 0, 659.25, 0, 0, 0, 830.61, 0, 0, 0],
+  };
+  let music = null; // { timer, next, n }
+  function scheduleMusic() {
+    const audio = ensure();
+    if (!audio || !music) return;
+    while (music.next < audio.currentTime + 0.25) {
+      const n = music.n;
+      const at = Math.max(0, music.next - audio.currentTime);
+      const bar = Math.floor(n / 16) % 4;
+      const inBar = n % 16;
+      const chord = BOSS.chords[bar];
+      if (inBar % 2 === 0) tone(chord.root * (inBar % 4 === 0 ? 1 : 2), at, 0.09, 'square', 0.03);
+      tone(chord.arp[BOSS.arp[inBar]] * (inBar >= 8 ? 2 : 1), at, 0.07, 'square', 0.012);
+      if (Math.floor(n / 64) % 2 === 1) {
+        const note = BOSS.lead[(n % 64) >> 1];
+        if (note && n % 2 === 0) tone(note, at, 0.18, 'triangle', 0.035);
+      }
+      if (inBar % 8 === 0) tone(150, at, 0.12, 'sine', 0.09, 45); // kick
+      if (inBar % 8 === 4) noise(at, 0.12, 0.08, 'highpass', 1500); // snare
+      if (inBar % 2 === 1) noise(at, 0.03, 0.025, 'highpass', 7000); // hat
+      music.n += 1;
+      music.next += BOSS.step;
+    }
+  }
+
   return {
     play(name) {
       if (sounds[name]) sounds[name]();
+    },
+    // 'boss' starts the loop (if it is not already playing); null stops it.
+    music(name) {
+      if (name && !music) {
+        const audio = ensure();
+        if (!audio) return;
+        music = { next: audio.currentTime + 0.1, n: 0, timer: null };
+        music.timer = setInterval(scheduleMusic, 40);
+        scheduleMusic();
+      } else if (!name && music) {
+        clearInterval(music.timer);
+        music = null;
+      }
     },
     setMuted(value) {
       muted = value;
@@ -4615,7 +4711,7 @@ function createRenderer(canvas) {
 
   // -- bonus level 7: the beast on the roof ------------------------------------------
 
-  const BEAST_FUR = { monster: '#4b3f63', monsterDark: '#33294a', cute: '#f0a04b', cuteDark: '#b9631c' };
+  const BEAST_FUR = { monster: '#e8ebef', monsterDark: '#9aa1ad', cute: '#f0a04b', cuteDark: '#b9631c' };
 
   // The outline of the head and ears, for the shade that hides it in the dark.
   function headPath(c, x, y, s) {
@@ -4629,105 +4725,180 @@ function createRenderer(canvas) {
     }
   }
 
+  // The mutated cat: white, mangy and torn, with raw wounds, glowing green slit eyes and a
+  // wide snarl. Drawn in flat shapes, like the rest of the game.
+  const MONSTER = {
+    fur: '#e8ebef',
+    shade: '#c3c9d2',
+    mange: '#aab1bc',
+    line: '#59606b',
+    ear: '#b8444f',
+    wound: '#6e1119',
+    woundRim: '#b5474f',
+    blood: '#8a1c25',
+    mouth: '#3a0a12',
+    gum: '#c2566a',
+    tongue: '#d8718a',
+    fang: '#f1e8d0',
+    fangLine: '#a59775',
+  };
+  const WOUNDS = [[-90, -28, 19, 10, 0.5], [72, -72, 14, 8, -0.4], [98, 38, 15, 10, 0.9], [-42, -98, 10, 6, 0.2], [-104, 52, 11, 7, -0.6]];
+
   function paintMonsterHead(c, x, y, s, t) {
-    glow(x, y, 230 * s, 'rgba(120,255,110,0.16)');
-    c.fillStyle = BEAST_FUR.monster;
-    headPath(c, x, y, s);
-    c.fill();
-    c.fillStyle = '#7dff6a'; // the glow inside torn ears
+    const M = MONSTER;
+    glow(x, y, 235 * s, 'rgba(150,255,170,0.14)');
+    // Ears: tall, ragged, raw inside.
     for (const side of [-1, 1]) {
+      c.fillStyle = M.fur;
       c.beginPath();
-      c.moveTo(x + side * 64 * s, y - 92 * s);
-      c.lineTo(x + side * 108 * s, y - 146 * s);
-      c.lineTo(x + side * 112 * s, y - 72 * s);
+      c.moveTo(x + side * 46 * s, y - 88 * s);
+      c.lineTo(x + side * 112 * s, y - 178 * s);
+      c.lineTo(x + side * 120 * s, y - 150 * s); // a tear in the edge
+      c.lineTo(x + side * 128 * s, y - 140 * s);
+      c.lineTo(x + side * 134 * s, y - 44 * s);
       c.closePath();
-      c.globalAlpha *= 0.35;
       c.fill();
-      c.globalAlpha /= 0.35;
-    }
-    c.fillStyle = BEAST_FUR.monsterDark; // a notch bitten out of one ear, blotches
-    c.beginPath();
-    c.arc(x - 104 * s, y - 128 * s, 9 * s, 0, Math.PI * 2);
-    c.arc(x + 70 * s, y + 40 * s, 22 * s, 0, Math.PI * 2);
-    c.arc(x - 80 * s, y - 20 * s, 16 * s, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = '#9bff7a'; // veins
-    c.lineWidth = 2.2 * s;
-    c.globalAlpha *= 0.55;
-    c.beginPath();
-    c.moveTo(x + 30 * s, y - 104 * s);
-    c.quadraticCurveTo(x + 10 * s, y - 80 * s, x + 26 * s, y - 62 * s);
-    c.moveTo(x - 120 * s, y + 10 * s);
-    c.quadraticCurveTo(x - 96 * s, y + 20 * s, x - 100 * s, y + 46 * s);
-    c.stroke();
-    c.globalAlpha /= 0.55;
-    c.strokeStyle = '#1a1226'; // stitches across the brow
-    c.lineWidth = 3 * s;
-    c.beginPath();
-    c.moveTo(x - 70 * s, y - 70 * s);
-    c.lineTo(x + 10 * s, y - 88 * s);
-    for (let k = 0; k < 5; k += 1) {
-      const sx = x + (-62 + k * 17) * s;
-      const sy = y + (-71 - k * 3.6) * s;
-      c.moveTo(sx, sy - 7 * s);
-      c.lineTo(sx + 2 * s, sy + 7 * s);
-    }
-    c.stroke();
-    const blink = Math.sin(t * 0.9) > 0.97 ? 0.15 : 1;
-    for (const side of [-1, 1]) {
-      const ex = x + side * 52 * s;
-      const ey = y - 14 * s;
-      glow(ex, ey, 46 * s, 'rgba(190,255,90,0.5)');
-      c.fillStyle = '#c8ff5a'; // slanted, furious eyes
+      c.fillStyle = M.ear;
       c.beginPath();
-      c.ellipse(ex, ey, 30 * s, 17 * s * blink, side * 0.32, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = '#0b0710';
-      c.beginPath();
-      c.ellipse(ex, ey, 4 * s, 15 * s * blink, side * 0.32, 0, Math.PI * 2);
-      c.fill();
-      c.strokeStyle = '#1a1226'; // brows
-      c.lineWidth = 7 * s;
-      c.beginPath();
-      c.moveTo(ex - side * 34 * s, ey - 34 * s);
-      c.lineTo(ex + side * 20 * s, ey - 16 * s);
-      c.stroke();
-    }
-    glow(x, y - 54 * s, 20 * s, 'rgba(255,90,90,0.6)'); // a third eye, small and red
-    c.fillStyle = '#ff5a5a';
-    c.beginPath();
-    c.ellipse(x, y - 54 * s, 8 * s, 6 * s, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#16091c'; // the grin
-    c.beginPath();
-    c.moveTo(x - 78 * s, y + 30 * s);
-    c.quadraticCurveTo(x, y + 112 * s, x + 78 * s, y + 30 * s);
-    c.quadraticCurveTo(x, y + 62 * s, x - 78 * s, y + 30 * s);
-    c.fill();
-    c.fillStyle = '#f2f0e6'; // fangs
-    for (let k = 0; k < 7; k += 1) {
-      const fx = x + (-60 + k * 20) * s;
-      const top = y + (34 + 16 * (1 - Math.abs(k - 3) / 3) * 1.4) * s;
-      const long = k === 1 || k === 5 ? 26 : 13;
-      c.beginPath();
-      c.moveTo(fx - 6 * s, top);
-      c.lineTo(fx + 6 * s, top);
-      c.lineTo(fx, top + long * s);
+      c.moveTo(x + side * 62 * s, y - 90 * s);
+      c.lineTo(x + side * 108 * s, y - 158 * s);
+      c.lineTo(x + side * 120 * s, y - 64 * s);
       c.closePath();
       c.fill();
     }
-    c.fillStyle = '#7dff6a'; // radioactive drool
+    // Mangy tufts along the cheeks, then the head.
+    c.fillStyle = M.fur;
+    for (const side of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(x + side * 112 * s, y - 50 * s);
+      for (let k = 0; k <= 6; k += 1) {
+        const ty = y + (-40 + k * 22) * s;
+        const tx = x + side * (138 - k * 9) * s;
+        c.lineTo(tx + side * 26 * s, ty + 6 * s);
+        c.lineTo(tx, ty + 14 * s);
+      }
+      c.lineTo(x + side * 40 * s, y + 104 * s);
+      c.closePath();
+      c.fill();
+    }
     c.beginPath();
-    c.ellipse(x + 34 * s, y + 92 * s + ((t * 30) % 30) * s, 4 * s, 6 * s, 0, 0, Math.PI * 2);
+    c.ellipse(x, y, 134 * s, 108 * s, 0, 0, Math.PI * 2);
     c.fill();
-    c.strokeStyle = '#a99cc4'; // whiskers, bent
+    c.globalAlpha *= 0.45;
+    c.fillStyle = M.shade; // shadow under the brow and down the jaw
+    c.beginPath();
+    c.ellipse(x, y + 46 * s, 112 * s, 60 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = M.mange;
+    c.beginPath();
+    c.ellipse(x + 40 * s, y - 84 * s, 30 * s, 14 * s, 0.3, 0, Math.PI * 2);
+    c.ellipse(x - 70 * s, y + 20 * s, 22 * s, 30 * s, -0.4, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha /= 0.45;
+    c.strokeStyle = M.shade; // fur strokes
     c.lineWidth = 2 * s;
     c.beginPath();
+    for (const [dx, dy] of [[-20, -70], [8, -60], [36, -46], [-60, -54], [-100, -6], [104, -12], [60, 6]]) {
+      c.moveTo(x + dx * s, y + dy * s);
+      c.lineTo(x + (dx + 6) * s, y + (dy + 12) * s);
+    }
+    c.stroke();
+    // Raw wounds, one of them bleeding.
+    for (const [dx, dy, rx, ry, rot] of WOUNDS) {
+      c.fillStyle = M.woundRim;
+      c.beginPath();
+      c.ellipse(x + dx * s, y + dy * s, (rx + 3) * s, (ry + 3) * s, rot, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = M.wound;
+      c.beginPath();
+      c.ellipse(x + dx * s, y + dy * s, rx * s, ry * s, rot, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = M.blood;
+    const drip = (t * 18) % 26;
+    c.fillRect(x + (-92 + 6) * s, y + (-22) * s, 3 * s, (10 + drip) * s);
+    // Brows, eyes.
     for (const side of [-1, 1]) {
-      for (const dy of [-6, 6, 18]) {
-        c.moveTo(x + side * 84 * s, y + (18 + dy) * s);
-        c.lineTo(x + side * 130 * s, y + (8 + dy * 1.6) * s);
-        c.lineTo(x + side * 168 * s, y + (24 + dy * 2.2) * s);
+      const ex = x + side * 52 * s;
+      const ey = y - 16 * s;
+      c.strokeStyle = M.line;
+      c.lineWidth = 7 * s;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(ex - side * 36 * s, ey - 36 * s);
+      c.lineTo(ex + side * 22 * s, ey - 14 * s);
+      c.stroke();
+      glow(ex, ey, 50 * s, 'rgba(120,255,90,0.55)');
+      const iris = c.createRadialGradient(ex, ey, 2 * s, ex, ey, 30 * s);
+      iris.addColorStop(0, '#f2ffc4');
+      iris.addColorStop(0.45, '#8dff52');
+      iris.addColorStop(1, '#2fae2a');
+      c.fillStyle = iris;
+      c.beginPath();
+      c.ellipse(ex, ey, 30 * s, 17 * s, side * 0.3, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#05080a';
+      c.beginPath();
+      c.ellipse(ex, ey, 3.5 * s, 15 * s, side * 0.3, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = M.line;
+      c.lineWidth = 3 * s;
+      c.beginPath();
+      c.ellipse(ex, ey, 30 * s, 17 * s, side * 0.3, 0, Math.PI * 2);
+      c.stroke();
+    }
+    // Nose.
+    c.fillStyle = '#b65a66';
+    c.beginPath();
+    c.moveTo(x - 14 * s, y + 14 * s);
+    c.lineTo(x + 14 * s, y + 14 * s);
+    c.lineTo(x, y + 28 * s);
+    c.closePath();
+    c.fill();
+    // The snarl: wide open, gums, tongue, long fangs.
+    c.fillStyle = M.mouth;
+    c.beginPath();
+    c.moveTo(x - 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x, y + 52 * s, x + 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x + 40 * s, y + 122 * s, x, y + 124 * s);
+    c.quadraticCurveTo(x - 40 * s, y + 122 * s, x - 74 * s, y + 34 * s);
+    c.fill();
+    c.strokeStyle = M.gum;
+    c.lineWidth = 6 * s;
+    c.beginPath();
+    c.moveTo(x - 70 * s, y + 38 * s);
+    c.quadraticCurveTo(x, y + 56 * s, x + 70 * s, y + 38 * s);
+    c.stroke();
+    c.fillStyle = M.tongue;
+    c.beginPath();
+    c.ellipse(x, y + 102 * s, 32 * s, 15 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    const fang = (fx, fy, len, dir) => {
+      c.beginPath();
+      c.moveTo(fx - 7 * s, fy);
+      c.quadraticCurveTo(fx - 2 * s, fy + dir * len * 0.7 * s, fx + 1 * s, fy + dir * len * s);
+      c.lineTo(fx + 7 * s, fy);
+      c.closePath();
+      c.fillStyle = M.fang;
+      c.fill();
+      c.strokeStyle = M.fangLine;
+      c.lineWidth = 1.2 * s;
+      c.stroke();
+    };
+    for (const side of [-1, 1]) {
+      fang(x + side * 44 * s, y + 44 * s, 42, 1); // the long upper canines
+      fang(x + side * 22 * s, y + 50 * s, 14, 1);
+      fang(x + side * 36 * s, y + 114 * s, 26, -1); // lower canines
+    }
+    fang(x, y + 52 * s, 10, 1);
+    // Whiskers, some snapped.
+    c.strokeStyle = '#f6f8fa';
+    c.lineWidth = 1.8 * s;
+    c.beginPath();
+    for (const side of [-1, 1]) {
+      for (const [dy, len] of [[-4, 150], [8, 120], [20, 165]]) {
+        c.moveTo(x + side * 76 * s, y + (24 + dy) * s);
+        c.lineTo(x + side * (76 + len) * s, y + (16 + dy * 2.2) * s);
       }
     }
     c.stroke();
@@ -4841,13 +5012,25 @@ function createRenderer(canvas) {
       c.fillStyle = look === 'monster' ? BEAST_FUR.monsterDark : BEAST_FUR.cuteDark;
       for (const dx of [-w / 4, 0, w / 4]) c.fillRect(x + dx - 1, bottom - 16, 2, 14); // toes
       if (look === 'monster') {
-        c.fillStyle = '#e9ffe0';
+        c.fillStyle = MONSTER.woundRim; // a raw patch on the back of the paw
+        c.beginPath();
+        c.ellipse(x + w / 6, bottom - h + 14, 9, 5, 0.4, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = MONSTER.wound;
+        c.beginPath();
+        c.ellipse(x + w / 6, bottom - h + 14, 6, 3, 0.4, 0, Math.PI * 2);
+        c.fill();
         for (const dx of [-w / 3, -w / 9, w / 9, w / 3]) {
+          c.fillStyle = '#2b2320'; // long dark hooked claws
           c.beginPath();
-          c.moveTo(x + dx - 4, bottom - 4);
-          c.lineTo(x + dx + 4, bottom - 4);
-          c.lineTo(x + dx + 1, bottom + 9);
+          c.moveTo(x + dx - 5, bottom - 6);
+          c.quadraticCurveTo(x + dx + 6, bottom - 2, x + dx + 5, bottom + 10);
+          c.quadraticCurveTo(x + dx + 2, bottom + 1, x + dx + 5, bottom - 6);
           c.closePath();
+          c.fill();
+          c.fillStyle = '#d9cdb4'; // pale tips
+          c.beginPath();
+          c.arc(x + dx + 5, bottom + 8, 1.5, 0, Math.PI * 2);
           c.fill();
         }
       } else {
@@ -4924,7 +5107,7 @@ function createRenderer(canvas) {
     if (b.rise > 0 && tame < 1) {
       ctx.save();
       ctx.globalAlpha = (1 - tame) * (1 - hidden);
-      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked ? 0.04 : 0.3);
+      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked || b.t < b.showUntil ? 0.04 : 0.3);
       ctx.restore();
     }
     drawMist(G, cfg.head.x, headY, b.mist * (1 - 0.75 * b.reveal) * (1 - tame));
@@ -6643,16 +6826,14 @@ function startGame() {
     if (backdrop) return true;
     ui.showScreen(null);
     setMode('play');
-    if (carry === 'fall' && level.beast) {
-      say(`Flattened. The fight starts over, and the cat is a monster (1) again. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
-    } else if (carry === 'fall') {
+    if (carry === 'fall') {
       say(`You fell. The floor reset to its starting state. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
     } else if (carry === 'restart') {
       say('Floor restarted: platforms and circuit are back to their starting states.', 'info', true);
     } else {
       say(`${isBonus(index) ? level.tag : `Floor ${index + 1}`}: ${level.name}. ${level.goal}`, 'info');
     }
-    if (level.beast) startBeast(!carry); // the rise of the beast is shown once, not after every flattening
+    if (level.beast) startBeast(!carry); // a restart (R) skips the intro; a flattening does not reload at all (respawnBeast)
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
     return true;
@@ -7531,7 +7712,31 @@ function startGame() {
     setMode('falling');
   }
 
+  // Flattened or fallen on bonus level 7, with lives left: back at the stair door, and the
+  // cat exactly as it was (every gate applied so far still applied).
+  function respawnBeast() {
+    const b = G.beast;
+    const level = G.level;
+    G.flung = null;
+    placePlayer(level.spawn.x, level.spawn.y);
+    G.player.facing = 1;
+    for (const paw of b.paws) {
+      Object.assign(paw, { state: 'rest', t: 0, target: null, x: level.beast.head.x + paw.side * 175, y: PAW_REST_Y });
+    }
+    b.wait = 1.6;
+    b.exposure = 0;
+    b.showUntil = 0;
+    setMode('play');
+    const qi = G.qIndex.CAT;
+    const now = G.q.definite[qi] === 1 ? 'still a monster (1)' : `still ${Math.round((1 - G.q.p1[qi]) * 100)}% cute`;
+    say(`Knocked off the roof, but the cat is just as you left it: ${now}. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
+  }
+
   function afterFall() {
+    if (G.beast && (G.lives > 0 || G.infinite)) {
+      respawnBeast();
+      return;
+    }
     if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
       // A bonus level is not part of the climb: out of lives, it simply starts over.
       loadLevel(G.levelIndex);
@@ -7591,6 +7796,7 @@ function startGame() {
       mist: 0, // 0 to 1: rolls in once the attacks begin
       reveal: 1, // 0 to 1: how far the flashlight has parted the mist
       seen: 'monster', // the face the light last showed
+      showUntil: 0, // a screeching monster stays in view until then
       attacked: false,
       cues: {},
     };
@@ -7718,7 +7924,7 @@ function startGame() {
     const certain = G.q.definite[qi];
     if (certain !== null && b.lit) b.seen = certain === 0 ? 'cute' : 'monster';
     if (b.attacked) b.mist = Math.min(1, b.mist + dt / 1.6);
-    const shown = !b.attacked || (b.lit && certain !== null);
+    const shown = !b.attacked || (b.lit && certain !== null) || b.t < b.showUntil;
     b.reveal = shown ? Math.min(1, b.reveal + dt * 4) : Math.max(0, b.reveal - dt * 1.2);
   }
 
@@ -7876,6 +8082,7 @@ function startGame() {
     const pl = G.player;
     const dir = paw.state === 'swipe' ? paw.dir : pl.x + PLAYER.w / 2 < paw.x ? -1 : 1; // a swipe bats you along
     G.flung = { t: 0, dir, vx: 0, vy: 0, spin: 0, launched: false };
+    G.lastHit = { state: paw.state, x: Math.round(paw.x), target: paw.target ? paw.target.id : null }; // for the tests
     audio.play('fling');
     G.stats.falls += 1;
     if (!G.infinite) G.lives -= 1;
@@ -7942,6 +8149,21 @@ function startGame() {
     say(text, 'good', true);
   }
 
+  function slamAll() {
+    const b = G.beast;
+    for (const paw of b.paws) {
+      paw.t = 0;
+      paw.target = null;
+      if (paw.y < b.roof - 1) {
+        paw.state = 'slam';
+        paw.vy = 250;
+      } else {
+        paw.state = 'down'; // already on the roof (a swipe): it stops dead there
+        pawLands(paw);
+      }
+    }
+  }
+
   function lookAtBeast(qi) {
     const b = G.beast;
     const res = Q.measure([qi], true, 'torch');
@@ -7949,16 +8171,20 @@ function startGame() {
     G.stats.looks += 1;
     applySnapshot(res.state);
     if (res.state.definite[qi] === 0) {
-      audio.play('collapse0');
-      tameBeast('You looked, and it came out cute: state 0. The monster shrinks back into a cat.');
+      audio.play('bigMeow');
+      tameBeast('MEOW! You looked, and it came out cute: state 0. The monster shrinks back into a cat.');
       return;
     }
+    // A monster: it screeches, shows itself for two full seconds, and brings both paws
+    // straight down wherever they are.
     G.stats.unlucky += 1;
-    audio.play('collapse1');
-    audio.play('roar');
+    audio.play('screech');
+    b.seen = 'monster';
+    b.showUntil = b.t + 2;
     b.flash = 0.5;
-    G.shake = Math.max(G.shake, 0.5);
-    say('You looked, and it came out monster: state 1. Every turn so far is undone. Start again, or turn it further before you look.', 'bad', true);
+    G.shake = Math.max(G.shake, 0.7);
+    slamAll();
+    say('SCREECH! You looked, and it came out monster: state 1. Every turn so far is undone. Start again, or turn it further before you look.', 'bad', true);
   }
 
   function beastPrompt(hit) {
@@ -8384,6 +8610,8 @@ function startGame() {
 
   function update(dt) {
     G.t += dt;
+    // Boss music while the beast fights (not while paused, nor in its intro or ending).
+    audio.music(G.beast && G.beast.phase === 'fight' && (G.mode === 'play' || G.mode === 'falling') ? 'boss' : null);
     if (G.mode === 'play' || G.mode === 'terminal' || G.mode === 'dialogue') G.floorTime += dt;
     for (const fx of G.fx) fx.t += dt;
     for (const f of G.floaters) f.t += dt;

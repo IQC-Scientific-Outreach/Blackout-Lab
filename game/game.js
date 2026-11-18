@@ -488,16 +488,14 @@ export function startGame() {
     if (backdrop) return true;
     ui.showScreen(null);
     setMode('play');
-    if (carry === 'fall' && level.beast) {
-      say(`Flattened. The fight starts over, and the cat is a monster (1) again. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
-    } else if (carry === 'fall') {
+    if (carry === 'fall') {
       say(`You fell. The floor reset to its starting state. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
     } else if (carry === 'restart') {
       say('Floor restarted: platforms and circuit are back to their starting states.', 'info', true);
     } else {
       say(`${isBonus(index) ? level.tag : `Floor ${index + 1}`}: ${level.name}. ${level.goal}`, 'info');
     }
-    if (level.beast) startBeast(!carry); // the rise of the beast is shown once, not after every flattening
+    if (level.beast) startBeast(!carry); // a restart (R) skips the intro; a flattening does not reload at all (respawnBeast)
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
     return true;
@@ -1376,7 +1374,31 @@ export function startGame() {
     setMode('falling');
   }
 
+  // Flattened or fallen on bonus level 7, with lives left: back at the stair door, and the
+  // cat exactly as it was (every gate applied so far still applied).
+  function respawnBeast() {
+    const b = G.beast;
+    const level = G.level;
+    G.flung = null;
+    placePlayer(level.spawn.x, level.spawn.y);
+    G.player.facing = 1;
+    for (const paw of b.paws) {
+      Object.assign(paw, { state: 'rest', t: 0, target: null, x: level.beast.head.x + paw.side * 175, y: PAW_REST_Y });
+    }
+    b.wait = 1.6;
+    b.exposure = 0;
+    b.showUntil = 0;
+    setMode('play');
+    const qi = G.qIndex.CAT;
+    const now = G.q.definite[qi] === 1 ? 'still a monster (1)' : `still ${Math.round((1 - G.q.p1[qi]) * 100)}% cute`;
+    say(`Knocked off the roof, but the cat is just as you left it: ${now}. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
+  }
+
   function afterFall() {
+    if (G.beast && (G.lives > 0 || G.infinite)) {
+      respawnBeast();
+      return;
+    }
     if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
       // A bonus level is not part of the climb: out of lives, it simply starts over.
       loadLevel(G.levelIndex);
@@ -1436,6 +1458,7 @@ export function startGame() {
       mist: 0, // 0 to 1: rolls in once the attacks begin
       reveal: 1, // 0 to 1: how far the flashlight has parted the mist
       seen: 'monster', // the face the light last showed
+      showUntil: 0, // a screeching monster stays in view until then
       attacked: false,
       cues: {},
     };
@@ -1563,7 +1586,7 @@ export function startGame() {
     const certain = G.q.definite[qi];
     if (certain !== null && b.lit) b.seen = certain === 0 ? 'cute' : 'monster';
     if (b.attacked) b.mist = Math.min(1, b.mist + dt / 1.6);
-    const shown = !b.attacked || (b.lit && certain !== null);
+    const shown = !b.attacked || (b.lit && certain !== null) || b.t < b.showUntil;
     b.reveal = shown ? Math.min(1, b.reveal + dt * 4) : Math.max(0, b.reveal - dt * 1.2);
   }
 
@@ -1721,6 +1744,7 @@ export function startGame() {
     const pl = G.player;
     const dir = paw.state === 'swipe' ? paw.dir : pl.x + PLAYER.w / 2 < paw.x ? -1 : 1; // a swipe bats you along
     G.flung = { t: 0, dir, vx: 0, vy: 0, spin: 0, launched: false };
+    G.lastHit = { state: paw.state, x: Math.round(paw.x), target: paw.target ? paw.target.id : null }; // for the tests
     audio.play('fling');
     G.stats.falls += 1;
     if (!G.infinite) G.lives -= 1;
@@ -1787,6 +1811,21 @@ export function startGame() {
     say(text, 'good', true);
   }
 
+  function slamAll() {
+    const b = G.beast;
+    for (const paw of b.paws) {
+      paw.t = 0;
+      paw.target = null;
+      if (paw.y < b.roof - 1) {
+        paw.state = 'slam';
+        paw.vy = 250;
+      } else {
+        paw.state = 'down'; // already on the roof (a swipe): it stops dead there
+        pawLands(paw);
+      }
+    }
+  }
+
   function lookAtBeast(qi) {
     const b = G.beast;
     const res = Q.measure([qi], true, 'torch');
@@ -1794,16 +1833,20 @@ export function startGame() {
     G.stats.looks += 1;
     applySnapshot(res.state);
     if (res.state.definite[qi] === 0) {
-      audio.play('collapse0');
-      tameBeast('You looked, and it came out cute: state 0. The monster shrinks back into a cat.');
+      audio.play('bigMeow');
+      tameBeast('MEOW! You looked, and it came out cute: state 0. The monster shrinks back into a cat.');
       return;
     }
+    // A monster: it screeches, shows itself for two full seconds, and brings both paws
+    // straight down wherever they are.
     G.stats.unlucky += 1;
-    audio.play('collapse1');
-    audio.play('roar');
+    audio.play('screech');
+    b.seen = 'monster';
+    b.showUntil = b.t + 2;
     b.flash = 0.5;
-    G.shake = Math.max(G.shake, 0.5);
-    say('You looked, and it came out monster: state 1. Every turn so far is undone. Start again, or turn it further before you look.', 'bad', true);
+    G.shake = Math.max(G.shake, 0.7);
+    slamAll();
+    say('SCREECH! You looked, and it came out monster: state 1. Every turn so far is undone. Start again, or turn it further before you look.', 'bad', true);
   }
 
   function beastPrompt(hit) {
@@ -2229,6 +2272,8 @@ export function startGame() {
 
   function update(dt) {
     G.t += dt;
+    // Boss music while the beast fights (not while paused, nor in its intro or ending).
+    audio.music(G.beast && G.beast.phase === 'fight' && (G.mode === 'play' || G.mode === 'falling') ? 'boss' : null);
     if (G.mode === 'play' || G.mode === 'terminal' || G.mode === 'dialogue') G.floorTime += dt;
     for (const fx of G.fx) fx.t += dt;
     for (const f of G.floaters) f.t += dt;

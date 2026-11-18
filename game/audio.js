@@ -38,6 +38,36 @@ export function createAudio() {
     }
   }
 
+  // A burst of filtered white noise: drums, and the beast's screech.
+  let noiseBuffer = null;
+  function noise(start, length, gain, filter, freq) {
+    const audio = ensure();
+    if (!audio || muted) return;
+    try {
+      if (!noiseBuffer) {
+        noiseBuffer = audio.createBuffer(1, audio.sampleRate, audio.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+      }
+      const t0 = audio.currentTime + start;
+      const src = audio.createBufferSource();
+      src.buffer = noiseBuffer;
+      const shape = audio.createBiquadFilter();
+      shape.type = filter;
+      shape.frequency.value = freq;
+      const amp = audio.createGain();
+      amp.gain.setValueAtTime(gain, t0);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t0 + length);
+      src.connect(shape);
+      shape.connect(amp);
+      amp.connect(audio.destination);
+      src.start(t0);
+      src.stop(t0 + length + 0.02);
+    } catch (err) {
+      // ignore
+    }
+  }
+
   const sounds = {
     jump: () => tone(300, 0, 0.14, 'triangle', 0.05, 520),
     land: () => tone(120, 0, 0.07, 'sine', 0.05, 70),
@@ -103,6 +133,19 @@ export function createAudio() {
       tone(60, 0, 0.35, 'sine', 0.1, 30);
     },
     windup: () => tone(180, 0, 0.3, 'triangle', 0.04, 360),
+    // The beast caught by the light as a monster: a ragged scream.
+    screech: () => {
+      tone(1400, 0, 0.9, 'sawtooth', 0.06, 2600);
+      tone(1900, 0.05, 0.8, 'square', 0.03, 1100);
+      tone(700, 0, 1.0, 'sawtooth', 0.04, 380);
+      noise(0, 0.9, 0.12, 'bandpass', 2400);
+    },
+    // ...and as a cat again: a proper MEOW.
+    bigMeow: () => {
+      tone(520, 0, 0.22, 'triangle', 0.1, 900);
+      tone(900, 0.2, 0.5, 'triangle', 0.1, 480);
+      tone(1040, 0.2, 0.5, 'sine', 0.03, 960);
+    },
     swoosh: () => {
       tone(500, 0, 0.35, 'sawtooth', 0.035, 140);
       tone(90, 0, 0.4, 'sine', 0.07, 50);
@@ -119,9 +162,62 @@ export function createAudio() {
     },
   };
 
+  // Boss music (bonus level 7): an original chiptune loop, written here note by note, so
+  // there is no file and nothing to license. A minor, i VI iv V (Am F Dm E), 150 beats a
+  // minute: driving octave bass, a sixteenth-note arpeggio, kick, snare and hats.
+  const BOSS = {
+    step: 0.1, // a sixteenth note
+    chords: [
+      { root: 110, arp: [440, 523.25, 659.25] }, // Am
+      { root: 87.31, arp: [349.23, 440, 523.25] }, // F
+      { root: 73.42, arp: [293.66, 349.23, 440] }, // Dm
+      { root: 82.41, arp: [329.63, 415.3, 493.88] }, // E
+    ],
+    arp: [0, 1, 2, 1, 2, 0, 1, 2, 0, 1, 2, 1, 2, 1, 0, 2],
+    // A short lead line over the second time round, in sixteenths (0: rest).
+    lead: [880, 0, 0, 0, 783.99, 0, 659.25, 0, 698.46, 0, 0, 0, 659.25, 0, 587.33, 0,
+      587.33, 0, 0, 0, 523.25, 0, 587.33, 0, 659.25, 0, 0, 0, 830.61, 0, 0, 0],
+  };
+  let music = null; // { timer, next, n }
+  function scheduleMusic() {
+    const audio = ensure();
+    if (!audio || !music) return;
+    while (music.next < audio.currentTime + 0.25) {
+      const n = music.n;
+      const at = Math.max(0, music.next - audio.currentTime);
+      const bar = Math.floor(n / 16) % 4;
+      const inBar = n % 16;
+      const chord = BOSS.chords[bar];
+      if (inBar % 2 === 0) tone(chord.root * (inBar % 4 === 0 ? 1 : 2), at, 0.09, 'square', 0.03);
+      tone(chord.arp[BOSS.arp[inBar]] * (inBar >= 8 ? 2 : 1), at, 0.07, 'square', 0.012);
+      if (Math.floor(n / 64) % 2 === 1) {
+        const note = BOSS.lead[(n % 64) >> 1];
+        if (note && n % 2 === 0) tone(note, at, 0.18, 'triangle', 0.035);
+      }
+      if (inBar % 8 === 0) tone(150, at, 0.12, 'sine', 0.09, 45); // kick
+      if (inBar % 8 === 4) noise(at, 0.12, 0.08, 'highpass', 1500); // snare
+      if (inBar % 2 === 1) noise(at, 0.03, 0.025, 'highpass', 7000); // hat
+      music.n += 1;
+      music.next += BOSS.step;
+    }
+  }
+
   return {
     play(name) {
       if (sounds[name]) sounds[name]();
+    },
+    // 'boss' starts the loop (if it is not already playing); null stops it.
+    music(name) {
+      if (name && !music) {
+        const audio = ensure();
+        if (!audio) return;
+        music = { next: audio.currentTime + 0.1, n: 0, timer: null };
+        music.timer = setInterval(scheduleMusic, 40);
+        scheduleMusic();
+      } else if (!name && music) {
+        clearInterval(music.timer);
+        music = null;
+      }
     },
     setMuted(value) {
       muted = value;

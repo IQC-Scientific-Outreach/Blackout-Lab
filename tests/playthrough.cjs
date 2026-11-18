@@ -1077,9 +1077,11 @@ async function main() {
             seenThreat.add(p);
             dodged += 1;
           }
-          const left = p.x - 100;
-          const right = p.x + 100;
-          goal = cx < p.x ? (left > 20 ? left : right) : right < 860 ? right : left;
+          // Step to whichever side is clearer of every paw about to drop (or rising for a terminal).
+          const danger = b().paws.filter((q) => q.state === 'windup' || q.state === 'slam' || (q.state === 'rise' && q.target)).map((q) => (q.target ? q.target.x : q.x));
+          const room = (gx) => (gx < 20 || gx > 860 ? -1 : Math.min(...danger.map((dx) => Math.abs(gx - dx))));
+          const sides = [p.x - 100, p.x + 100, cx - 100, cx + 100];
+          goal = sides.reduce((best, gx) => (room(gx) > room(best) ? gx : best), sides[0]);
         } else seenThreat.clear();
         key('ArrowRight', goal - cx > 4);
         key('ArrowLeft', goal - cx < -4);
@@ -1094,14 +1096,17 @@ async function main() {
     await until(() => g.mode === 'falling', 15000, 'a paw to land on the player');
     if (!g.flung || g.lives !== lives - 1) throw new Error('a paw should flatten the player and cost a life');
     await until(() => g.flung && g.flung.launched && (g.player.y + 32 < 0 || g.player.x > 960 || g.player.x + 18 < 0), 3000, 'the player to be flung off the screen');
-    await until(() => g.mode === 'play', 4000, 'the fight to start again');
-    if (b().phase !== 'fight' || cat() !== 1 || g.q.ops.length) throw new Error('after a flattening the fight restarts with the cat at 1, and no intro');
+    await until(() => g.mode === 'play', 4000, 'the player to be back').catch((err) => { throw new Error(`${err.message}: mode ${g.mode}, lives ${g.lives}, falls ${g.stats.falls}, phase ${b().phase}, hit ${JSON.stringify(g.lastHit)}`); });
+    if (b().phase !== 'fight' || cat() !== 1 || Math.abs(g.player.x - g.level.spawn.x) > 2) throw new Error('after a flattening the player is back at the stair door, with no intro');
+    g.infinite = true; // lives are checked; from here on a stray paw only costs time (the bot waits without dodging at times)
     // Dodging: wait in the middle of the roof through two drops.
     const fallsBefore = g.stats.falls;
     let drops = 0;
     for (let k = 0; k < 2; k += 1) {
       let landed = false;
-      await go(480, () => (landed = landed || b().paws.some((p) => p.state === 'down')), 15000, 'a paw to come down');
+      await go(480, () => (landed = landed || b().paws.some((p) => p.state === 'down')), 25000, 'a paw to come down').catch((err) => {
+        throw new Error(`${err.message}: mode ${g.mode}, paws ${b().paws.map((p) => `${p.state}@${Math.round(p.x)}`)}, player ${Math.round(g.player.x)}, wait ${b().wait.toFixed(2)}, falls ${g.stats.falls}`);
+      });
       drops += 1;
       await until(() => !b().paws.some((p) => p.state === 'down'), 3000, 'the paw to lift');
     }
@@ -1124,25 +1129,44 @@ async function main() {
     if (g.q.ops.length !== 1 || g.q.ops[0].gate !== 'ry' || !close(cute(), Math.sin(Math.PI / 16) ** 2)) throw new Error(`RY(pi/8) should make the cat ${Math.sin(Math.PI / 16) ** 2} cute: ${cute()}`);
     if (!t1.used || b().grudge !== t1) throw new Error('the cat should go for T1');
     await go(480, () => t1.wreck > 0, 15000, 'the cat to smash T1');
-    if (g.stats.falls !== fallsBefore) throw new Error('the player should have got away from T1');
+    if (g.stats.falls !== fallsBefore) throw new Error(`the player should have got away from T1 (hit by a paw: ${JSON.stringify(g.lastHit)})`);
     // Smashed terminals come back after 10 s; here the wait is cut short.
     t1.wreck = 0.2;
     await until(() => t1.wreck === 0 && !t1.used, 2000, 'T1 to come back');
-    // A look at 4% cute: almost surely a monster again, every turn undone.
-    // The beam held level along the roof finds it: no aiming up, no jumping.
+    // Flattened again, this time with a turn applied: the cat keeps it.
+    const kept = { ops: g.q.ops.length, cute: cute() };
+    await until(() => g.mode === 'falling', 20000, 'a paw to land on the player again');
+    await until(() => g.mode === 'play', 4000, 'the player to be back').catch((err) => { throw new Error(`${err.message}: mode ${g.mode}, lives ${g.lives}, falls ${g.stats.falls}, phase ${b().phase}, hit ${JSON.stringify(g.lastHit)}`); });
+    if (g.q.ops.length !== kept.ops || !close(cute(), kept.cute)) throw new Error(`a flattening should leave the cat as it was: ${JSON.stringify(kept)} now ${g.q.ops.length} ops, ${cute()} cute`);
+    // A look at 4% cute: almost surely a monster. The beam held level along the roof finds it:
+    // no aiming up, no jumping. (The paws are held at rest for the look, so the bot can watch.)
+    await until(() => b().paws.every((p) => p.state === 'rest'), 8000, 'the paws to rest');
+    b().wait = 99;
     await bot.tap('KeyF');
-    bot.aim(700, b().roof - 22);
-    await go(330, () => cat() !== null || g.mode !== 'play', 6000, 'the look');
-    if (!b().lit && b().phase === 'fight') throw new Error('a level beam towards the cat should find it');
-    for (let k = 0; k < 20 && g.mode === 'play'; k += 1) await frame(); // hold the light: it shows what it found
-    const revealed = { seen: b().seen, reveal: b().reveal };
+    bot.aim(760, b().roof - 22);
+    let pawsAfter = null; // the paws on the frame the cat collapses
+    let litAtLook = false;
+    await go(400, () => {
+      if (cat() !== null && !pawsAfter) {
+        pawsAfter = b().paws.map((p) => p.state);
+        litAtLook = b().lit;
+      }
+      return cat() !== null || g.mode !== 'play';
+    }, 6000, 'the look');
+    if (!litAtLook && b().phase === 'fight') throw new Error('a level beam towards the cat should find it');
     bot.aim(g.player.x, 500);
-    await bot.tap('KeyF');
+    await bot.tap('KeyF'); // the light goes off at once
+    // Just before the two seconds are up (in game time), it should still be in full view.
+    if (cat() === 1) await until(() => b().t >= b().showUntil - 0.25 || g.mode !== 'play', 4000, 'most of the screech');
+    const revealed = { seen: b().seen, reveal: b().reveal, lit: b().lit };
     const looked = g.q.ops.find((op) => op.kind === 'measure');
     if (!looked || looked.by !== 'torch') throw new Error('the flashlight on its face should measure the cat');
-    if (b().phase === 'tamed') return 'bonus level 7: flattened and flung; dodged; T1 turned and smashed; a look at 4% cute came out cute (lucky)';
-    if (revealed.seen !== 'monster' || revealed.reveal < 0.5) throw new Error(`the light should have parted the mist on a monster: ${JSON.stringify(revealed)}`);
+    if (b().phase === 'tamed') return 'bonus level 7: flattened and flung; dodged; T1 turned and smashed; flattened again with the turn kept; a look at 4% cute came out cute (lucky)';
     if (cat() !== 1) throw new Error('a monster result should leave the cat a plain 1');
+    if (!pawsAfter.every((st) => st === 'slam' || st === 'down')) throw new Error(`a monster result should bring both paws straight down: ${pawsAfter}`);
+    if (revealed.seen !== 'monster' || revealed.reveal < 0.95 || revealed.lit) throw new Error(`the screeching monster should stay in view for 2 s, light or no light: ${JSON.stringify(revealed)}`);
+    await until(() => b().reveal < 0.2, 3000, 'the mist to close in again after the screech');
+    b().wait = 1;
     // Now the sure way: eight turns, nobody looking, alternating T1 and T2; rebuilds cut short.
     let turns = 0;
     for (let tries = 0; b().phase === 'fight' && turns < 8 && tries < 40; tries += 1) {
@@ -1163,7 +1187,7 @@ async function main() {
     await until(() => g.mode === 'complete', 8000, 'bonus level 7 to be cleared');
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
     if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
-    return `bonus level 7: the intro skipped; the face in plain view, then lost in the mist as the paws began; flattened and flung off the roof (a life lost, the cat back at 1); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; a look came out monster; eight turns then tamed it with no look; stars ${stars.join(', ')}`;
+    return `bonus level 7: the intro skipped; the face in plain view, then lost in the mist as the paws began; flattened and flung off the roof (a life lost, back at the stair door); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; flattened again with the turn kept; a look came out monster (a screech, both paws down, the monster in view for 2 s); eight turns then tamed it with no look; stars ${stars.join(', ')}`;
   });
   await shot('15c-beast-cleared');
   await page.click('#btn-next');

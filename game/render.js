@@ -1983,7 +1983,7 @@ export function createRenderer(canvas) {
 
   // -- bonus level 7: the beast on the roof ------------------------------------------
 
-  const BEAST_FUR = { monster: '#4b3f63', monsterDark: '#33294a', cute: '#f0a04b', cuteDark: '#b9631c' };
+  const BEAST_FUR = { monster: '#e8ebef', monsterDark: '#9aa1ad', cute: '#f0a04b', cuteDark: '#b9631c' };
 
   // The outline of the head and ears, for the shade that hides it in the dark.
   function headPath(c, x, y, s) {
@@ -1997,105 +1997,180 @@ export function createRenderer(canvas) {
     }
   }
 
+  // The mutated cat: white, mangy and torn, with raw wounds, glowing green slit eyes and a
+  // wide snarl. Drawn in flat shapes, like the rest of the game.
+  const MONSTER = {
+    fur: '#e8ebef',
+    shade: '#c3c9d2',
+    mange: '#aab1bc',
+    line: '#59606b',
+    ear: '#b8444f',
+    wound: '#6e1119',
+    woundRim: '#b5474f',
+    blood: '#8a1c25',
+    mouth: '#3a0a12',
+    gum: '#c2566a',
+    tongue: '#d8718a',
+    fang: '#f1e8d0',
+    fangLine: '#a59775',
+  };
+  const WOUNDS = [[-90, -28, 19, 10, 0.5], [72, -72, 14, 8, -0.4], [98, 38, 15, 10, 0.9], [-42, -98, 10, 6, 0.2], [-104, 52, 11, 7, -0.6]];
+
   function paintMonsterHead(c, x, y, s, t) {
-    glow(x, y, 230 * s, 'rgba(120,255,110,0.16)');
-    c.fillStyle = BEAST_FUR.monster;
-    headPath(c, x, y, s);
-    c.fill();
-    c.fillStyle = '#7dff6a'; // the glow inside torn ears
+    const M = MONSTER;
+    glow(x, y, 235 * s, 'rgba(150,255,170,0.14)');
+    // Ears: tall, ragged, raw inside.
     for (const side of [-1, 1]) {
+      c.fillStyle = M.fur;
       c.beginPath();
-      c.moveTo(x + side * 64 * s, y - 92 * s);
-      c.lineTo(x + side * 108 * s, y - 146 * s);
-      c.lineTo(x + side * 112 * s, y - 72 * s);
+      c.moveTo(x + side * 46 * s, y - 88 * s);
+      c.lineTo(x + side * 112 * s, y - 178 * s);
+      c.lineTo(x + side * 120 * s, y - 150 * s); // a tear in the edge
+      c.lineTo(x + side * 128 * s, y - 140 * s);
+      c.lineTo(x + side * 134 * s, y - 44 * s);
       c.closePath();
-      c.globalAlpha *= 0.35;
       c.fill();
-      c.globalAlpha /= 0.35;
-    }
-    c.fillStyle = BEAST_FUR.monsterDark; // a notch bitten out of one ear, blotches
-    c.beginPath();
-    c.arc(x - 104 * s, y - 128 * s, 9 * s, 0, Math.PI * 2);
-    c.arc(x + 70 * s, y + 40 * s, 22 * s, 0, Math.PI * 2);
-    c.arc(x - 80 * s, y - 20 * s, 16 * s, 0, Math.PI * 2);
-    c.fill();
-    c.strokeStyle = '#9bff7a'; // veins
-    c.lineWidth = 2.2 * s;
-    c.globalAlpha *= 0.55;
-    c.beginPath();
-    c.moveTo(x + 30 * s, y - 104 * s);
-    c.quadraticCurveTo(x + 10 * s, y - 80 * s, x + 26 * s, y - 62 * s);
-    c.moveTo(x - 120 * s, y + 10 * s);
-    c.quadraticCurveTo(x - 96 * s, y + 20 * s, x - 100 * s, y + 46 * s);
-    c.stroke();
-    c.globalAlpha /= 0.55;
-    c.strokeStyle = '#1a1226'; // stitches across the brow
-    c.lineWidth = 3 * s;
-    c.beginPath();
-    c.moveTo(x - 70 * s, y - 70 * s);
-    c.lineTo(x + 10 * s, y - 88 * s);
-    for (let k = 0; k < 5; k += 1) {
-      const sx = x + (-62 + k * 17) * s;
-      const sy = y + (-71 - k * 3.6) * s;
-      c.moveTo(sx, sy - 7 * s);
-      c.lineTo(sx + 2 * s, sy + 7 * s);
-    }
-    c.stroke();
-    const blink = Math.sin(t * 0.9) > 0.97 ? 0.15 : 1;
-    for (const side of [-1, 1]) {
-      const ex = x + side * 52 * s;
-      const ey = y - 14 * s;
-      glow(ex, ey, 46 * s, 'rgba(190,255,90,0.5)');
-      c.fillStyle = '#c8ff5a'; // slanted, furious eyes
+      c.fillStyle = M.ear;
       c.beginPath();
-      c.ellipse(ex, ey, 30 * s, 17 * s * blink, side * 0.32, 0, Math.PI * 2);
-      c.fill();
-      c.fillStyle = '#0b0710';
-      c.beginPath();
-      c.ellipse(ex, ey, 4 * s, 15 * s * blink, side * 0.32, 0, Math.PI * 2);
-      c.fill();
-      c.strokeStyle = '#1a1226'; // brows
-      c.lineWidth = 7 * s;
-      c.beginPath();
-      c.moveTo(ex - side * 34 * s, ey - 34 * s);
-      c.lineTo(ex + side * 20 * s, ey - 16 * s);
-      c.stroke();
-    }
-    glow(x, y - 54 * s, 20 * s, 'rgba(255,90,90,0.6)'); // a third eye, small and red
-    c.fillStyle = '#ff5a5a';
-    c.beginPath();
-    c.ellipse(x, y - 54 * s, 8 * s, 6 * s, 0, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#16091c'; // the grin
-    c.beginPath();
-    c.moveTo(x - 78 * s, y + 30 * s);
-    c.quadraticCurveTo(x, y + 112 * s, x + 78 * s, y + 30 * s);
-    c.quadraticCurveTo(x, y + 62 * s, x - 78 * s, y + 30 * s);
-    c.fill();
-    c.fillStyle = '#f2f0e6'; // fangs
-    for (let k = 0; k < 7; k += 1) {
-      const fx = x + (-60 + k * 20) * s;
-      const top = y + (34 + 16 * (1 - Math.abs(k - 3) / 3) * 1.4) * s;
-      const long = k === 1 || k === 5 ? 26 : 13;
-      c.beginPath();
-      c.moveTo(fx - 6 * s, top);
-      c.lineTo(fx + 6 * s, top);
-      c.lineTo(fx, top + long * s);
+      c.moveTo(x + side * 62 * s, y - 90 * s);
+      c.lineTo(x + side * 108 * s, y - 158 * s);
+      c.lineTo(x + side * 120 * s, y - 64 * s);
       c.closePath();
       c.fill();
     }
-    c.fillStyle = '#7dff6a'; // radioactive drool
+    // Mangy tufts along the cheeks, then the head.
+    c.fillStyle = M.fur;
+    for (const side of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(x + side * 112 * s, y - 50 * s);
+      for (let k = 0; k <= 6; k += 1) {
+        const ty = y + (-40 + k * 22) * s;
+        const tx = x + side * (138 - k * 9) * s;
+        c.lineTo(tx + side * 26 * s, ty + 6 * s);
+        c.lineTo(tx, ty + 14 * s);
+      }
+      c.lineTo(x + side * 40 * s, y + 104 * s);
+      c.closePath();
+      c.fill();
+    }
     c.beginPath();
-    c.ellipse(x + 34 * s, y + 92 * s + ((t * 30) % 30) * s, 4 * s, 6 * s, 0, 0, Math.PI * 2);
+    c.ellipse(x, y, 134 * s, 108 * s, 0, 0, Math.PI * 2);
     c.fill();
-    c.strokeStyle = '#a99cc4'; // whiskers, bent
+    c.globalAlpha *= 0.45;
+    c.fillStyle = M.shade; // shadow under the brow and down the jaw
+    c.beginPath();
+    c.ellipse(x, y + 46 * s, 112 * s, 60 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = M.mange;
+    c.beginPath();
+    c.ellipse(x + 40 * s, y - 84 * s, 30 * s, 14 * s, 0.3, 0, Math.PI * 2);
+    c.ellipse(x - 70 * s, y + 20 * s, 22 * s, 30 * s, -0.4, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha /= 0.45;
+    c.strokeStyle = M.shade; // fur strokes
     c.lineWidth = 2 * s;
     c.beginPath();
+    for (const [dx, dy] of [[-20, -70], [8, -60], [36, -46], [-60, -54], [-100, -6], [104, -12], [60, 6]]) {
+      c.moveTo(x + dx * s, y + dy * s);
+      c.lineTo(x + (dx + 6) * s, y + (dy + 12) * s);
+    }
+    c.stroke();
+    // Raw wounds, one of them bleeding.
+    for (const [dx, dy, rx, ry, rot] of WOUNDS) {
+      c.fillStyle = M.woundRim;
+      c.beginPath();
+      c.ellipse(x + dx * s, y + dy * s, (rx + 3) * s, (ry + 3) * s, rot, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = M.wound;
+      c.beginPath();
+      c.ellipse(x + dx * s, y + dy * s, rx * s, ry * s, rot, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = M.blood;
+    const drip = (t * 18) % 26;
+    c.fillRect(x + (-92 + 6) * s, y + (-22) * s, 3 * s, (10 + drip) * s);
+    // Brows, eyes.
     for (const side of [-1, 1]) {
-      for (const dy of [-6, 6, 18]) {
-        c.moveTo(x + side * 84 * s, y + (18 + dy) * s);
-        c.lineTo(x + side * 130 * s, y + (8 + dy * 1.6) * s);
-        c.lineTo(x + side * 168 * s, y + (24 + dy * 2.2) * s);
+      const ex = x + side * 52 * s;
+      const ey = y - 16 * s;
+      c.strokeStyle = M.line;
+      c.lineWidth = 7 * s;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(ex - side * 36 * s, ey - 36 * s);
+      c.lineTo(ex + side * 22 * s, ey - 14 * s);
+      c.stroke();
+      glow(ex, ey, 50 * s, 'rgba(120,255,90,0.55)');
+      const iris = c.createRadialGradient(ex, ey, 2 * s, ex, ey, 30 * s);
+      iris.addColorStop(0, '#f2ffc4');
+      iris.addColorStop(0.45, '#8dff52');
+      iris.addColorStop(1, '#2fae2a');
+      c.fillStyle = iris;
+      c.beginPath();
+      c.ellipse(ex, ey, 30 * s, 17 * s, side * 0.3, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#05080a';
+      c.beginPath();
+      c.ellipse(ex, ey, 3.5 * s, 15 * s, side * 0.3, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = M.line;
+      c.lineWidth = 3 * s;
+      c.beginPath();
+      c.ellipse(ex, ey, 30 * s, 17 * s, side * 0.3, 0, Math.PI * 2);
+      c.stroke();
+    }
+    // Nose.
+    c.fillStyle = '#b65a66';
+    c.beginPath();
+    c.moveTo(x - 14 * s, y + 14 * s);
+    c.lineTo(x + 14 * s, y + 14 * s);
+    c.lineTo(x, y + 28 * s);
+    c.closePath();
+    c.fill();
+    // The snarl: wide open, gums, tongue, long fangs.
+    c.fillStyle = M.mouth;
+    c.beginPath();
+    c.moveTo(x - 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x, y + 52 * s, x + 74 * s, y + 34 * s);
+    c.quadraticCurveTo(x + 40 * s, y + 122 * s, x, y + 124 * s);
+    c.quadraticCurveTo(x - 40 * s, y + 122 * s, x - 74 * s, y + 34 * s);
+    c.fill();
+    c.strokeStyle = M.gum;
+    c.lineWidth = 6 * s;
+    c.beginPath();
+    c.moveTo(x - 70 * s, y + 38 * s);
+    c.quadraticCurveTo(x, y + 56 * s, x + 70 * s, y + 38 * s);
+    c.stroke();
+    c.fillStyle = M.tongue;
+    c.beginPath();
+    c.ellipse(x, y + 102 * s, 32 * s, 15 * s, 0, 0, Math.PI * 2);
+    c.fill();
+    const fang = (fx, fy, len, dir) => {
+      c.beginPath();
+      c.moveTo(fx - 7 * s, fy);
+      c.quadraticCurveTo(fx - 2 * s, fy + dir * len * 0.7 * s, fx + 1 * s, fy + dir * len * s);
+      c.lineTo(fx + 7 * s, fy);
+      c.closePath();
+      c.fillStyle = M.fang;
+      c.fill();
+      c.strokeStyle = M.fangLine;
+      c.lineWidth = 1.2 * s;
+      c.stroke();
+    };
+    for (const side of [-1, 1]) {
+      fang(x + side * 44 * s, y + 44 * s, 42, 1); // the long upper canines
+      fang(x + side * 22 * s, y + 50 * s, 14, 1);
+      fang(x + side * 36 * s, y + 114 * s, 26, -1); // lower canines
+    }
+    fang(x, y + 52 * s, 10, 1);
+    // Whiskers, some snapped.
+    c.strokeStyle = '#f6f8fa';
+    c.lineWidth = 1.8 * s;
+    c.beginPath();
+    for (const side of [-1, 1]) {
+      for (const [dy, len] of [[-4, 150], [8, 120], [20, 165]]) {
+        c.moveTo(x + side * 76 * s, y + (24 + dy) * s);
+        c.lineTo(x + side * (76 + len) * s, y + (16 + dy * 2.2) * s);
       }
     }
     c.stroke();
@@ -2209,13 +2284,25 @@ export function createRenderer(canvas) {
       c.fillStyle = look === 'monster' ? BEAST_FUR.monsterDark : BEAST_FUR.cuteDark;
       for (const dx of [-w / 4, 0, w / 4]) c.fillRect(x + dx - 1, bottom - 16, 2, 14); // toes
       if (look === 'monster') {
-        c.fillStyle = '#e9ffe0';
+        c.fillStyle = MONSTER.woundRim; // a raw patch on the back of the paw
+        c.beginPath();
+        c.ellipse(x + w / 6, bottom - h + 14, 9, 5, 0.4, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = MONSTER.wound;
+        c.beginPath();
+        c.ellipse(x + w / 6, bottom - h + 14, 6, 3, 0.4, 0, Math.PI * 2);
+        c.fill();
         for (const dx of [-w / 3, -w / 9, w / 9, w / 3]) {
+          c.fillStyle = '#2b2320'; // long dark hooked claws
           c.beginPath();
-          c.moveTo(x + dx - 4, bottom - 4);
-          c.lineTo(x + dx + 4, bottom - 4);
-          c.lineTo(x + dx + 1, bottom + 9);
+          c.moveTo(x + dx - 5, bottom - 6);
+          c.quadraticCurveTo(x + dx + 6, bottom - 2, x + dx + 5, bottom + 10);
+          c.quadraticCurveTo(x + dx + 2, bottom + 1, x + dx + 5, bottom - 6);
           c.closePath();
+          c.fill();
+          c.fillStyle = '#d9cdb4'; // pale tips
+          c.beginPath();
+          c.arc(x + dx + 5, bottom + 8, 1.5, 0, Math.PI * 2);
           c.fill();
         }
       } else {
@@ -2292,7 +2379,7 @@ export function createRenderer(canvas) {
     if (b.rise > 0 && tame < 1) {
       ctx.save();
       ctx.globalAlpha = (1 - tame) * (1 - hidden);
-      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked ? 0.04 : 0.3);
+      if (ctx.globalAlpha > 0.01) paintBeastHead(ctx, cfg.head.x, headY, headS, b.seen === 'cute' ? 1 : 0, G.t, b.lit || !b.attacked || b.t < b.showUntil ? 0.04 : 0.3);
       ctx.restore();
     }
     drawMist(G, cfg.head.x, headY, b.mist * (1 - 0.75 * b.reveal) * (1 - tame));

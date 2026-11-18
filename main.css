@@ -254,7 +254,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .wire-entangled { stroke: var(--link); stroke-dasharray: 2 4; }
 .wire-id { fill: var(--ink); font-size: 13px; font-weight: 700; }
 .wire-id.q-sealed { fill: var(--dim); }
-.wire-id.q-canister, .wire-id.q-box { fill: var(--qubit); }
+.wire-id.q-canister, .wire-id.q-box, .wire-id.q-beast { fill: var(--qubit); }
 .g-auto { opacity: 0.55; }
 .wire-id.q-door { fill: var(--torch); }
 .wire-init { fill: var(--dim); font-size: 11px; }
@@ -290,7 +290,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
 .prob-row, .joint-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) 122px; gap: 8px; align-items: center; }
 .q-chip { font: 700 12px var(--mono); text-align: center; padding: 2px 0; border-radius: 4px; border: 1px solid var(--line); }
 .q-chip.q-sealed { color: var(--dim); border-style: dashed; }
-.q-chip.q-canister, .q-chip.q-box { color: var(--qubit); border-color: var(--qubit); }
+.q-chip.q-canister, .q-chip.q-box, .q-chip.q-beast { color: var(--qubit); border-color: var(--qubit); }
 .q-chip.q-door { color: var(--torch); border-color: var(--torch); }
 .track { display: flex; height: 14px; border-radius: 3px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); }
 .seg { height: 100%; transition: width 0.28s ease; }

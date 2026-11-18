@@ -91,6 +91,22 @@ Bonus levels are reached only from "Skip to floor" (on the title screen and in t
 | 5 Decoherence Time | Faulty lights over every platform. At T1, H, Z, H raises P before the light collapses it. At T2, A must end lowered and B raised, with H and Z on A, H on B and a CZ between them: H Z H on A, H on B, CZ, H on B, H Z H on A. | Every superposition has a deadline (the decoherence time). CZ applies Z to one qubit when the other is 1. |
 | 6 The Watched Qubit | Cavity waves keep P, A and B turning (Rabi oscillation). Freeze P lowered with the flashlight (it starts off) and stand on it to keep it there. A and B turn together, so Ry(pi/2) twice at T1 puts B half a turn ahead; then X at T2 slides the shield S into the waves as A reaches 0, freezing the pair at 0 and 1, and the flashlight collapses them. | Rabi oscillation, and the quantum watchdog (Zeno) effect: a qubit that is watched all the time cannot change. |
 
+### The secret level
+
+Type **CAT** on the title screen. Once found, it is listed with the bonus levels as "Secret. The Beast on the Roof".
+
+The rooftop again, but this time the cat jumps back into the Professor's box, the radiation mutates it, and it rises behind the skyline as a giant head. The cat is one qubit: **0 is cute, 1 is monster**, and it starts at 1.
+
+- **The paws** (three players wide) take turns: one rises to the top of the screen, follows you, stops for a moment to wind up (its shadow turns red), then drops straight down. Caught under it, you are flattened and flung off the screen: a life lost, and the fight starts again with the cat at 1.
+- **Two terminals**, one on each side of the roof, each apply **RY(pi/8)** with a single press of E. The cat answers by bringing a paw down on that terminal, which comes back 15 seconds later.
+- **The head** is drawn as both cats at once, each as solid as its odds, so you can watch the rotation.
+- **The flashlight** resting on its face is a measurement. Cute (0) comes up with chance sin^2(k pi/16) after k turns and ends the fight; monster (1) undoes every turn. Eight turns with nobody looking make it certainly cute, and that ends the fight too.
+- Stars: tamed, no falls, no hints, and tamed within 90 seconds.
+
+| Secret level | What happens | What it teaches |
+| --- | --- | --- |
+| The Beast on the Roof | Dodge the paws while turning the cat with RY(pi/8) at two terminals the cat keeps smashing. Gamble on an early look, or make eight turns and be sure. | A coherent change (a rotation) can be undone by the opposite rotation. A measurement part way gives the Born-rule odds, and a bad result throws the progress away. |
+
 They bring new pieces, which any floor can use:
 
 - **Backup lights** shine a fixed cone. Solids and certain platforms cast shadows, so the lit area is traced around them. Like the flashlight, a light resting on a superposed platform measures it. A **normal** light is as quick as the flashlight; a **weak** (faulty) one, sparking at its lamp, takes five times as long; a red **emergency** light damps the qubit all the way to 0 (amplitude damping) in the flashlight's time, even from a certain 1. They stand in for decoherence: the environment watching your qubits, so they keep working while you are at a terminal.

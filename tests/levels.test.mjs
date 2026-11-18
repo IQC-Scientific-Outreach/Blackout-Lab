@@ -5,13 +5,13 @@
 // not match its lock, a floor the engine cannot start.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVELS, BONUS_LEVELS, GATE_INFO, roomsOf } from '../game/levels.js';
+import { LEVELS, BONUS_LEVELS, BEAST, GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from '../game/levels.js';
 import { LIGHT_KINDS } from '../game/geometry.js';
 import { Lab } from '../game/quantum.js';
 
-const ROLES = ['platform', 'canister', 'sealed', 'box', 'door'];
+const ROLES = ['platform', 'canister', 'sealed', 'box', 'door', 'beast'];
 
-const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level])];
+const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level]), ['secret level', BEAST]];
 
 for (const [where0, level] of ALL) {
   test(`${where0}: ${level.name}`, () => {
@@ -76,3 +76,16 @@ for (const [where0, level] of ALL) {
     assert.deepEqual(snap.labels, ids);
   });
 }
+
+test('secret level: one beast qubit, starting as a monster, and two quick RY(pi/8) terminals', () => {
+  assert.deepEqual(BEAST.qubits, [{ id: 'CAT', init: '1', role: 'beast' }]);
+  assert.ok(ROLE_NAME.beast && ROLE_WORDS.beast.length === 2);
+  assert.equal(BEAST.terminals.length, 2);
+  for (const t of BEAST.terminals) {
+    assert.ok(t.quick, `${t.id} is used with one press of E`);
+    assert.deepEqual(t.ops.map((op) => [op.gate, op.angle]), [['ry', Math.PI / 8]]);
+  }
+  assert.ok(BEAST.terminals[0].x < BEAST.beast.head.x && BEAST.terminals[1].x > BEAST.beast.head.x, 'one terminal on each side of the roof');
+  // Eight turns make it certainly cute, as the level says.
+  assert.equal(BEAST.shortest, Math.round(Math.PI / BEAST.terminals[0].ops[0].angle));
+});

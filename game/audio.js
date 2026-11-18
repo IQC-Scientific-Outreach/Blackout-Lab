@@ -87,6 +87,28 @@ export function createAudio() {
       tone(980, 0.15, 0.34, 'triangle', 0.07, 520);
     },
     crank: () => tone(150, 0, 0.06, 'square', 0.04, 90),
+    // The secret level's beast.
+    roar: () => {
+      tone(90, 0, 1.1, 'sawtooth', 0.07, 45);
+      tone(135, 0.05, 0.9, 'sawtooth', 0.05, 60);
+      tone(60, 0.1, 1.2, 'square', 0.03, 38);
+    },
+    thud: () => {
+      tone(70, 0, 0.32, 'sine', 0.12, 32);
+      tone(140, 0, 0.12, 'square', 0.04, 50);
+    },
+    smash: () => {
+      tone(320, 0, 0.18, 'sawtooth', 0.05, 90);
+      tone(1200, 0.02, 0.1, 'square', 0.025, 500);
+      tone(60, 0, 0.35, 'sine', 0.1, 30);
+    },
+    windup: () => tone(180, 0, 0.3, 'triangle', 0.04, 360),
+    fling: () => tone(700, 0, 0.6, 'triangle', 0.06, 1500),
+    purr: () => {
+      tone(30, 0, 0.9, 'sawtooth', 0.025, 28);
+      tone(620, 0.4, 0.14, 'triangle', 0.06, 900);
+      tone(900, 0.54, 0.26, 'triangle', 0.06, 640);
+    },
     power: () => {
       tone(70, 0, 1.6, 'sawtooth', 0.04, 150);
       [392, 523, 659].forEach((f, i) => tone(f, 0.9 + i * 0.16, 0.4, 'triangle', 0.05));

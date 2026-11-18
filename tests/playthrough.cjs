@@ -1036,6 +1036,114 @@ async function main() {
   });
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
+
+  // The secret level: CAT typed on the title screen. Not listed until it has been found.
+  const listed = () => page.$$eval('#title-floors button.bonus', (els) => els.map((el) => el.textContent));
+  if ((await listed()).some((t) => t.startsWith('Secret'))) throw new Error('the secret level should not be listed before it is found');
+  for (const k of ['KeyC', 'KeyA', 'KeyT']) await page.keyboard.press(k);
+  await page.waitForFunction(() => window.blackoutLab.state.level && window.blackoutLab.state.level.id === 'beast' && window.blackoutLab.state.mode === 'cutscene');
+  await step('secret level', async () => {
+    const g = bot.G();
+    const { key, until, frame } = bot;
+    const b = () => g.beast;
+    const cat = () => g.q.definite[0];
+    const cute = () => 1 - g.q.p1[0];
+    const close = (a, z) => Math.abs(a - z) < 1e-9;
+    if (b().phase !== 'intro' || cat() !== 1) throw new Error('it should open on the intro, with the cat a monster (1)');
+    await until(() => b().cat.state === 'in', 4000, 'the cat to jump into the box');
+    await bot.tap('KeyE'); // skip the rest
+    await until(() => g.mode === 'play' && b().phase === 'fight' && b().rise === 1, 2000, 'the fight to start');
+    // Walk to x while keeping clear of any paw that has stopped to drop; until done() holds with no paw about to drop.
+    const threat = () => b().paws.find((p) => (p.state === 'windup' || p.state === 'slam') && Math.abs(p.x - (g.player.x + 9)) < 64);
+    let dodged = 0;
+    const seenThreat = new Set();
+    async function go(x, done, ms, what) {
+      await until(() => {
+        if (g.mode !== 'play') return done();
+        const cx = g.player.x + 9;
+        const p = threat();
+        let goal = x;
+        if (p) {
+          if (!seenThreat.has(p)) {
+            seenThreat.add(p);
+            dodged += 1;
+          }
+          const left = p.x - 100;
+          const right = p.x + 100;
+          goal = cx < p.x ? (left > 20 ? left : right) : right < 860 ? right : left;
+        } else seenThreat.clear();
+        key('ArrowRight', goal - cx > 4);
+        key('ArrowLeft', goal - cx < -4);
+        return !p && Math.abs(goal - cx) <= 6 && done();
+      }, ms, what);
+      key('ArrowRight', false);
+      key('ArrowLeft', false);
+    }
+    // Flattened: stand still under the paws until one comes down on the player.
+    const lives = g.lives;
+    await until(() => g.mode === 'falling', 15000, 'a paw to land on the player');
+    if (!g.flung || g.lives !== lives - 1) throw new Error('a paw should flatten the player and cost a life');
+    await until(() => g.flung && g.flung.launched && (g.player.y + 32 < 0 || g.player.x > 960 || g.player.x + 18 < 0), 3000, 'the player to be flung off the screen');
+    await until(() => g.mode === 'play', 4000, 'the fight to start again');
+    if (b().phase !== 'fight' || cat() !== 1 || g.q.ops.length) throw new Error('after a flattening the fight restarts with the cat at 1, and no intro');
+    // Dodging: wait in the middle of the roof through two drops.
+    const fallsBefore = g.stats.falls;
+    let drops = 0;
+    for (let k = 0; k < 2; k += 1) {
+      await go(480, () => b().paws.some((p) => p.state === 'down'), 15000, 'a paw to come down');
+      drops += 1;
+      await until(() => !b().paws.some((p) => p.state === 'down'), 3000, 'the paw to lift');
+    }
+    if (g.stats.falls !== fallsBefore || g.mode !== 'play') throw new Error('moving when a paw stops should avoid it');
+    // One turn at T1: a little cute, and the cat smashes T1.
+    const [t1, t2] = g.room.terminals;
+    await go(t1.x, () => t1.near, 15000, 'stand at T1');
+    await bot.tap('KeyE');
+    if (g.q.ops.length !== 1 || g.q.ops[0].gate !== 'ry' || !close(cute(), Math.sin(Math.PI / 16) ** 2)) throw new Error(`RY(pi/8) should make the cat ${Math.sin(Math.PI / 16) ** 2} cute: ${cute()}`);
+    if (!t1.used || b().grudge !== t1) throw new Error('the cat should go for T1');
+    await go(480, () => t1.wreck > 0, 15000, 'the cat to smash T1');
+    if (g.stats.falls !== fallsBefore) throw new Error('the player should have got away from T1');
+    // Smashed terminals come back after 15 s; here the wait is cut short.
+    t1.wreck = 0.2;
+    await until(() => t1.wreck === 0 && !t1.used, 2000, 'T1 to come back');
+    // A look at 4% cute: almost surely a monster again, every turn undone.
+    await bot.tap('KeyF');
+    const face = g.level.beast.face;
+    bot.aim(face.x + face.w / 2, face.y + face.h / 2);
+    await go(400, () => cat() !== null || g.mode !== 'play', 6000, 'the look');
+    bot.aim(g.player.x, 500);
+    await bot.tap('KeyF');
+    const looked = g.q.ops.find((op) => op.kind === 'measure');
+    if (!looked || looked.by !== 'torch') throw new Error('the flashlight on its face should measure the cat');
+    if (b().phase === 'tamed') return 'secret level: CAT on the title; flattened and flung; dodged; T1 turned and smashed; a look at 4% cute came out cute (lucky)';
+    if (cat() !== 1) throw new Error('a monster result should leave the cat a plain 1');
+    // Now the sure way: eight turns, nobody looking, alternating T1 and T2; rebuilds cut short.
+    let turns = 0;
+    for (let tries = 0; b().phase === 'fight' && turns < 8 && tries < 40; tries += 1) {
+      const t = turns % 2 === 0 ? t1 : t2;
+      if (t.wreck > 0) t.wreck = Math.min(t.wreck, 0.2); // a paw chasing the player can smash it early, too
+      await until(() => !(t.wreck > 0) && !t.used, 3000, `${t.id} to be back`);
+      await go(t.x, () => t.near || t.wreck > 0, 20000, `stand at ${t.id}`);
+      if (!t.near) continue;
+      await bot.tap('KeyE');
+      if (!t.used && b().phase === 'fight') continue;
+      turns += 1;
+      if (b().phase !== 'fight') break;
+      if (!close(cute(), Math.sin((turns * Math.PI) / 16) ** 2)) throw new Error(`after ${turns} turns the cat should be sin^2(${turns} pi/16) cute: ${cute()}`);
+      await go(t.x < 480 ? t.x + 260 : t.x - 260, () => t.wreck > 0, 20000, `the cat to smash ${t.id}`);
+      t.wreck = 0.2;
+    }
+    if (turns !== 8 || b().phase !== 'tamed' || cat() !== 0) throw new Error(`eight turns should tame it without a look: ${turns} turns, ${b().phase}`);
+    await until(() => g.mode === 'complete', 8000, 'the secret level to be cleared');
+    const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
+    if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the secret level, Next should lead back to the title');
+    return `secret level: CAT on the title; the intro skipped; flattened and flung off the roof (a life lost, the cat back at 1); ${drops} drops dodged (${dodged} paws stepped away from); T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; a look came out monster; eight turns then tamed it with no look; stars ${stars.join(', ')}`;
+  });
+  await shot('15c-secret-cleared');
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
+  if (!(await listed()).some((t) => t === 'Secret. The Beast on the Roof')) throw new Error(`once found, the secret level should be listed: ${JSON.stringify(await listed())}`);
+  report.push('the secret level is listed with the bonus levels once found');
   await page.click('#btn-start');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
 

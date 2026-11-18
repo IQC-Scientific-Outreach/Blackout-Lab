@@ -395,3 +395,20 @@ test('SWAP exchanges two qubits\' states, superpositions and phases included', (
   for (const [g, w] of [['h', [0]], ['swap', [0, 1]], ['z', [1]], ['swap', [0, 1]], ['h', [0]]]) r.apply(g, w);
   assert.deepEqual(r.snapshot().definite, [1, 0]);
 });
+
+test('secret level: RY(pi/8) turns monster (1) towards cute (0) with P(cute) = sin^2(k pi/16), certain after eight', () => {
+  const q = lab(['1']);
+  for (let k = 1; k <= 8; k += 1) {
+    q.apply('ry', [0], Math.PI / 8);
+    close(1 - q.snapshot().p1[0], Math.sin((k * Math.PI) / 16) ** 2, `after ${k} turns`);
+  }
+  assert.deepEqual(q.snapshot().definite, [0]);
+  // A look that comes out monster leaves it a plain 1 again: every turn is undone.
+  let r;
+  for (let seed = 1; !r || r.snapshot().definite[0] !== 1; seed += 1) {
+    r = lab(['1'], seed);
+    for (let k = 0; k < 4; k += 1) r.apply('ry', [0], Math.PI / 8);
+    r.measure(0, true);
+  }
+  assert.deepEqual(r.snapshot().definite, [1]);
+});

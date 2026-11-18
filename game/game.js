@@ -5,7 +5,7 @@
 // ever asks the engine to apply a gate, measure, or reset, and then moves the
 // platforms to wherever the returned snapshot says they are.
 
-import { LEVELS, BONUS_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
+import { LEVELS, BONUS_LEVELS, BEAST, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
 import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } from './geometry.js';
 import { STORY } from './story.js';
 import { createQuantum } from './quantum.js';
@@ -72,8 +72,29 @@ function saveDev(dev) {
 // Level numbers: the climb's floors (0 to 6), then the terrace, then the bonus levels,
 // which are reached only from "Skip to floor" and are not part of the climb.
 const BONUS_FROM = LEVELS.length + 1;
-const isBonus = (index) => index >= BONUS_FROM;
-const levelAt = (index) => (index < LEVELS.length ? LEVELS[index] : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null);
+const isBonus = (index) => index >= BONUS_FROM; // the secret level counts as one too
+// The secret level comes after the bonus levels, but "Next bonus level" never leads to it.
+const HIDDEN_INDEX = BONUS_FROM + BONUS_LEVELS.length;
+const levelAt = (index) =>
+  index < LEVELS.length ? LEVELS[index] : index === HIDDEN_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
+const hasNextBonus = (index) => index + 1 < HIDDEN_INDEX;
+
+// Whether the secret level has been found in this browser (it is then listed with the bonus levels).
+const SECRET_KEY = 'blackoutLab.secret';
+function secretFound() {
+  try {
+    return localStorage.getItem(SECRET_KEY) === 'found';
+  } catch (err) {
+    return false;
+  }
+}
+function markSecretFound() {
+  try {
+    localStorage.setItem(SECRET_KEY, 'found');
+  } catch (err) {
+    // blocked storage: it stays unlisted, and CAT still works
+  }
+}
 
 const count = (n, one, many) => (n === 0 ? `no ${many}` : `${n} ${n === 1 ? one : many}`);
 const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -163,11 +184,34 @@ export function startGame() {
       input.setHeld(action, false);
     },
   });
-  ui.setFloors(
-    LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
-    `Ending: ${TERRACE.name}`,
-    BONUS_LEVELS.map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i }))
-  );
+  function listFloors() {
+    const secret = secretFound() ? [{ name: `Secret. ${BEAST.name}`, index: HIDDEN_INDEX }] : [];
+    ui.setFloors(
+      LEVELS.map((level, i) => `${i + 1}. ${level.name}`),
+      `Ending: ${TERRACE.name}`,
+      [...BONUS_LEVELS.map((level, i) => ({ name: `Bonus ${i + 1}. ${level.name}`, index: BONUS_FROM + i })), ...secret]
+    );
+  }
+  listFloors();
+
+  // The secret: typing CAT on the title screen.
+  let typed = '';
+  window.addEventListener('keydown', (ev) => {
+    if (G.mode !== 'title' || ev.ctrlKey || ev.metaKey || ev.altKey || !/^Key[A-Z]$/.test(ev.code)) return;
+    const tag = ev.target && ev.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    typed = (typed + ev.code.slice(3)).slice(-3);
+    if (typed !== 'CAT') return;
+    typed = '';
+    audio.unlock();
+    G.started = true;
+    G.results = G.results || [];
+    if (!secretFound()) {
+      markSecretFound();
+      listFloors();
+    }
+    loadLevel(HIDDEN_INDEX);
+  });
 
   // -- small helpers --------------------------------------------------------
 
@@ -447,6 +491,8 @@ export function startGame() {
     G.passive = null;
     G.swap = null;
     G.busy = false;
+    G.beast = null;
+    G.flung = null;
   }
 
   async function loadLevel(index, opts) {
@@ -482,13 +528,16 @@ export function startGame() {
     if (backdrop) return true;
     ui.showScreen(null);
     setMode('play');
-    if (carry === 'fall') {
+    if (carry === 'fall' && level.beast) {
+      say(`Flattened. The fight starts over, and the cat is a monster (1) again. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
+    } else if (carry === 'fall') {
       say(`You fell. The floor reset to its starting state. Lives left: ${G.infinite ? 'unlimited' : G.lives}.`, 'bad', true);
     } else if (carry === 'restart') {
       say('Floor restarted: platforms and circuit are back to their starting states.', 'info', true);
     } else {
       say(`${isBonus(index) ? level.tag : `Floor ${index + 1}`}: ${level.name}. ${level.goal}`, 'info');
     }
+    if (level.beast) startBeast(!carry); // the rise of the beast is shown once, not after every flattening
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
     return true;
@@ -566,7 +615,7 @@ export function startGame() {
   // Developer option: standing at a terminal shows its gates, and 1 to 9 apply them,
   // without entering the terminal (so the player can still move and look).
   function updatePassive(hit) {
-    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !(hit.obj.port && !carrying()) ? hit.obj : null;
+    const term = G.dev.passiveTerminal && hit && hit.type === 'terminal' && !hit.obj.quick && !(hit.obj.port && !carrying()) ? hit.obj : null;
     if (!hit && G.passive && !G.player.onGround) return; // a hop at the terminal keeps it open
     if (term === G.passive && (!term || G.passiveCarrying === carrying())) return;
     closePassive();
@@ -1073,7 +1122,7 @@ export function startGame() {
       const d = Math.abs(cx - x);
       if (d < reach && (!best || d < best.d)) best = { type, obj, d };
     };
-    for (const t of room.terminals) if (!t.broken) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26); // nobody can use a broken one
+    for (const t of room.terminals) if (!t.broken && !(t.wreck > 0) && !t.used) offer(t.box && G.flags.opened ? 'cat' : 'terminal', t, t.x, t.y, 26); // nobody can use a broken one
     for (const n of room.npcs) offer('npc', n, n.x, n.y, 34);
     for (const p of room.portals) offer('portal', p, p.x, p.y, 22);
     const d = room.door;
@@ -1365,7 +1414,7 @@ export function startGame() {
     if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
       // A bonus level is not part of the climb: out of lives, it simply starts over.
       loadLevel(G.levelIndex);
-      say('Out of lives: the bonus level starts over with three.', 'bad', true);
+      say(`Out of lives: the ${G.level.beast ? 'secret' : 'bonus'} level starts over with three.`, 'bad', true);
       return;
     }
     if (G.lives <= 0 && !G.infinite) {
@@ -1377,6 +1426,368 @@ export function startGame() {
     loadLevel(G.levelIndex, { carry: 'fall' });
   }
 
+  // -- the secret level: the beast on the roof ----------------------------------
+  //
+  // The cat is one qubit, CAT: 0 cute, 1 monster, starting at 1. Its head sits in the
+  // skyline; its paws take turns: rise, follow the player, stop (the wind-up), drop
+  // straight down. A quick terminal turns the cat by RY(pi/8), and the cat answers by
+  // smashing that terminal, which comes back after a while. The flashlight resting on
+  // its face measures it: cute ends the fight, monster starts the count again.
+  const PAW = { rise: 0.6, track: [1.3, 2.1], speed: 300, windup: 0.55, fall: 6500, down: 0.55, lift: 0.7, h: 46 };
+  const PAW_REST_Y = 266;
+  const ease = (k) => k * k * (3 - 2 * k);
+
+  function startBeast(intro) {
+    const cfg = G.level.beast;
+    const roof = G.level.solids[0].y;
+    const paw = (side) => ({ side, x: cfg.head.x + side * 175, y: PAW_REST_Y, state: 'rest', t: 0, from: null, track: 0, target: null, vy: 0 });
+    for (const t of G.room.terminals) {
+      t.wreck = 0;
+      t.used = false;
+    }
+    G.beast = {
+      phase: intro ? 'intro' : 'fight', // intro | fight | tamed
+      t: 0,
+      roof,
+      rise: intro ? 0 : 1, // the head coming up behind the skyline
+      flash: 0,
+      tame: 0, // 0 to 1 as it shrinks back to a cat
+      cat: { x: cfg.head.x - 52, y: roof, state: intro ? 'sit' : 'in', k: 0 },
+      box: { x: cfg.head.x, state: intro ? 'shut' : 'gone', shake: 0, glow: 0 },
+      line: null, // a speech bubble: { text, x, y, until }
+      paws: [paw(-1), paw(1)],
+      next: Math.random() < 0.5 ? 0 : 1,
+      wait: intro ? 0 : 1.4,
+      grudge: null, // the terminal it is going for
+      exposure: 0,
+      lit: false,
+      cues: {},
+    };
+    G.torch.active = false; // the title screen's backdrop may have left it shining
+    if (intro) {
+      setMode('cutscene');
+      ui.setPrompt('The cat looks at you, then at the box. <b>E</b> or <b>Space</b> skips.');
+    }
+  }
+
+  function cue(name, at, fn) {
+    const b = G.beast;
+    if (b.t >= at && !b.cues[name]) {
+      b.cues[name] = true;
+      fn();
+    }
+  }
+
+  function endIntro() {
+    const b = G.beast;
+    b.phase = 'fight';
+    b.rise = 1;
+    b.flash = Math.max(b.flash, 0.3);
+    b.cat.state = 'in';
+    b.box.state = 'gone';
+    b.line = null;
+    b.wait = 1.4;
+    setMode('play');
+    say('The radiation made the cat a monster: state 1. Turn it back to cute (0) at T1 and T2, and dodge the paws.', 'quantum', true);
+  }
+
+  // The intro and the ending, in cutscene mode.
+  function updateBeastScene(dt) {
+    const b = G.beast;
+    if (input.take('pause')) {
+      pause();
+      return;
+    }
+    const skip = input.take('use') || input.take('jump');
+    b.t += dt;
+    b.flash = Math.max(0, b.flash - dt * 1.4);
+    if (b.line && b.t > b.line.until) b.line = null;
+    if (b.phase === 'intro') {
+      const cat = b.cat;
+      const box = b.box;
+      cue('meow', 0.4, () => {
+        audio.play('meow');
+        b.line = { text: 'MEOW', who: 'Cat', until: 1.5 };
+        panel.log('Cat: MEOW', 'info');
+      });
+      if (b.t >= 1.5 && b.t < 2.1) {
+        cat.state = 'jump';
+        cat.k = (b.t - 1.5) / 0.6;
+        cue('hop', 1.5, () => audio.play('jump'));
+      } else if (b.t >= 2.1 && cat.state !== 'in') {
+        cat.state = 'in';
+        audio.play('land');
+        say('The cat jumped back into the box, and the box is still full of radiation.', 'info');
+      }
+      if (b.t >= 2.1 && b.t < 3.6) {
+        box.shake = (b.t - 2.1) / 1.5;
+        box.glow = box.shake;
+        cue('hum', 2.4, () => audio.play('windup'));
+        cue('hum2', 3.0, () => audio.play('windup'));
+      }
+      cue('burst', 3.6, () => {
+        box.state = 'burst';
+        b.flash = 1;
+        G.shake = 0.8;
+        audio.play('smash');
+        audio.play('roar');
+      });
+      if (b.t >= 3.6) b.rise = ease(Math.min(1, (b.t - 3.6) / 2.2));
+      if (b.t >= 4.2) box.state = 'gone';
+      if (b.t >= 6.2 || skip) endIntro();
+    } else if (b.phase === 'tamed') {
+      b.tame = ease(Math.min(1, b.t / 2.2));
+      for (const paw of b.paws) paw.y += (PAW_REST_Y + 120 - paw.y) * Math.min(1, dt * 3);
+      cue('sit', 2.2, () => {
+        b.cat.state = 'sit';
+        b.cat.x = G.level.beast.head.x;
+        audio.play('purr');
+        b.line = { text: 'mew', who: 'Cat', until: 99 };
+        panel.log('Cat: mew', 'info');
+      });
+      if (b.t >= 4.4 || (skip && b.t > 2.4)) {
+        setMode('play');
+        completeFloor();
+      }
+    }
+  }
+
+  // The fight, every frame of play.
+  function updateBeast(dt) {
+    const b = G.beast;
+    const cfg = G.level.beast;
+    b.t += dt;
+    b.flash = Math.max(0, b.flash - dt * 1.4);
+    for (const t of G.room.terminals) {
+      if (!(t.wreck > 0)) continue;
+      t.wreck -= dt;
+      if (t.wreck <= 0) {
+        t.wreck = 0;
+        t.used = false;
+        audio.play('click');
+        addRing(center(screenRect(t)), '#7dffa8', 40);
+        say(`${t.id} is working again.`, 'info');
+      }
+    }
+    updatePaws(dt);
+    if (G.mode !== 'play') return;
+    // The flashlight on its face: a measurement, as on any superposed platform.
+    const qi = G.qIndex.CAT;
+    const torch = G.torch;
+    b.lit = torch.active && rectLit(handOf(G.player), torch.angle, cfg.face, torch.range);
+    b.exposure = b.lit && G.q.definite[qi] === null ? b.exposure + dt : 0;
+    if (b.exposure >= TORCH.dwell) {
+      b.exposure = 0;
+      lookAtBeast(qi);
+    }
+  }
+
+  function updatePaws(dt) {
+    const b = G.beast;
+    const cfg = G.level.beast;
+    const pl = G.player;
+    const clampX = (x) => Math.max(36, Math.min(844, x));
+    if (b.paws.every((p) => p.state === 'rest')) {
+      b.wait -= dt;
+      if (b.wait <= 0) {
+        const paw = b.paws[b.next];
+        b.next = 1 - b.next;
+        paw.state = 'rise';
+        paw.t = 0;
+        paw.from = { x: paw.x, y: paw.y };
+        paw.target = b.grudge && !(b.grudge.wreck > 0) ? b.grudge : null;
+        paw.track = paw.target ? 0.6 : PAW.track[0] + Math.random() * (PAW.track[1] - PAW.track[0]);
+      }
+    }
+    for (const paw of b.paws) {
+      paw.t += dt;
+      const aim = clampX(paw.target ? paw.target.x : pl.x + PLAYER.w / 2);
+      if (paw.state === 'rise') {
+        const k = ease(Math.min(1, paw.t / PAW.rise));
+        paw.x = paw.from.x + (aim - paw.from.x) * k;
+        paw.y = paw.from.y + (cfg.top - paw.from.y) * k;
+        if (paw.t >= PAW.rise) {
+          paw.state = 'track';
+          paw.t = 0;
+        }
+      } else if (paw.state === 'track') {
+        const gap = aim - paw.x;
+        paw.x += Math.sign(gap) * Math.min(Math.abs(gap), PAW.speed * dt);
+        paw.y = cfg.top + Math.sin(paw.t * 6) * 3;
+        // Going for a terminal, it waits until it is right over it.
+        if (paw.t >= paw.track && (!paw.target || Math.abs(aim - paw.x) < 2)) {
+          paw.state = 'windup';
+          paw.t = 0;
+          audio.play('windup');
+        }
+      } else if (paw.state === 'windup') {
+        paw.y = cfg.top - 16 * Math.min(1, paw.t / 0.2); // it stops, and draws back
+        if (paw.t >= PAW.windup) {
+          paw.state = 'slam';
+          paw.t = 0;
+          paw.vy = 250;
+        }
+      } else if (paw.state === 'slam') {
+        paw.vy += PAW.fall * dt;
+        paw.y = Math.min(b.roof, paw.y + paw.vy * dt);
+        const r = { x: paw.x - cfg.pawW / 2, y: paw.y - PAW.h, w: cfg.pawW, h: PAW.h };
+        if (G.mode === 'play' && overlap(r, { x: pl.x, y: pl.y, w: PLAYER.w, h: PLAYER.h })) smush(paw);
+        if (paw.y >= b.roof) {
+          paw.state = 'down';
+          paw.t = 0;
+          pawLands(paw);
+        }
+      } else if (paw.state === 'down') {
+        if (paw.t >= PAW.down) {
+          paw.state = 'lift';
+          paw.t = 0;
+          paw.from = { x: paw.x, y: paw.y };
+        }
+      } else if (paw.state === 'lift') {
+        const k = ease(Math.min(1, paw.t / PAW.lift));
+        const restX = cfg.head.x + paw.side * 175;
+        paw.x = paw.from.x + (restX - paw.from.x) * k;
+        paw.y = paw.from.y + (PAW_REST_Y - paw.from.y) * k;
+        if (paw.t >= PAW.lift) {
+          paw.state = 'rest';
+          paw.target = null;
+          b.wait = 0.45 + Math.random() * 0.6;
+        }
+      }
+    }
+  }
+
+  function pawLands(paw) {
+    const b = G.beast;
+    const cfg = G.level.beast;
+    G.shake = Math.max(G.shake, 0.55);
+    audio.play('thud');
+    for (const t of G.room.terminals) {
+      if (t.wreck > 0 || Math.abs(t.x - paw.x) > cfg.pawW / 2 + 14) continue;
+      t.wreck = cfg.wreck;
+      t.used = false;
+      if (b.grudge === t) b.grudge = null;
+      audio.play('smash');
+      addRing(center(screenRect(t)), '#ff8a4a', 50);
+      say(`The cat smashed ${t.id}. It comes back in ${cfg.wreck} seconds.`, 'bad');
+    }
+    if (paw.target && paw.target.wreck > 0) paw.target = null;
+  }
+
+  // Flattened: squashed for a moment under the paw, then sent spinning off the screen.
+  function smush(paw) {
+    const pl = G.player;
+    G.flung = { t: 0, dir: pl.x + PLAYER.w / 2 < paw.x ? -1 : 1, vx: 0, vy: 0, spin: 0, launched: false };
+    audio.play('fling');
+    G.stats.falls += 1;
+    if (!G.infinite) G.lives -= 1;
+    G.fallT = 1.7;
+    updateHud();
+    setMode('falling');
+    ui.announce('Flattened by a paw.');
+  }
+
+  function updateFling(dt) {
+    const f = G.flung;
+    const pl = G.player;
+    f.t += dt;
+    if (f.t < 0.22) return; // squashed flat
+    if (!f.launched) {
+      f.launched = true;
+      f.vx = f.dir * 520;
+      f.vy = -1150; // up and away, off the top of the screen
+    }
+    f.vy += 1500 * dt;
+    pl.x += f.vx * dt;
+    pl.y += f.vy * dt;
+    f.spin += f.dir * 13 * dt;
+  }
+
+  function quickTerminal(term) {
+    if (!G.beast || term.wreck > 0 || term.used || !G.q) return;
+    const op = term.ops[0];
+    const res = Q.apply(op.gate, op.qi, op.angle);
+    if (!res.ok) {
+      say(`That gate did not go through. ${res.error}`, 'bad');
+      return;
+    }
+    const b = G.beast;
+    term.used = true;
+    G.stats.gates += 1;
+    applySnapshot(res.state);
+    audio.play('switch');
+    audio.play('gate');
+    const head = G.level.beast.head;
+    G.fx.push({ type: 'spark', from: center(screenRect(term)), to: { x: head.x, y: head.y }, t: 0, dur: 0.45, color: COLOR_OF(op.gate) });
+    // It goes for the terminal: a paw on its way up turns to it; otherwise the next one does.
+    b.grudge = term;
+    const paw = b.paws.find((p) => p.state === 'rise' || p.state === 'track');
+    if (paw) {
+      paw.target = term;
+      paw.track = Math.min(paw.track, paw.t + 0.5);
+    }
+    if (res.state.definite[op.qi[0]] === 0) {
+      // Eight turns with nobody looking: certainly cute, no gamble needed.
+      audio.play('collapse0');
+      tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The monster shrinks back into a cat.`);
+      return;
+    }
+    const p0 = 1 - res.state.p1[op.qi[0]];
+    say(`${term.id}: RY(π/8) on the cat. If you looked now it would be cute (0) with chance ${Math.round(p0 * 100)}%. It is coming for ${term.id}: get away!`, 'quantum');
+  }
+
+  function tameBeast(text) {
+    const b = G.beast;
+    b.phase = 'tamed';
+    b.t = 0;
+    b.cues = {};
+    b.grudge = null;
+    b.exposure = 0;
+    G.torch.on = false;
+    G.torch.active = false;
+    for (const t of G.room.terminals) t.used = false; // nothing left to come for
+    setMode('cutscene');
+    say(text, 'good', true);
+  }
+
+  function lookAtBeast(qi) {
+    const b = G.beast;
+    const res = Q.measure([qi], true, 'torch');
+    if (!res.ok) return;
+    G.stats.looks += 1;
+    applySnapshot(res.state);
+    if (res.state.definite[qi] === 0) {
+      audio.play('collapse0');
+      tameBeast('You looked, and it came out cute: state 0. The monster shrinks back into a cat.');
+      return;
+    }
+    G.stats.unlucky += 1;
+    audio.play('collapse1');
+    audio.play('roar');
+    b.flash = 0.5;
+    G.shake = Math.max(G.shake, 0.5);
+    say('You looked, and it came out monster: state 1. Every turn so far is undone. Start again, or turn it further before you look.', 'bad', true);
+  }
+
+  function beastPrompt(hit) {
+    const b = G.beast;
+    const pl = G.player;
+    const cx = pl.x + PLAYER.w / 2;
+    const term = G.room.terminals.find((t) => Math.abs(cx - t.x) < 34);
+    const qi = G.qIndex.CAT;
+    const p0 = 1 - G.q.p1[qi];
+    const superposed = G.q.definite[qi] === null;
+    if (b.exposure > 0) ui.setPrompt('Looking at the cat. Hold the light on its face.');
+    else if (hit && hit.type === 'terminal') ui.setPrompt(`Press <b>E</b> to turn the cat with RY(π/8) at <b>${hit.obj.id}</b>. Then run.`);
+    else if (term && term.wreck > 0) ui.setPrompt(`<b>${term.id}</b> is smashed. It comes back in <b>${Math.ceil(term.wreck)}</b> s.`);
+    else if (term && term.used) ui.setPrompt(`The cat is going for <b>${term.id}</b>: get away from it!`);
+    else if (superposed) {
+      ui.setPrompt(
+        `The cat is <b>${Math.round(p0 * 100)}%</b> cute. Shine the flashlight on its face to look (<b>F</b> switches it on), or turn it further first.`
+      );
+    } else ui.setPrompt('When a raised paw stops, it is about to drop: move. Turn the cat at <b>T1</b> and <b>T2</b>.');
+  }
+
   // -- flow -------------------------------------------------------------------
 
   function completeFloor() {
@@ -1384,7 +1795,7 @@ export function startGame() {
     const level = G.level;
     const s = G.stats;
     const earned = [
-      { got: true, text: 'Reached the exit' },
+      { got: true, text: level.firstStar || 'Reached the exit' },
       { got: s.falls === 0, text: 'No falls' },
       { got: G.hints === 0, text: 'No hints' },
     ];
@@ -1410,7 +1821,7 @@ export function startGame() {
       name: level.name,
       index: G.levelIndex,
       total: LEVELS.length,
-      bonus: bonusLevel ? { tag: level.tag, more: !!levelAt(G.levelIndex + 1) } : null,
+      bonus: bonusLevel ? { tag: level.tag, more: hasNextBonus(G.levelIndex) } : null,
       stars,
       of,
       earned,
@@ -1422,7 +1833,7 @@ export function startGame() {
   }
 
   function nextFloor() {
-    if (isBonus(G.levelIndex) && !levelAt(G.levelIndex + 1)) toTitle(); // after the last bonus level
+    if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level, or the secret one
     else loadLevel(G.levelIndex + 1);
   }
 
@@ -1669,7 +2080,7 @@ export function startGame() {
   }
 
   async function toTitle() {
-    const fromRoof = !!(G.level && G.level.outdoor);
+    const fromRoof = !!(G.level && (G.level.outdoor || G.level.beast));
     G.epoch += 1;
     if (G.terminal) {
       G.terminal = null;
@@ -1741,6 +2152,10 @@ export function startGame() {
 
   function updatePrompt(hit) {
     if (G.mode !== 'play') return;
+    if (G.beast) {
+      beastPrompt(hit);
+      return;
+    }
     const ghosts = G.room.platforms.filter((p) => p.state === null);
     const lit = ghosts.find((p) => p.exposure > 0);
     const ghost = ghosts[0];
@@ -1794,6 +2209,7 @@ export function startGame() {
     traceLights();
 
     if (G.mode === 'falling') {
+      if (G.flung) updateFling(dt);
       G.fallT -= dt;
       if (G.fallT <= 0) afterFall();
       return;
@@ -1827,6 +2243,10 @@ export function startGame() {
       updateTerrace(dt);
       return;
     }
+    if (G.level && G.level.beast && G.mode === 'cutscene') {
+      updateBeastScene(dt);
+      return;
+    }
     if (G.mode !== 'play' || !G.level) return;
 
     if (input.take('pause')) {
@@ -1849,13 +2269,18 @@ export function startGame() {
     updateLights(dt);
     updateCavities(dt);
     updateBroken(dt);
+    if (G.beast) {
+      updateBeast(dt);
+      if (G.mode !== 'play') return; // flattened, or the cat is cute again
+    }
     countDown(dt);
     pickUps();
     const hit = findInteract();
     updatePassive(hit);
     for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
     if (input.take('use') && hit) {
-      if (hit.type === 'terminal') {
+      if (hit.type === 'terminal' && hit.obj.quick) quickTerminal(hit.obj);
+      else if (hit.type === 'terminal') {
         closePassive(); // with the passive terminal option, E steps in: arrow keys or numbers pick a gate
         useTerminal(hit.obj);
       }

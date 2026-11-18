@@ -822,6 +822,9 @@ async function main() {
     return `bonus level 1: T1 turned P by itself (${ticks} tick(s) seen), ridden up in ${rides} try; spare battery range ${g.torch.range}; A read 1, then B rose and the player crossed in ${Math.round(g.floorTime)} s; stars ${stars.join(', ')}`;
   });
   await shot('15b-bonus-cleared');
+  // The Main menu button stays usable on the cleared-floor screen (the rest of the page is inert).
+  if (await page.evaluate(() => { const m = document.getElementById('btn-menu'); return m.disabled || !!m.closest('[inert]'); })) throw new Error('Main menu should be clickable on the cleared-floor screen');
+  report.push('Main menu is clickable on the cleared-floor screen');
   if ((await page.textContent('#btn-next')) !== 'Next bonus level') throw new Error('bonus level 1 should lead on to the next bonus level');
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'shuffle');
@@ -1171,6 +1174,8 @@ async function main() {
     // no aiming up, no jumping. (The paws are held at rest for the look, so the bot can watch.)
     await until(() => b().paws.every((p) => p.state === 'rest'), 8000, 'the paws to rest');
     b().wait = 99;
+    // Into the middle first, clear of both resting paws (a monster result brings them straight down).
+    await go(400, () => true, 6000, 'the middle of the roof');
     await bot.tap('KeyF');
     bot.aim(760, b().roof - 22);
     let pawsAfter = null; // the paws on the frame the cat collapses

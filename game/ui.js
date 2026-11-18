@@ -62,10 +62,12 @@ export function createUI(dom, handlers) {
 
   // While a menu screen shows (any but the title, whose About links stay in reach), the rest
   // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
-  // Left alone: the live region that announces events, and the page's heading.
+  // Left alone: the live region that announces events, the page's heading, and the Main menu
+  // button (a way out from any of these screens, the cleared-floor one included).
+  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu;
   function shield(el, on) {
-    if (el.hasAttribute('aria-live') || el.matches('h1')) return;
-    if (el.querySelector('h1')) for (const child of el.children) shield(child, on);
+    if (keep(el)) return;
+    if (el.querySelector('h1') || el.contains(dom.btnMenu)) for (const child of el.children) shield(child, on);
     else el.inert = on;
   }
 

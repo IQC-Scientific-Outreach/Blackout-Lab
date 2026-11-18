@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-tW8NvH5bhth+gm2KkJ6DOI/AudIT+0Qmd+PqflDxxyU='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-oJhP6HkRXejodfAS1hMwkx6fN3cb6EnowZtF4npvGcc='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -6044,10 +6044,12 @@ function createUI(dom, handlers) {
 
   // While a menu screen shows (any but the title, whose About links stay in reach), the rest
   // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
-  // Left alone: the live region that announces events, and the page's heading.
+  // Left alone: the live region that announces events, the page's heading, and the Main menu
+  // button (a way out from any of these screens, the cleared-floor one included).
+  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu;
   function shield(el, on) {
-    if (el.hasAttribute('aria-live') || el.matches('h1')) return;
-    if (el.querySelector('h1')) for (const child of el.children) shield(child, on);
+    if (keep(el)) return;
+    if (el.querySelector('h1') || el.contains(dom.btnMenu)) for (const child of el.children) shield(child, on);
     else el.inert = on;
   }
 

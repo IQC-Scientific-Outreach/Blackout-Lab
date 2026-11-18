@@ -31,7 +31,7 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | ← → then Enter | Pick a gate while a terminal is open (E to leave) |
 | H | Show a hint |
 | R / P / M | Restart floor / pause and options / sound |
-| Main menu (top right) | Back to the title screen from anywhere |
+| Main menu (top right) | Back to the title screen from anywhere, including the cleared-floor, pause and out-of-lives screens |
 
 - Every moving platform is a qubit. State `0` parks it lowered, state `1` parks it raised.
 - A platform in superposition is drawn as dotted outlines at both heights and cannot be stood on.

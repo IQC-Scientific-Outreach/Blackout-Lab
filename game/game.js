@@ -1503,7 +1503,7 @@ export function startGame() {
     G.torch.active = false; // the title screen's backdrop may have left it shining
     if (intro) {
       G.torch.on = false;
-      ui.setPrompt('The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>Space</b> skips the scene.');
+      ui.setPrompt('The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>E</b> anywhere else skips the scene.');
     } else {
       b0Fight();
     }
@@ -1539,6 +1539,7 @@ export function startGame() {
 
   function endIntro() {
     b0Fight();
+    G.floorTime = 0; // the clock for the timed star starts with the fight
     G.player.vx = 0;
     setMode('play');
     say('The radiation made the cat a monster: state 1. Turn it back to cute (0) at T1 and T2, and dodge the paws.', 'quantum', true);
@@ -1713,9 +1714,13 @@ export function startGame() {
     } else if (step === 'swipe') {
       const paw = b.paws[1];
       if (paw.state === 'swipe' && !b.lightsBroken) {
-        b.lightsBroken = true;
+        b.lightsBroken = true; // the string lights come down, and the lamps holding them burst
         audio.play('smash');
-        for (const x of [260, 420, 600]) addRing({ x, y: b.roof - 100 }, '#ffd36b', 30);
+        for (const x of G.level.scene.lamps) {
+          addRing({ x, y: b.roof - 109 }, '#fff1c2', 34);
+          G.fx.push({ type: 'spark', from: { x, y: b.roof - 109 }, to: { x: x - 14, y: b.roof - 4 }, t: 0, dur: 0.4, color: '#ffd36b' });
+          G.fx.push({ type: 'spark', from: { x, y: b.roof - 109 }, to: { x: x + 16, y: b.roof - 2 }, t: 0, dur: 0.5, color: '#ffd36b' });
+        }
       }
       for (const a of b.actors) {
         if (!a.flung && paw.state === 'swipe' && Math.abs(paw.x - a.x) < G.level.beast.pawW / 2 + 9) {
@@ -1748,8 +1753,8 @@ export function startGame() {
     if (b.phase === 'intro') {
       const pl = G.player;
       if (b.step === 'walk') {
-        // Walking to the generator, as on the terrace. Space skips; so does E away from it.
-        const jumpKey = input.take('jump');
+        // Walking to the generator, as on the terrace: Space jumps (over the box, say) and does
+        // not skip; E away from the generator does.
         let left = dt;
         while (left > 1e-6) {
           const step = Math.min(PHYS.step, left);
@@ -1763,8 +1768,8 @@ export function startGame() {
           b.step = 'crank';
           b.st = 0;
           enterIntroStep('crank');
-        } else if (used || jumpKey) endIntro();
-        else ui.setPrompt(b.near ? 'Press <b>E</b> to crank the generator.' : 'The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>Space</b> skips the scene.');
+        } else if (used) endIntro();
+        else ui.setPrompt(b.near ? 'Press <b>E</b> to crank the generator.' : 'The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>E</b> anywhere else skips the scene.');
         G.torch.active = false;
         return;
       }
@@ -2036,6 +2041,7 @@ export function startGame() {
     if (res.state.definite[op.qi[0]] === 0) {
       // Eight turns with nobody looking: certainly cute, no gamble needed.
       audio.play('collapse0');
+      b.deterministic = true; // eight turns in a row with no look: no luck needed
       tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The mist clears, and the monster shrinks back into a cat.`);
       return;
     }
@@ -2128,6 +2134,7 @@ export function startGame() {
     ];
     const bonus = level.bonus;
     if (bonus) earned.push({ got: bonus.seconds ? G.floorTime <= bonus.seconds : bonus.fewest ? s.gates <= level.shortest : G.bonusDone, text: bonus.text });
+    if (level.beast) earned.push({ got: !!(G.beast && G.beast.deterministic), text: level.beast.sureStar });
     const stars = earned.filter((e) => e.got).length;
     const of = earned.length;
     const bonusLevel = isBonus(G.levelIndex);

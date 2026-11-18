@@ -64,10 +64,20 @@ export function createUI(dom, handlers) {
   // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
   // Left alone: the live region that announces events, the page's heading, and the Main menu
   // button (a way out from any of these screens, the cleared-floor one included).
-  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu;
+  // On the cleared-floor screen the instrument rack stays live too: its notes scroll and the
+  // circuit can be collapsed or expanded while you read.
+  // (When expanded, the circuit's panel is moved under the game, out of the rack.)
+  const rack = document.querySelector('.rack');
+  const circuitPanel = document.getElementById('circuit').closest('.module');
+  let rackLive = false;
+  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu || (rackLive && (el === rack || el === circuitPanel));
   function shield(el, on) {
-    if (keep(el)) return;
-    if (el.querySelector('h1') || el.contains(dom.btnMenu)) for (const child of el.children) shield(child, on);
+    if (keep(el)) {
+      if (el.inert) el.inert = false;
+      return;
+    }
+    const holdsKept = el.querySelector('h1') || el.contains(dom.btnMenu) || (rackLive && el.contains(circuitPanel));
+    if (holdsKept) for (const child of el.children) shield(child, on);
     else el.inert = on;
   }
 
@@ -79,6 +89,7 @@ export function createUI(dom, handlers) {
 
   function showScreen(name) {
     screen = name;
+    rackLive = name === 'complete';
     setModal(!!name && name !== 'title');
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;

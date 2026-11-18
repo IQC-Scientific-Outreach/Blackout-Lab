@@ -1703,7 +1703,8 @@ export function createRenderer(canvas) {
 
   function crankGrip(G) {
     const gen = G.level.scene.generator;
-    const turn = G.scene ? G.scene.crank : G.t * 11; // on bonus level 7 it simply runs
+    // Bonus level 7: still until it is cranked in the opening, then running through the fight.
+    const turn = G.scene ? G.scene.crank : G.beast && G.beast.phase === 'intro' ? G.beast.crank : G.t * 11;
     return { x: gen.x - 36 + Math.cos(turn) * 8, y: gen.y - 22 + Math.sin(turn) * 8 };
   }
 
@@ -2436,6 +2437,18 @@ export function createRenderer(canvas) {
       ctx.fillStyle = '#16213a';
       rr(ctx, x - 6, roof - 116, 12, 14, 3);
       ctx.fill();
+      if (b.lightsBroken) {
+        ctx.strokeStyle = '#3d4a63'; // burst: a cracked, empty lantern
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - 4, roof - 114);
+        ctx.lineTo(x + 1, roof - 108);
+        ctx.lineTo(x - 2, roof - 104);
+        ctx.moveTo(x + 4, roof - 113);
+        ctx.lineTo(x + 1, roof - 108);
+        ctx.stroke();
+        continue;
+      }
       if (!litAt(x, power)) continue;
       glow(x, roof - 109, 46, 'rgba(255,214,140,0.5)');
       ctx.fillStyle = '#fff1c2';

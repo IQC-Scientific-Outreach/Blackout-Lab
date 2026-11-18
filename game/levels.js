@@ -504,6 +504,7 @@ export const BEAST = {
     pawW: 54, // three players wide
     top: 64, // a raised paw's underside
     wreck: 10, // seconds a smashed terminal takes to come back
+    sureStar: 'Deterministically made the cat cute', // an extra star: eight RY turns in a row, no look
   },
   torchOff: true,
   gates: ['ry'],
@@ -519,7 +520,7 @@ export const BEAST = {
   scene: TERRACE.scene,
   shortest: 8,
   firstStar: 'Tamed the beast',
-  bonus: { seconds: 90, text: 'Tamed within 90 seconds' },
+  bonus: { seconds: 60, text: 'Tamed within 60 seconds of the fight starting' },
   goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
   concept:
     'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',

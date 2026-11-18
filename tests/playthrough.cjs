@@ -824,7 +824,15 @@ async function main() {
   await shot('15b-bonus-cleared');
   // The Main menu button stays usable on the cleared-floor screen (the rest of the page is inert).
   if (await page.evaluate(() => { const m = document.getElementById('btn-menu'); return m.disabled || !!m.closest('[inert]'); })) throw new Error('Main menu should be clickable on the cleared-floor screen');
-  report.push('Main menu is clickable on the cleared-floor screen');
+  // ...and so are the rack's notes and the circuit's Collapse / Expand.
+  const toggled = [await page.textContent('#circuit-expand')];
+  await page.click('#circuit-expand', { timeout: 3000 });
+  toggled.push(await page.textContent('#circuit-expand'));
+  await page.click('#circuit-expand', { timeout: 3000 });
+  toggled.push(await page.textContent('#circuit-expand'));
+  if (toggled[0] === toggled[1] || toggled[0] !== toggled[2]) throw new Error(`the circuit should collapse and expand on the cleared-floor screen: ${toggled}`);
+  if (await page.evaluate(() => !!document.querySelector('.rack-inner').closest('[inert]'))) throw new Error('the lab notes should scroll on the cleared-floor screen');
+  report.push('on the cleared-floor screen, Main menu, the circuit toggle and the lab notes all work');
   if ((await page.textContent('#btn-next')) !== 'Next bonus level') throw new Error('bonus level 1 should lead on to the next bonus level');
   await page.click('#btn-next');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'shuffle');
@@ -1072,6 +1080,10 @@ async function main() {
     if (b().phase !== 'intro' || cat() !== 1) throw new Error('it should open on the intro, with the cat a monster (1)');
     // As on the terrace: the power is off, the terminals too, and a box sits in the middle of the roof.
     if (b().power !== 0 || b().termsOn || b().box.state !== 'shut' || g.room.terminals.some((t) => t.near)) throw new Error('the roof should start dark, with the terminals off and the box shut');
+    // Space only jumps here (over the box, say): it does not skip the scene before the generator is on.
+    await bot.tap('Space');
+    for (let k = 0; k < 10; k += 1) await frame();
+    if (b().step !== 'walk' || b().crank !== 0) throw new Error(`Space should not skip the opening, and the crank should not turn before it is used: ${b().step} ${b().crank}`);
     await bot.walkTo(700);
     await until(() => b().near, 2000, 'the generator');
     await bot.tap('KeyE');
@@ -1083,6 +1095,7 @@ async function main() {
     await bot.tap('KeyE'); // skip the rest
     await until(() => g.mode === 'play' && b().phase === 'fight' && b().rise === 1, 2000, 'the fight to start');
     if (b().actors.length || !b().lightsBroken || b().box.state !== 'gone') throw new Error('skipping should leave the roof as the scene ends: the others gone, the string lights down');
+    if (g.floorTime > 0.5) throw new Error(`the clock for the timed star should start with the fight: ${g.floorTime}`);
     await until(() => b().mist === 1 && b().reveal < 0.05, 8000, 'the mist to roll in');
     // Walk to x while keeping clear of any paw that has stopped to drop; until done() holds with no paw about to drop.
     const threat = () => b().paws.find((p) => (p.state === 'windup' || p.state === 'slam') && Math.abs(p.x - (g.player.x + 9)) < 64);
@@ -1221,7 +1234,8 @@ async function main() {
     await until(() => g.mode === 'complete', 8000, 'bonus level 7 to be cleared');
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
     if (document.getElementById('btn-next').textContent !== 'Back to title') throw new Error('after the last bonus level, Next should lead back to the title');
-    return `bonus level 7: the generator cranked, everyone out, the cat in the box, Bob calling it, then the rest skipped; the mist rolled in; flattened and flung off the roof (a life lost, back at the stair door); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; flattened again with the turn kept; a look came out monster (a screech, both paws down, the monster in view for 2 s); eight turns then tamed it with no look; stars ${stars.join(', ')}`;
+    if (!stars.includes('+Deterministically made the cat cute')) throw new Error(`eight RY turns in a row should earn the deterministic star: ${stars}`);
+    return `bonus level 7: Space jumped without skipping; the generator cranked, everyone out, the cat in the box, Bob calling it, then the rest skipped; the mist rolled in; flattened and flung off the roof (a life lost, back at the stair door); ${drops} drops dodged (${dodged} paws stepped away from), ${jumped} swipe(s) jumped; T1 turned the cat to ${(Math.sin(Math.PI / 16) ** 2).toFixed(3)} cute and was smashed; flattened again with the turn kept; a look came out monster (a screech, both paws down, the monster in view for 2 s); eight turns then tamed it with no look; stars ${stars.join(', ')}`;
   });
   await shot('15c-beast-cleared');
   await page.click('#btn-next');

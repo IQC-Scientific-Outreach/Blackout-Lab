@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-oJhP6HkRXejodfAS1hMwkx6fN3cb6EnowZtF4npvGcc='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-akA0XVG/1E97NPAczpWwOYmqv6M/vs6DGmNvTAALWRo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -1162,6 +1162,7 @@ const BEAST = {
     pawW: 54, // three players wide
     top: 64, // a raised paw's underside
     wreck: 10, // seconds a smashed terminal takes to come back
+    sureStar: 'Deterministically made the cat cute', // an extra star: eight RY turns in a row, no look
   },
   torchOff: true,
   gates: ['ry'],
@@ -1177,7 +1178,7 @@ const BEAST = {
   scene: TERRACE.scene,
   shortest: 8,
   firstStar: 'Tamed the beast',
-  bonus: { seconds: 90, text: 'Tamed within 90 seconds' },
+  bonus: { seconds: 60, text: 'Tamed within 60 seconds of the fight starting' },
   goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
   concept:
     'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
@@ -4435,7 +4436,8 @@ function createRenderer(canvas) {
 
   function crankGrip(G) {
     const gen = G.level.scene.generator;
-    const turn = G.scene ? G.scene.crank : G.t * 11; // on bonus level 7 it simply runs
+    // Bonus level 7: still until it is cranked in the opening, then running through the fight.
+    const turn = G.scene ? G.scene.crank : G.beast && G.beast.phase === 'intro' ? G.beast.crank : G.t * 11;
     return { x: gen.x - 36 + Math.cos(turn) * 8, y: gen.y - 22 + Math.sin(turn) * 8 };
   }
 
@@ -5168,6 +5170,18 @@ function createRenderer(canvas) {
       ctx.fillStyle = '#16213a';
       rr(ctx, x - 6, roof - 116, 12, 14, 3);
       ctx.fill();
+      if (b.lightsBroken) {
+        ctx.strokeStyle = '#3d4a63'; // burst: a cracked, empty lantern
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - 4, roof - 114);
+        ctx.lineTo(x + 1, roof - 108);
+        ctx.lineTo(x - 2, roof - 104);
+        ctx.moveTo(x + 4, roof - 113);
+        ctx.lineTo(x + 1, roof - 108);
+        ctx.stroke();
+        continue;
+      }
       if (!litAt(x, power)) continue;
       glow(x, roof - 109, 46, 'rgba(255,214,140,0.5)');
       ctx.fillStyle = '#fff1c2';
@@ -6046,10 +6060,20 @@ function createUI(dom, handlers) {
   // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
   // Left alone: the live region that announces events, the page's heading, and the Main menu
   // button (a way out from any of these screens, the cleared-floor one included).
-  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu;
+  // On the cleared-floor screen the instrument rack stays live too: its notes scroll and the
+  // circuit can be collapsed or expanded while you read.
+  // (When expanded, the circuit's panel is moved under the game, out of the rack.)
+  const rack = document.querySelector('.rack');
+  const circuitPanel = document.getElementById('circuit').closest('.module');
+  let rackLive = false;
+  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu || (rackLive && (el === rack || el === circuitPanel));
   function shield(el, on) {
-    if (keep(el)) return;
-    if (el.querySelector('h1') || el.contains(dom.btnMenu)) for (const child of el.children) shield(child, on);
+    if (keep(el)) {
+      if (el.inert) el.inert = false;
+      return;
+    }
+    const holdsKept = el.querySelector('h1') || el.contains(dom.btnMenu) || (rackLive && el.contains(circuitPanel));
+    if (holdsKept) for (const child of el.children) shield(child, on);
     else el.inert = on;
   }
 
@@ -6061,6 +6085,7 @@ function createUI(dom, handlers) {
 
   function showScreen(name) {
     screen = name;
+    rackLive = name === 'complete';
     setModal(!!name && name !== 'title');
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
@@ -7899,7 +7924,7 @@ function startGame() {
     G.torch.active = false; // the title screen's backdrop may have left it shining
     if (intro) {
       G.torch.on = false;
-      ui.setPrompt('The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>Space</b> skips the scene.');
+      ui.setPrompt('The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>E</b> anywhere else skips the scene.');
     } else {
       b0Fight();
     }
@@ -7935,6 +7960,7 @@ function startGame() {
 
   function endIntro() {
     b0Fight();
+    G.floorTime = 0; // the clock for the timed star starts with the fight
     G.player.vx = 0;
     setMode('play');
     say('The radiation made the cat a monster: state 1. Turn it back to cute (0) at T1 and T2, and dodge the paws.', 'quantum', true);
@@ -8109,9 +8135,13 @@ function startGame() {
     } else if (step === 'swipe') {
       const paw = b.paws[1];
       if (paw.state === 'swipe' && !b.lightsBroken) {
-        b.lightsBroken = true;
+        b.lightsBroken = true; // the string lights come down, and the lamps holding them burst
         audio.play('smash');
-        for (const x of [260, 420, 600]) addRing({ x, y: b.roof - 100 }, '#ffd36b', 30);
+        for (const x of G.level.scene.lamps) {
+          addRing({ x, y: b.roof - 109 }, '#fff1c2', 34);
+          G.fx.push({ type: 'spark', from: { x, y: b.roof - 109 }, to: { x: x - 14, y: b.roof - 4 }, t: 0, dur: 0.4, color: '#ffd36b' });
+          G.fx.push({ type: 'spark', from: { x, y: b.roof - 109 }, to: { x: x + 16, y: b.roof - 2 }, t: 0, dur: 0.5, color: '#ffd36b' });
+        }
       }
       for (const a of b.actors) {
         if (!a.flung && paw.state === 'swipe' && Math.abs(paw.x - a.x) < G.level.beast.pawW / 2 + 9) {
@@ -8144,8 +8174,8 @@ function startGame() {
     if (b.phase === 'intro') {
       const pl = G.player;
       if (b.step === 'walk') {
-        // Walking to the generator, as on the terrace. Space skips; so does E away from it.
-        const jumpKey = input.take('jump');
+        // Walking to the generator, as on the terrace: Space jumps (over the box, say) and does
+        // not skip; E away from the generator does.
         let left = dt;
         while (left > 1e-6) {
           const step = Math.min(PHYS.step, left);
@@ -8159,8 +8189,8 @@ function startGame() {
           b.step = 'crank';
           b.st = 0;
           enterIntroStep('crank');
-        } else if (used || jumpKey) endIntro();
-        else ui.setPrompt(b.near ? 'Press <b>E</b> to crank the generator.' : 'The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>Space</b> skips the scene.');
+        } else if (used) endIntro();
+        else ui.setPrompt(b.near ? 'Press <b>E</b> to crank the generator.' : 'The generator is at the far end of the roof: walk there and press <b>E</b> to crank it. <b>E</b> anywhere else skips the scene.');
         G.torch.active = false;
         return;
       }
@@ -8432,6 +8462,7 @@ function startGame() {
     if (res.state.definite[op.qi[0]] === 0) {
       // Eight turns with nobody looking: certainly cute, no gamble needed.
       audio.play('collapse0');
+      b.deterministic = true; // eight turns in a row with no look: no luck needed
       tameBeast(`${term.id}: RY(π/8), and the cat is certainly cute: state 0. The mist clears, and the monster shrinks back into a cat.`);
       return;
     }
@@ -8524,6 +8555,7 @@ function startGame() {
     ];
     const bonus = level.bonus;
     if (bonus) earned.push({ got: bonus.seconds ? G.floorTime <= bonus.seconds : bonus.fewest ? s.gates <= level.shortest : G.bonusDone, text: bonus.text });
+    if (level.beast) earned.push({ got: !!(G.beast && G.beast.deterministic), text: level.beast.sureStar });
     const stars = earned.filter((e) => e.got).length;
     const of = earned.length;
     const bonusLevel = isBonus(G.levelIndex);

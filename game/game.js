@@ -60,6 +60,7 @@ function loadDev() {
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
     dev.swapDelay = Math.min(5, Math.max(1, Math.round(Number(dev.swapDelay) || 3)));
     if (dev.torchMode !== 'switch') dev.torchMode = 'hold';
+    if (dev.panel !== 'bottom') dev.panel = 'right';
     return { ...dev, ...ALWAYS_ON };
   } catch (err) {
     return { ...DEV_DEFAULTS, ...ALWAYS_ON };
@@ -1504,6 +1505,13 @@ export function startGame() {
       b.wait = 1.6;
       b.exposure = 0;
       b.showUntil = 0;
+      // A terminal the cat was on its way to smash counts as smashed (it rebuilds as usual), so
+      // no paw is left heading for where you come back.
+      if (b.grudge) {
+        b.grudge.wreck = G.level.beast.wreck;
+        b.grudge.used = false;
+        b.grudge = null;
+      }
     }
     for (const p of G.platforms) p.exposure = 0;
     setMode('play');

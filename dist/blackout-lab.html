@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-YKJC/v0Dmn/9s4Y3Q94+z7j9igmPnIM2X03tEFkKtO0='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-lTC1KKA8EhsSiOnWEWx8lGCScL0J+6KFS8m2Q5ryFaM='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -5417,7 +5417,8 @@ function createRenderer(canvas) {
     }
     drawSpeech(G);
     if (b.flash > 0) {
-      ctx.fillStyle = `rgba(200,255,190,${Math.min(0.85, b.flash)})`;
+      // A single flash; softer with reduced motion, like the screen shake.
+      ctx.fillStyle = `rgba(200,255,190,${Math.min(calm.matches ? 0.25 : 0.85, b.flash)})`;
       ctx.fillRect(-20, -20, WORLD.w + 40, WORLD.h + 40);
     }
     ctx.restore();
@@ -6527,6 +6528,7 @@ function loadDev() {
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
     dev.swapDelay = Math.min(5, Math.max(1, Math.round(Number(dev.swapDelay) || 3)));
     if (dev.torchMode !== 'switch') dev.torchMode = 'hold';
+    if (dev.panel !== 'bottom') dev.panel = 'right';
     return { ...dev, ...ALWAYS_ON };
   } catch (err) {
     return { ...DEV_DEFAULTS, ...ALWAYS_ON };
@@ -7971,6 +7973,13 @@ function startGame() {
       b.wait = 1.6;
       b.exposure = 0;
       b.showUntil = 0;
+      // A terminal the cat was on its way to smash counts as smashed (it rebuilds as usual), so
+      // no paw is left heading for where you come back.
+      if (b.grudge) {
+        b.grudge.wreck = G.level.beast.wreck;
+        b.grudge.used = false;
+        b.grudge = null;
+      }
     }
     for (const p of G.platforms) p.exposure = 0;
     setMode('play');

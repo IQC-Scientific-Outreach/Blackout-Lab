@@ -2671,7 +2671,8 @@ export function createRenderer(canvas) {
     }
     drawSpeech(G);
     if (b.flash > 0) {
-      ctx.fillStyle = `rgba(200,255,190,${Math.min(0.85, b.flash)})`;
+      // A single flash; softer with reduced motion, like the screen shake.
+      ctx.fillStyle = `rgba(200,255,190,${Math.min(calm.matches ? 0.25 : 0.85, b.flash)})`;
       ctx.fillRect(-20, -20, WORLD.w + 40, WORLD.h + 40);
     }
     ctx.restore();

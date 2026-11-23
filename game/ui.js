@@ -9,12 +9,12 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-key-torch', 'dev-touch-collapse', 'dev-circuit-right', 'dev-instant', 'dev-passive-terminal', 'dev-canister-view', 'dev-show-gates', 'dev-swap-delay', 'dev-swap-delay-text', 'pause-dev-slot', 'pause-keys',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-circuit-right', 'dev-swap-delay', 'dev-swap-delay-text', 'pause-dev-slot', 'pause-keys',
   ];
   const dom = {};
   for (const id of ids) {
@@ -276,18 +276,32 @@ export function createUI(dom, handlers) {
   dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
   // Developer options: each control is one entry of the game's `dev` settings.
   const devSwitches = {
-    keyTorch: dom.devKeyTorch,
-    touchCollapse: dom.devTouchCollapse,
-    instantResponse: dom.devInstant,
-    passiveTerminal: dom.devPassiveTerminal,
-    canisterView: dom.devCanisterView,
-    showGates: dom.devShowGates,
     circuitRight: dom.devCircuitRight,
   };
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
   for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
+  // Reset game: a second click within a few seconds confirms it.
+  let resetArmed = null;
+  dom.btnReset.addEventListener('click', () => {
+    if (resetArmed) {
+      clearTimeout(resetArmed);
+      resetArmed = null;
+      dom.btnReset.textContent = 'Reset game';
+      dom.btnReset.classList.remove('armed');
+      handlers.reset();
+      return;
+    }
+    dom.btnReset.textContent = 'Click again to erase all stars and times';
+    dom.btnReset.classList.add('armed');
+    announce('Click Reset game again to erase all stars and best times.');
+    resetArmed = setTimeout(() => {
+      resetArmed = null;
+      dom.btnReset.textContent = 'Reset game';
+      dom.btnReset.classList.remove('armed');
+    }, 4000);
+  });
   dom.btnFloors.addEventListener('click', () => {
     const open = dom.titleFloors.hidden;
     dom.titleFloors.hidden = !open;
@@ -377,19 +391,29 @@ export function createUI(dom, handlers) {
       dom.optLives.checked = lives;
       dom.optFloor.value = String(floor);
     },
-    // names: the climb's floors; ending: the terrace; bonus: [{ name, index }], reached only from here.
-    setFloors(names, ending, bonus = []) {
-      const option = (name, i) => `<option value="${i}">${esc(name)}</option>`;
+    // floors and bonus: [{ name, index, got, of, best }] (got of `of` stars, best time in seconds
+    // or null); ending: the terrace's name. Each level shows its stars and best time.
+    setFloors(floors, ending, bonus = []) {
+      const time = (secs) => `${Math.floor(secs / 60)}:${String(Math.round(secs) % 60).padStart(2, '0')}`;
+      const said = (f) => `${f.name}. ${f.got} of ${f.of} stars.${f.best != null ? ` Best time ${time(f.best)}.` : ' Not cleared yet.'}`;
+      const plain = (f) => `${f.name}  ${'★'.repeat(f.got)}${'☆'.repeat(f.of - f.got)}${f.best != null ? `  ${time(f.best)}` : ''}`;
+      const option = (f) => `<option value="${f.index}">${esc(plain(f))}</option>`;
       dom.optFloor.innerHTML =
-        [...names, ending].map(option).join('') +
-        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map((b) => option(b.name, b.index)).join('')}</optgroup>` : '');
-      const button = (name, i, cls) => `<button type="button" class="key-btn${cls}" data-floor="${i}">${esc(name)}</button>`;
-      const buttons = names.map((name, i) => button(name, i, '')).join('');
-      const extra = bonus.length
-        ? `<p class="bonus-head">Bonus levels</p>${bonus.map((b) => button(b.name, b.index, ' bonus')).join('')}`
-        : '';
+        floors.map(option).join('') +
+        `<option value="${floors.length}">${esc(ending)}</option>` +
+        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map(option).join('')}</optgroup>` : '');
+      const button = (f, cls) =>
+        `<button type="button" class="key-btn floor-btn${cls}" data-floor="${f.index}" aria-label="${esc(said(f))}">` +
+        `<span class="floor-name">${esc(f.name)}</span><span class="floor-stars" aria-hidden="true">${starsHtml(f.got, f.of)}</span>` +
+        `<span class="floor-best" aria-hidden="true">${f.best != null ? time(f.best) : ''}</span></button>`;
+      const buttons = floors.map((f) => button(f, '')).join('');
+      const extra = bonus.length ? `<p class="bonus-head">Bonus levels</p>${bonus.map((b) => button(b, ' bonus')).join('')}` : '';
       dom.winFloors.innerHTML = buttons + extra;
       dom.titleFloors.innerHTML = buttons + extra;
+    },
+    setStarTotal(got, of) {
+      dom.starTotal.innerHTML = `${starsHtml(Math.min(got, 1), 1)} <b>${got}</b> of ${of} stars`;
+      dom.starTotal.setAttribute('aria-label', `${got} of ${of} stars earned`);
     },
     setNote(text) {
       dom.note.hidden = !text;

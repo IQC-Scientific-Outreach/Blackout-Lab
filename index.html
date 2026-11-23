@@ -50,31 +50,15 @@
               <div class="title-actions">
                 <button type="button" class="primary" id="btn-start" disabled>Waiting for the lab</button>
                 <button type="button" class="key-btn" id="btn-floors" aria-expanded="false" aria-controls="title-floors" disabled>Skip to floor</button>
+                <button type="button" class="key-btn" id="btn-reset">Reset game</button>
               </div>
+              <p class="star-total" id="star-total" aria-live="off"></p>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
                 <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
               <details class="dev" id="dev">
                 <summary>Developer options</summary>
-                <label class="dev-opt" title="The flashlight shines only while F is held, straight ahead. The mouse does not aim it.">
-                  <input type="checkbox" role="switch" id="dev-key-torch"> <b>Keyboard flashlight</b>
-                  <span class="dev-hint">hold F to shine straight ahead</span></label>
-                <label class="dev-opt" title="Landing on a superposed platform measures it: you land if it collapses where you touched it.">
-                  <input type="checkbox" role="switch" id="dev-touch-collapse"> <b>Touch-collapse</b>
-                  <span class="dev-hint">landing on a superposition measures it</span></label>
-                <label class="dev-opt" title="Platforms move as soon as a gate is applied, while you are still at the terminal.">
-                  <input type="checkbox" role="switch" id="dev-instant"> <b>Instant response</b>
-                  <span class="dev-hint">platforms move while you are at a terminal</span></label>
-                <label class="dev-opt" title="Standing at a terminal shows its gates. Press 1, 2, 3 and so on, or click, to apply one. No E needed.">
-                  <input type="checkbox" role="switch" id="dev-passive-terminal"> <b>Passive terminal</b>
-                  <span class="dev-hint">stand at a terminal, press 1, 2, 3 for gates</span></label>
-                <label class="dev-opt" title="While you hold the canister, the panel shows it enlarged with its state, or what it is entangled with.">
-                  <input type="checkbox" role="switch" id="dev-canister-view"> <b>Canister view</b>
-                  <span class="dev-hint">show the held canister's state in the panel</span></label>
-                <label class="dev-opt" title="Each gate you apply pops up for a second over the platforms (and the canister view) it acts on.">
-                  <input type="checkbox" role="switch" id="dev-show-gates"> <b>Show gates</b>
-                  <span class="dev-hint">each gate pops up over its qubits</span></label>
                 <label class="dev-opt dev-range" title="How long SWAP waits, with arrows showing where the platforms will go, before they set off.">
                   <b>Swap delay</b> <input type="range" id="dev-swap-delay" min="1" max="5" step="1" value="3">
                   <span class="dev-hint" id="dev-swap-delay-text">3 s</span></label>
@@ -92,14 +76,16 @@
               <dl class="keys">
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
-                <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
-                <div><dt><kbd>F</kbd></dt><dd>Flashlight on / off</dd></div>
+                <div><dt><kbd>F</kbd> (hold)</dt><dd>Shine the flashlight</dd></div>
+                <div><dt><kbd>I</kbd> <kbd>K</kbd></dt><dd>Tilt the flashlight up / down</dd></div>
+                <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
                 <div><dt><kbd>P</kbd></dt><dd>Pause and options</dd></div>
               </dl>
-              <p class="fine">Fall into the gap and you lose a life and the floor resets. Lose all three on one
-                floor and you start again from floor 1. There is no timer. Unlimited lives are in the pause menu.</p>
+              <p class="fine">Fall into the gap and you lose a life, but every qubit stays as you left it. Lose all
+                three on one floor and you start again from floor 1. Stars are for the fewest gates and for solving
+                without luck, never for speed. Unlimited lives are in the pause menu.</p>
             </div>
           </section>
 

@@ -146,6 +146,15 @@ kbd {
 .replay { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
 .replay-h { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.1em; }
 .replay-floors { display: flex; flex-wrap: wrap; gap: 6px; }
+/* A level in the lists: its name, its stars (filled for earned), its best time. */
+.floor-btn { display: inline-flex; align-items: center; gap: 8px; }
+.floor-stars { color: var(--torch); letter-spacing: 0.08em; font-size: 12px; }
+.floor-stars .off { color: var(--line); }
+.floor-best { font: 12px var(--mono); color: var(--dim, #8fa2bd); font-variant-numeric: tabular-nums; }
+.floor-best:empty { display: none; }
+.star-total { margin: 10px 0 0; font: 700 14px var(--mono); color: var(--ink, #dbe7f5); }
+.star-total b { color: var(--torch); }
+#btn-reset.armed { border-color: var(--bad); color: var(--bad); }
 .bonus-head { flex-basis: 100%; margin: 4px 0 0; font: 700 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 
 .options { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; margin: 0; }

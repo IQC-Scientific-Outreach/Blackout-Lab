@@ -42,10 +42,13 @@
 //              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   bonus      an extra star: { sequences: [{ q, gates, value?, untouched? }], text } for applying
-//              one of those gate sequences to its qubit (value: it must end in that state;
-//              untouched: nothing measured in between), or { seconds, text } for clearing the
-//              floor in time, or { fewest: true, text } for using no more gates than `shortest`
+//   stars      every floor has up to three (see starsOf in game.js): cleared; the fewest gates
+//              (`shortest`); and a third for solving without luck where that can be done, or with
+//              no hints where it cannot. Stars never reward speed or a run without falls.
+//   bonus      the no-luck star as a gate sequence: { sequences: [{ q, gates, value?, untouched? }],
+//              text } for applying one of those sequences to its qubit (value: it must end in that
+//              state; untouched: nothing measured in between)
+//   noLuck     true: the third star is for solving with no outcome left to chance
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
 // `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
@@ -130,7 +133,7 @@ export const LEVELS = [
       'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random.',
     hints: [
       'Stand at terminal T1, press E, and apply H to platform A.',
-      'Press E again to leave the terminal, then aim the flashlight at one of the dotted outlines. Hold it there: the platform collapses to lowered (0) or raised (1), 50/50.',
+      'Step away from the terminal, then hold F to shine the flashlight on one of the dotted outlines (I and K tilt it). Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
       'Did it collapse to lowered? Apply H again and look again. A measurement cannot be undone, only retried.',
     ],
     takeaway:
@@ -164,13 +167,7 @@ export const LEVELS = [
     ],
     door: { x: 916, y: 170, key: null, lock: [] },
     shortest: 6,
-    bonus: {
-      sequences: [
-        { q: 'B', gates: ['h', 'x'] },
-        { q: 'C', gates: ['h', 'z', 'h'] },
-      ],
-      text: 'Used the flip gate to guarantee an outcome',
-    },
+    noLuck: true, // H then X on B and H, Z, H on C need no luck at all
     goal: 'Three platforms, three terminals. A is raised out of reach, B is already in superposition, and C has no flip button.',
     concept:
       'X is a certain flip. Z flips a hidden property called phase: the odds stay 50/50, but a later H reveals it. H, then Z, then H adds up to an X. That is interference, and it only works if nobody looks in between.',
@@ -445,7 +442,6 @@ export const LEVELS = [
     decor: [{ type: 'plate', x: 236, y: 56, text: 'TO TERRACE' }],
     windows: { y: 236, xs: [80, 270, 460] },
     shortest: 11,
-    bonus: { seconds: 120, text: 'Completed within 2 minutes' },
     goal: 'No flashlight, so no observing. Put every platform exactly where you need it with gates alone, then set the three-lamp key.',
     concept:
       'Without light you cannot look and retry, and a platform in superposition cannot hold you: jump at one and you fall straight through. Only gates with a certain result will do. H, Z, H is a certain flip. H undoes H. |+⟩ and |−⟩ have the same 50/50 odds but opposite phase, and H tells them apart. The right CNOT pulls two entangled qubits apart again.',
@@ -520,7 +516,6 @@ export const BEAST = {
   scene: TERRACE.scene,
   shortest: 8,
   firstStar: 'Tamed the beast',
-  bonus: { seconds: 60, text: 'Tamed within 60 seconds of the fight starting' },
   goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
   concept:
     'The mutation was coherent: a rotation, not a mess, so a rotation can undo it. RY(\u03c0/8) turns the cat an eighth of the way from monster (1) to cute (0); eight of them, with nobody looking, make it certainly cute. In the mist you cannot see which it is. Your flashlight on its face is a measurement: it shows a cute cat with the chance the panel gives, and otherwise a monster again.',
@@ -571,7 +566,6 @@ export const BONUS_LEVELS = [
     ],
     door: { x: 900, y: 240, key: null, lock: [] },
     shortest: 0,
-    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
     goal: 'Your flashlight is dead and both terminals here are broken, stuck in loops. Ride P up to the middle ledge, fit the spare battery there, then get A and B raised together to reach the exit.',
     goalAfterBattery: 'Spare battery fitted, but it is weak: from this ledge the beam reaches A and not B. T2 keeps looping H, CNOT, CNOT, H. Get A and B raised together.',
     concept:
@@ -610,7 +604,6 @@ export const BONUS_LEVELS = [
     ],
     door: { x: 900, y: 220, key: null, lock: [] },
     shortest: 5,
-    bonus: { fewest: true, text: 'Crossed with the fewest gates (5)' },
     goal: 'A, B and C start lowered: 0 0 0. You need A lowered and B and C raised, 0 1 1, to cross to the exit. T1 has X on A and two SWAPs, nothing else.',
     concept:
       'SWAP exchanges the states of two qubits: here the two platforms trade places. With X only on A, the way to set B and C is to make a 1 on A and pass it down the line. These are ordinary bits being shuffled: no superposition, no measurement.',
@@ -665,7 +658,7 @@ export const BONUS_LEVELS = [
       'SWAP trades the states of two qubits: here the platforms Q and R change places, so a state really crosses the room. Any light on the way is a measurement, the way quantum key distribution spots an eavesdropper. H, then Z, then H adds up to an X, but only if nothing looks at the qubit in between.',
     hints: [
       'Z at T1 acts on R, over on Bob\'s side, and R is a plain 0, so on its own Z does nothing. SWAP sends Q\'s state over to R\'s place (and R\'s back): watch the arrows, then the platforms trade places.',
-      'The backup light in the middle sees any superposition crossing under it. X at T1 slides the shield S under the light. Your own flashlight is off for a reason: leave it off.',
+      'The backup light in the middle sees any superposition crossing under it. X at T1 slides the shield S under the light. Your own flashlight would see it too: do not shine it.',
       'With the shield in place: H, SWAP, Z, SWAP, H makes Q a certain 1. Then SWAP once more and jump onto the raised platform before it leaves: it carries you to Bob\'s side, under the exit. Stuck down on Bob\'s side? T2 there swaps Q and R back, so you can ride home.',
     ],
     takeaway:
@@ -752,8 +745,8 @@ export const BONUS_LEVELS = [
       { id: 'T2', x: 392, y: 340, ops: [{ gate: 'h', q: ['A'] }, { gate: 'z', q: ['A'] }, { gate: 'h', q: ['B'] }, { gate: 'cz', q: ['A', 'B'] }] },
     ],
     door: { x: 900, y: 160, key: null, lock: [] },
+    noLuck: true, // beat the faulty lights to every superposition, and nothing is left to chance
     shortest: 12,
-    bonus: { seconds: 75, text: 'Cleared within 75 seconds' },
     goal: 'Raise P to reach the middle, then set A lowered and B raised to cross to the exit. Faulty lights hang over every platform: each superposition has only a few seconds.',
     concept:
       'Decoherence: a qubit cannot stay in superposition for ever, because its surroundings keep looking at it. The faulty lights here are slow, but every superposition you make has a deadline, even while you work at a terminal. CZ applies Z to one qubit when the other is 1.',
@@ -801,12 +794,11 @@ export const BONUS_LEVELS = [
     ],
     door: { x: 900, y: 180, key: null, lock: [] },
     shortest: 3,
-    bonus: { seconds: 120, text: 'Cleared within two minutes' },
     goal: 'Freeze P lowered and climb on, then get A lowered and B raised at the same moment to cross to the exit.',
     concept:
       'Rabi oscillation: the waves from a cavity turn a qubit round and round, 0, then +, then 1, then -, then 0 again. Watching stops it, the quantum watchdog (or Zeno) effect: a qubit that is lit, or stood on, is being measured all the time, so it cannot turn. Look away and it carries on from where it was.',
     hints: [
-      'P never stops turning while nothing watches it. Switch the flashlight on (F) as P comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
+      'P never stops turning while nothing watches it. Shine the flashlight (hold F) on P as it comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
       'A and B turn together, so they would freeze as 0 0 or 1 1. Before you cross, Ry(pi/2) twice at T1 puts B half a turn ahead of A: whenever A is 0, B is 1.',
       'At T2, X slides the shield into the waves and freezes A and B together. Do it as A comes down to lowered, then light them up and cross.',
     ],

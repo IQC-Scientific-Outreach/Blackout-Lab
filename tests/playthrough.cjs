@@ -112,12 +112,36 @@ function installBot() {
     const landed = Math.abs(feet() - target.y) <= 3;
     if (!landed || !['play', 'complete'].includes(G().mode)) throw new Error(`hop missed: feet ${feet()} target ${target.y} mode ${G().mode}`);
   }
-  function aim(x, y) {
-    const canvas = document.getElementById('game');
-    const r = canvas.getBoundingClientRect();
-    canvas.dispatchEvent(
-      new PointerEvent('pointermove', { clientX: r.left + (x / 960) * r.width, clientY: r.top + (y / 540) * r.height, bubbles: true })
-    );
+  // The flashlight is the keyboard one: face the point, tilt the beam at it (what I and K do,
+  // set directly here), and hold F unless `shine` is false. dark() lets go of F.
+  // While a point is aimed at, the beam keeps turning to it every frame, even as the player
+  // moves (as a mouse pointer held still would), until dark() or another aim.
+  let aimAt = null;
+  function pointAt(x, y) {
+    const g = G();
+    const pl = g.player;
+    const cx = pl.x + 9;
+    pl.facing = x >= cx ? 1 : -1;
+    const hand = { x: cx + pl.facing * 5, y: pl.y + 14 };
+    const angle = Math.atan2(y - hand.y, x - hand.x);
+    let tilt = pl.facing > 0 ? -angle : angle - Math.PI;
+    if (tilt < -Math.PI) tilt += 2 * Math.PI;
+    if (tilt > Math.PI) tilt -= 2 * Math.PI;
+    g.torch.tilt = Math.max(-1.35, Math.min(1.35, tilt));
+  }
+  const follow = () => {
+    if (aimAt) pointAt(aimAt.x, aimAt.y);
+    requestAnimationFrame(follow);
+  };
+  requestAnimationFrame(follow);
+  function aim(x, y, shine = true) {
+    aimAt = { x, y };
+    pointAt(x, y);
+    if (shine) key('KeyF', true);
+  }
+  function dark() {
+    aimAt = null;
+    key('KeyF', false);
   }
   const platform = (q) => G().platforms.find((p) => p.q === q);
   const slab = (q) => {
@@ -135,7 +159,7 @@ function installBot() {
     const d = (y) => Math.hypot(p.x + p.w / 2 - pl.x, y - pl.y);
     aim(p.x + p.w / 2, (d(p.y1) < d(p.y0) ? p.y1 : p.y0) + 7);
     await until(() => p.state !== null, 6000, `collapse of ${q}`);
-    aim(pl.x, 20); // look away again
+    dark(); // look away again
     await frame();
     return p.state;
   }
@@ -146,7 +170,7 @@ function installBot() {
     if (!term) throw new Error(`no terminal ${id} in this room`);
     await walkTo(term.x);
     await until(() => term.near, 2000, `stand at ${id}`);
-    aim(g.player.x, 20);
+    dark();
     await tap('KeyE');
     await until(() => G().mode === 'terminal', 2000, `${id} to open`);
     for (const n of picks) {
@@ -195,7 +219,7 @@ function installBot() {
     aim(d.x - 32 - w / 2, d.y - 55);
     await until(() => d.unlocked || (d.deniedT > 0 && !d.pending), 6000, 'the lock to answer');
     const ok = d.unlocked;
-    aim(G().player.x, 20);
+    dark();
     await until(() => d.exposure === 0, 1000, 'look away');
     return ok;
   }
@@ -204,7 +228,10 @@ function installBot() {
     const d = G().door;
     const left = d.x - 32 - (30 + d.lock.length * 20);
     await walkTo((left + d.x + 22) / 2);
-    await until(() => d.near && d.deniedT <= 0 && !d.pending, 4000, 'stand at the lock');
+    // A lock whose lamps are certain and match the key opens by itself (no E needed).
+    if (d.unlocked) return true;
+    await until(() => d.unlocked || (d.near && d.deniedT <= 0 && !d.pending), 4000, 'stand at the lock');
+    if (d.unlocked) return true;
     await tap('KeyE');
     await until(() => d.unlocked || (d.deniedT > 0 && !d.pending), 6000, 'the lock to answer');
     return d.unlocked;
@@ -213,7 +240,7 @@ function installBot() {
     if (G().mode !== 'complete') await walkTo(G().door.x);
     await until(() => G().mode === 'complete', 3000, 'floor to complete');
   }
-  window.bot = { G, frame, key, tap, until, walkTo, hop, aim, observe, terminal, talk, through, unlock, unlockByHand, exit, slab, solid, platform, settle };
+  window.bot = { G, frame, key, tap, until, walkTo, hop, aim, dark, observe, terminal, talk, through, unlock, unlockByHand, exit, slab, solid, platform, settle };
 }
 
 async function main() {
@@ -259,8 +286,13 @@ async function main() {
   await page.evaluate(installBot);
   // In through "Skip to floor" this time; "Enter the building" is used after the ending.
   await page.click('#btn-floors');
-  const offered = await page.$$eval('#title-floors:not([hidden]) button:not(.bonus)', (els) => els.map((el) => el.textContent));
-  const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus', (els) => els.map((el) => el.textContent));
+  const nameOf = (els) => els.map((el) => el.querySelector('.floor-name').textContent);
+  const offered = await page.$$eval('#title-floors:not([hidden]) button:not(.bonus)', nameOf);
+  const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus', nameOf);
+  // Each level shows its stars (none earned yet) and the title shows the total.
+  const shown = await page.$$eval('#title-floors button', (els) => els.map((el) => { const all = el.querySelector('.floor-stars'); const off = all.querySelector('.off'); return all.textContent.length > 0 && !!off && off.textContent.length === all.textContent.length; }));
+  if (!shown.length || !shown.every(Boolean)) throw new Error('every level should show its stars, all blank to start');
+  if (!/^★ 0 of \d+ stars$/.test((await page.textContent('#star-total')).trim())) throw new Error(`the title should show the star total: ${await page.textContent('#star-total')}`);
   if (!bonusOffered.length || !bonusOffered[0].startsWith('Bonus 1.') || bonusOffered[bonusOffered.length - 1] !== 'Bonus 7. The Beast on the Roof') {
     throw new Error(`"Skip to floor" should list the seven bonus levels: ${JSON.stringify(bonusOffered)}`);
   }
@@ -321,39 +353,28 @@ async function main() {
   });
   await nextFloor(1);
 
-  // Floor 2: X, then H-X on B (which earns the fourth star). On C: one gamble first, then H-Z-H, which earns it too.
+  // Floor 2: the no-luck route. X on A, H then X on B, H Z H on C: six gates, nothing measured.
   await step('floor 2', async () => {
-    await bot.tap('KeyF');
     await bot.terminal('T1', [1]);
     await bot.settle('A');
     await bot.hop(bot.slab('A'));
     await bot.hop(bot.solid(1));
-    if (bot.G().bonusDone) throw new Error('X on A alone should not earn the fourth star');
     await bot.terminal('T2', [1, 2]);
     await bot.settle('B');
-    if (!bot.G().bonusDone) throw new Error('H then X on B should earn the fourth star');
-    bot.G().bonusDone = false; // set aside, to check that C can earn it on its own
+    if (bot.platform('B').state !== 1) throw new Error('H then X should raise B for certain');
     await bot.hop(bot.slab('B'));
     await bot.hop(bot.solid(2));
-    await bot.terminal('T3', [1]);
-    await bot.tap('KeyF');
-    const gamble = await bot.observe('C');
-    await bot.tap('KeyF');
-    if (bot.G().bonusDone) throw new Error('a single H and a look is not the flip gate');
     await bot.terminal('T3', [1, 2, 1]);
-    if (bot.platform('C').state !== 1 - gamble) throw new Error('H Z H should flip C with certainty');
-    if (!bot.G().bonusDone) throw new Error('H Z H should count as the flip gate even after a look');
-    if (gamble === 1) await bot.terminal('T3', [1, 2, 1]);
     await bot.settle('C');
-    if (bot.platform('C').state !== 1) throw new Error('H Z H did not raise C');
+    if (bot.platform('C').state !== 1) throw new Error('H Z H should raise C for certain');
     await bot.hop(bot.slab('C'));
     await bot.hop(bot.solid(3));
     await bot.exit();
     const s = bot.G().stats;
     const r = bot.G().results[1];
-    const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => li.textContent);
-    if (r.stars !== 4 || r.of !== 4 || list.length !== 4) throw new Error(`H Z H on C should earn the fourth star: ${JSON.stringify(r)} ${JSON.stringify(list)}`);
-    return `floor 2 cleared: gambled on C (got ${gamble}), then H Z H; ${r.stars} of ${r.of} stars ("${list[3]}"), stats ${JSON.stringify(s)}`;
+    const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
+    if (r.stars !== 3 || r.of !== 3 || list.join('|') !== '+Reached the exit|+Fewest gates (6)|+Solved without luck') throw new Error(`six gates and no luck should earn all three stars: ${JSON.stringify(r)} ${list}`);
+    return `floor 2 cleared with no measurement at all: ${list.join(', ')}; stats ${JSON.stringify(s)}`;
   });
   await nextFloor(2);
 
@@ -614,8 +635,10 @@ async function main() {
     if (!/no observations/.test(line) || !/no unlucky collapses/.test(line)) throw new Error(`floor 7 summary: "${line}"`);
     const res = g.results[6];
     const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => li.textContent);
-    if (res.of !== 4 || list[3] !== 'Completed within 2 minutes') throw new Error(`floor 7 should have a timed fourth star: ${JSON.stringify(list)}`);
-    if ((res.stars === 4) !== (g.floorTime <= 120)) throw new Error(`timed star does not match the time taken: ${res.stars} stars in ${g.floorTime}s`);
+    if (res.of !== 3 || res.stars !== 3 || list.join('|') !== 'Reached the exit|Fewest gates (11)|No hints') throw new Error(`floor 7: eleven gates and no hints should earn all three stars, none for speed: ${res.stars}/${res.of} ${JSON.stringify(list)}`);
+    // Its best time and stars are kept for the level lists.
+    const kept = JSON.parse(localStorage.getItem('blackoutLab.progress') || '{}')['lights-out'];
+    if (!kept || kept.stars.join() !== 'true,true,true' || !(kept.best > 0)) throw new Error(`floor 7's stars and best time should be saved: ${JSON.stringify(kept)}`);
     return `floor 7 cleared in the dark in ${Math.round(g.floorTime)} s, ${res.stars} of ${res.of} stars, summary "${line}"`;
   });
   await shot('09-floor7-complete');
@@ -688,30 +711,8 @@ async function main() {
   if (!r.about || r.circuit) throw new Error(`back at the title the rack should show the About panel again: ${JSON.stringify(r)}`);
   report.push('replaying floor 3 from the final screen and returning to start both work');
 
-  // A superposed platform cannot be landed on, and jumping at it is not a measurement.
   await page.click('#btn-start');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
-  await step('no landing on a superposition', async () => {
-    const g = bot.G();
-    await bot.tap('KeyF');
-    await bot.terminal('T1', [1]);
-    const a = bot.platform('A');
-    if (a.state !== null) throw new Error('A should be in superposition');
-    const before = g.q.ops.length;
-    bot.key('ArrowRight', true);
-    await bot.until(() => g.player.x + 18 >= 148, 3000, 'reach the edge');
-    await bot.tap('Space');
-    let collapsed = false;
-    await bot.until(() => {
-      if (a.state !== null || g.q.ops.length !== before) collapsed = true;
-      return g.mode !== 'play';
-    }, 5000, 'the fall');
-    bot.key('ArrowRight', false);
-    if (collapsed) throw new Error('jumping at a superposed platform must not collapse it');
-    if (g.mode !== 'falling' || g.lives !== 2) throw new Error(`the player should fall through and lose a life: ${g.mode}, ${g.lives}`);
-    await bot.until(() => g.mode === 'play', 4000, 'the floor to reset');
-    return 'jumping at superposed A: no collapse, straight through, one life lost';
-  });
 
   // Three falls on one floor send the player back to floor 1.
   await page.keyboard.press('KeyP');
@@ -719,16 +720,26 @@ async function main() {
   await page.selectOption('#opt-floor', '2');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 2);
   await step('falling', async () => {
+    const g = bot.G();
+    // First, something to keep: the canister picked up and put in superposition.
+    await bot.walkTo(g.canister.x);
+    await bot.until(() => g.canister.carried, 2000, 'pick up the canister');
+    await bot.terminal('T1', [1]);
+    const kept = { ops: g.q.ops.length, q: g.q.definite[g.qIndex.Q] };
+    if (kept.q !== null) throw new Error('H should put the canister in superposition');
     const lives = [];
     for (let i = 0; i < 3; i += 1) {
       bot.key('ArrowRight', true);
       await bot.until(() => bot.G().mode !== 'play', 6000, 'a fall');
       bot.key('ArrowRight', false);
       lives.push(bot.G().lives);
-      if (i < 2) await bot.until(() => bot.G().mode === 'play', 4000, 'the floor to reset');
+      if (i < 2) await bot.until(() => bot.G().mode === 'play', 4000, 'the player to be back');
+      if (i === 0 && (g.q.ops.length !== kept.ops || g.q.definite[g.qIndex.Q] !== null || !g.canister.carried)) {
+        throw new Error('a fall should leave every qubit as it was: the canister still held and still in superposition');
+      }
     }
     await bot.until(() => bot.G().mode === 'over', 4000, 'out of lives');
-    return `on floor 3, falls left lives at ${lives.join(', ')} then out of lives`;
+    return `on floor 3, the first fall kept the canister in superposition; falls left lives at ${lives.join(', ')} then out of lives`;
   });
   await shot('14-out-of-lives');
   await page.click('#btn-retry');
@@ -738,7 +749,7 @@ async function main() {
   // Bonus level 1, Broken Terminal: two terminals stuck in loops, a dead flashlight, a weak spare.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
-  await page.selectOption('#opt-floor', { label: 'Bonus 1. Broken Terminal' });
+  await page.selectOption('#opt-floor', '8'); // bonus level 1 (after the seven floors and the terrace)
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.level.id === 'broken');
   await step('bonus level 1', async () => {
     const g = bot.G();
@@ -755,6 +766,23 @@ async function main() {
     const turns = () => g.q.ops.filter((op) => op.kind === 'auto' && op.gate === 'ry').length;
     await bot.until(() => turns() >= 2, 5000, 'T1 to turn P by itself');
     const ticks = turns();
+    // Standing on P as T1 turns it: the gate leaves P superposed under your feet, and your touch
+    // measures it at once (50/50 from a certain state): you stay on it, or it goes and you fall.
+    await bot.until(() => P.state !== null && t1.clock > 0.3 && t1.clock < 0.9, 6000, 'P certain, well before a tick');
+    const slotY = P.state ? P.y1 : P.y0;
+    Object.assign(g.player, { x: P.x + P.w / 2 - 9, y: slotY - 32, vx: 0, vy: 0 });
+    await bot.until(() => g.player.standing === P, 1000, 'standing on P');
+    const opsBefore = g.q.ops.length;
+    await bot.until(() => g.q.ops.length > opsBefore + 1 || g.mode !== 'play', 3000, 'the tick and the touch');
+    const touched = g.q.ops[opsBefore + 1];
+    if (!touched || touched.kind !== 'measure' || touched.by !== 'touch' || P.state === null) throw new Error(`the turn should be measured by the touch at once: ${JSON.stringify(g.q.ops.slice(opsBefore))}`);
+    const stayed = P.state === (slotY === P.y1 ? 1 : 0);
+    for (let k = 0; k < 3 && g.mode === 'play'; k += 1) await bot.frame(); // (a fall onto its lower slot comes later)
+    if (stayed !== (g.player.standing === P)) throw new Error(`the player should stay on P only if it collapsed where they stood: stayed ${stayed}, standing ${g.player.standing === P}`);
+    for (let k = 0; k < 40; k += 1) await bot.frame(); // let a fall land (on P's lower position, or in the pit)
+    if (g.mode === 'falling') await bot.until(() => g.mode === 'play', 4000, 'back after the fall');
+    if (g.player.standing === P) Object.assign(g.player, { x: 60, y: 440 - 32, vx: 0, vy: 0 }); // back to the ground (a test shortcut)
+    const touchNote = stayed ? 'P collapsed where the player stood, and they stayed on' : 'P collapsed away, and the player fell';
     // Ride P: from the edge of the ground, jump as it turns up to 1, run across it and jump to the ledge before it turns on.
     const { key, until, frame } = bot;
     const pl = g.player;
@@ -819,7 +847,7 @@ async function main() {
     key('ArrowRight', false);
     await bot.exit();
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    return `bonus level 1: T1 turned P by itself (${ticks} tick(s) seen), ridden up in ${rides} try; spare battery range ${g.torch.range}; A read 1, then B rose and the player crossed in ${Math.round(g.floorTime)} s; stars ${stars.join(', ')}`;
+    return `bonus level 1: standing on P as T1 turned it, the touch measured it at once (${touchNote}); T1 turned P by itself (${ticks} tick(s) seen), ridden up in ${rides} try; spare battery range ${g.torch.range}; A read 1, then B rose and the player crossed in ${Math.round(g.floorTime)} s; stars ${stars.join(', ')}`;
   });
   await shot('15b-bonus-cleared');
   // The Main menu button stays usable on the cleared-floor screen (the rest of the page is inert).
@@ -852,7 +880,7 @@ async function main() {
     await bot.hop(bot.solid(1));
     await bot.exit();
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (!stars.some((t) => t.startsWith('+Crossed with the fewest'))) throw new Error(`five gates should earn the fewest-gates star: ${stars.join(', ')}`);
+    if (!stars.includes('+Fewest gates (5)')) throw new Error(`five gates should earn the fewest-gates star: ${stars.join(', ')}`);
     return `bonus level 2: X SWAP X SWAP SWAP gave 011 with no countdowns, and the player crossed; stars ${stars.join(', ')}`;
   });
   await page.click('#btn-next');
@@ -1017,10 +1045,10 @@ async function main() {
     // Freeze P lowered with the flashlight (switched off to start with), as it comes down to 0.
     let freezes = 0;
     while (P.state !== 0 && freezes < 6) {
-      if (g.torch.on) await bot.tap('KeyF');
-      bot.aim(P.x + P.w / 2, P.y0 + 6);
+      bot.dark();
+      bot.aim(P.x + P.w / 2, P.y0 + 6, false); // pointed at P, not yet shining
       await bot.until(() => P.p1 < 0.05, 6000, 'P to come round to 0');
-      await bot.tap('KeyF');
+      bot.key('KeyF', true);
       await bot.until(() => P.state !== null, 3000, 'P to collapse');
       freezes += 1;
     }
@@ -1028,7 +1056,7 @@ async function main() {
     await bot.hop(bot.slab('P'));
     if (g.player.standing !== P || P.driven !== 'held') throw new Error('standing on P should keep it frozen');
     const heldAt = g.q.ops.length;
-    bot.aim(60, 120); // look away: only standing on P holds it now
+    bot.dark(); // look away: only standing on P holds it now
     for (let k = 0; k < 40; k += 1) await bot.frame();
     if (P.state !== 0 || g.q.ops.length !== heldAt) throw new Error('P should stay frozen while the player stands on it');
     await bot.hop(bot.solid(1));
@@ -1055,6 +1083,7 @@ async function main() {
       await bot.until(() => g.mode === 'play', 2000, 'T2 to close');
       bot.aim(600, 330);
       await bot.until(() => A.state !== null && B.state !== null, 4000, 'A and B to collapse');
+      bot.dark();
       rounds += 1;
     }
     if (A.state !== 0 || B.state !== 1) throw new Error(`A should be 0 and B 1: ${A.state} ${B.state}`);
@@ -1189,8 +1218,7 @@ async function main() {
     b().wait = 99;
     // Into the middle first, clear of both resting paws (a monster result brings them straight down).
     await go(400, () => true, 6000, 'the middle of the roof');
-    await bot.tap('KeyF');
-    bot.aim(760, b().roof - 22);
+    bot.aim(760, b().roof - 22); // held level along the roof, F held
     let pawsAfter = null; // the paws on the frame the cat collapses
     let litAtLook = false;
     await go(400, () => {
@@ -1201,8 +1229,7 @@ async function main() {
       return cat() !== null || g.mode !== 'play';
     }, 6000, 'the look');
     if (!litAtLook && b().phase === 'fight') throw new Error('a level beam towards the cat should find it');
-    bot.aim(g.player.x, 500);
-    await bot.tap('KeyF'); // the light goes off at once
+    bot.dark(); // the light goes off at once
     // Just before the two seconds are up (in game time), it should still be in full view.
     if (cat() === 1) await until(() => b().t >= b().showUntil - 0.25 || g.mode !== 'play', 4000, 'most of the screech');
     const revealed = { seen: b().seen, reveal: b().reveal, lit: b().lit };
@@ -1251,10 +1278,15 @@ async function main() {
   if (!(await page.isDisabled('#btn-menu'))) throw new Error('Main menu should be disabled on the title screen');
   report.push('the Main menu button returns to the title and is disabled there');
 
-  // Developer options: off by default, switched on the title screen, remembered.
+  // Six former developer options are now how the game plays: always on, with no switches.
+  // The rest are still developer options: off (or at their defaults) to start, and remembered.
   const dev = () => page.evaluate(() => ({ ...window.blackoutLab.state.dev }));
   let d = await dev();
-  if (d.keyTorch || d.touchCollapse || d.circuitRight || d.panel !== 'right') throw new Error(`developer options should start off: ${JSON.stringify(d)}`);
+  const always = ['keyTorch', 'touchCollapse', 'instantResponse', 'passiveTerminal', 'canisterView', 'showGates'];
+  if (!always.every((k) => d[k] === true)) throw new Error(`these should always be on: ${JSON.stringify(d)}`);
+  const switches = await page.$$eval('#dev input', (els) => els.map((el) => el.id));
+  if (switches.some((id) => /key-torch|touch|instant|passive|canister|show-gates/.test(id))) throw new Error(`the always-on settings should have no switches left: ${switches}`);
+  if (d.circuitRight || d.panel !== 'right' || d.swapDelay !== 3) throw new Error(`the remaining developer options should start at their defaults: ${JSON.stringify(d)}`);
   await page.click('#dev summary');
   await page.click('#dev-panel-bottom');
   await page.waitForTimeout(200);
@@ -1267,14 +1299,12 @@ async function main() {
   await shot('15-panel-bottom');
   await page.click('#dev-panel-right');
   await page.click('#dev-circuit-right');
-  await page.click('#dev-key-torch');
-  await page.click('#dev-touch-collapse');
   d = await dev();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('blackoutLab.dev') || 'null'));
-  if (!d.keyTorch || !d.touchCollapse || !d.circuitRight || d.panel !== 'right' || JSON.stringify(saved) !== JSON.stringify(d)) {
+  if (!d.circuitRight || d.panel !== 'right' || !saved || saved.circuitRight !== true || saved.panel !== 'right') {
     throw new Error(`developer switches did not take or were not saved: ${JSON.stringify(d)} vs ${JSON.stringify(saved)}`);
   }
-  report.push('Panel: Bottom moved the rack under the game; the developer switches turn on and are remembered');
+  report.push('the six always-on settings are on with no switches; Panel: Bottom moved the rack under the game; the remaining developer switches turn on and are remembered');
 
   // Circuit always adds to the right: on floor 6, X on B goes after the floor's own two gates.
   if (await page.isHidden('#title-floors')) await page.click('#btn-floors');
@@ -1293,34 +1323,38 @@ async function main() {
     return `circuit always adds to the right: X on B drawn at x=${seq.x} after H at x=${seq.h} (x=${packed.x} with the option off)`;
   });
 
-  // Keyboard flashlight on floor 1: the mouse does nothing, F held shines straight ahead.
+  // The keyboard flashlight on floor 1: the mouse does nothing; F held shines; I and K tilt it.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', '0');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
   await step('keyboard flashlight', async () => {
     const g = bot.G();
-    bot.aim(500, 100);
+    const canvas = document.getElementById('game');
+    const r = canvas.getBoundingClientRect();
+    canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + r.width * 0.9, clientY: r.top + 5, bubbles: true }));
     await bot.frame();
     await bot.frame();
-    if (g.torch.active || g.torch.useMouse) throw new Error('with the keyboard flashlight the beam is off until F is held, and the mouse is ignored');
+    if (g.torch.active || g.torch.useMouse) throw new Error('the beam should be off until F is held, and the mouse ignored');
+    g.player.facing = 1;
     bot.key('KeyF', true);
     await bot.frame();
     await bot.frame();
-    const right = { active: g.torch.active, angle: g.torch.angle };
-    bot.aim(10, 500);
-    await bot.frame();
-    const stillRight = g.torch.angle;
+    const level = { active: g.torch.active, angle: g.torch.angle };
+    bot.key('KeyI', true);
+    for (let k = 0; k < 15; k += 1) await bot.frame();
+    bot.key('KeyI', false);
+    const up = g.torch.angle;
     await bot.tap('ArrowLeft');
     await bot.frame();
     const left = g.torch.angle;
     bot.key('KeyF', false);
     await bot.frame();
     await bot.frame();
-    if (!right.active || right.angle !== 0 || stillRight !== 0 || Math.abs(left - Math.PI) > 1e-9 || g.torch.active) {
-      throw new Error(`F held should shine straight ahead whatever the mouse does: ${JSON.stringify({ right, stillRight, left, after: g.torch.active })}`);
+    if (!level.active || Math.abs(level.angle + 0.15) > 1e-9 || !(up < level.angle) || Math.abs(left - (Math.PI - up)) > 1e-6 || g.torch.active) {
+      throw new Error(`F held should shine ahead, I tilt it up, and facing left mirror it: ${JSON.stringify({ level, up, left, after: g.torch.active })}`);
     }
-    return 'keyboard flashlight: off until F is held, then straight ahead (0, then pi facing left), mouse ignored';
+    return `keyboard flashlight: mouse ignored; F held shone at ${level.angle.toFixed(2)} rad, I tilted it to ${up.toFixed(2)}, facing left mirrored it`;
   });
 
   // The pause screen shows the controls and the developer options, which return to the title afterwards.
@@ -1338,10 +1372,6 @@ async function main() {
 
   // Passive terminal + instant response: standing at T1 shows its gates, 1 applies H, and the
   // platform moves while the gates are showing. (Keyboard flashlight is on, so nothing is observed.)
-  await page.evaluate(() => {
-    document.getElementById('dev-passive-terminal').click();
-    document.getElementById('dev-instant').click();
-  });
   await step('passive terminal', async () => {
     const g = bot.G();
     await bot.walkTo(g.room.terminals[0].x);
@@ -1409,7 +1439,6 @@ async function main() {
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
 
   // Instant response on its own: floor 2's T1 flips A with X, and A moves while the terminal is open.
-  await page.evaluate(() => document.getElementById('dev-passive-terminal').click());
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', '1');
@@ -1431,7 +1460,6 @@ async function main() {
     await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
     return `instant response: X at T1 moved A from y=${y0} to y=${a.y} with the terminal still open`;
   });
-  await page.evaluate(() => document.getElementById('dev-instant').click());
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', '0');
@@ -1464,7 +1492,6 @@ async function main() {
   });
 
   // Canister view: holding the canister shows it enlarged in the rack, with its state or its partner.
-  await page.evaluate(() => document.getElementById('dev-canister-view').click());
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', '2');
@@ -1528,9 +1555,6 @@ async function main() {
 
   // Show gates: a ball is thrown to the middle of the state, then the gate pops up there for a
   // second, and the state changes as soon as it appears.
-  await page.evaluate(() => {
-    for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();
-  });
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', '0');
@@ -1561,9 +1585,24 @@ async function main() {
     }
     return `show gates: the ball landed mid-state on A and the H popped up at ${poppedAt.toFixed(2)} s, the superposition appeared at ${changedAt.toFixed(2)} s, the H was gone at ${total.toFixed(2)} s`;
   });
-  await page.evaluate(() => {
-    for (const id of ['dev-show-gates', 'dev-passive-terminal']) document.getElementById(id).click();
+
+  // The title keeps the stars and best times earned above; Reset game (two clicks) clears them.
+  await page.click('#btn-menu');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
+  if (await page.isHidden('#title-floors')) await page.click('#btn-floors');
+  const totals = async () => ({
+    total: (await page.textContent('#star-total')).trim(),
+    floor2: await page.$eval('#title-floors button[data-floor="1"]', (el) => el.getAttribute('aria-label')),
   });
+  const before = await totals();
+  if (/^★ 0 of/.test(before.total) || !/3 of 3 stars\. Best time \d+:\d\d\./.test(before.floor2)) throw new Error(`the title should show the stars and best times earned: ${JSON.stringify(before)}`);
+  await page.click('#btn-reset');
+  if (/^★ 0 of/.test((await totals()).total)) throw new Error('one click must not reset the game');
+  await page.click('#btn-reset');
+  const after = await totals();
+  const stored = await page.evaluate(() => localStorage.getItem('blackoutLab.progress'));
+  if (!/^★ 0 of/.test(after.total) || !/0 of 3 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset game should clear every star and time: ${JSON.stringify(after)} ${stored}`);
+  report.push(`the title showed ${before.total} and floor 2 "${before.floor2}"; Reset game (two clicks) brought it back to ${after.total}`);
 
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');

@@ -350,8 +350,8 @@ async function main() {
     await bot.hop(bot.solid(2));
     await bot.exit();
     const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => li.textContent);
-    if (list.join('|') !== 'Reached the exit') throw new Error(`floor 1 needs luck, so clearing it is its only star: ${list}`);
-    return `floor 1 cleared after ${tries} H gates (luck needed: one star, for clearing it), stats ${JSON.stringify(bot.G().stats)}`;
+    if (list.join('|') !== 'Reached the exit|No falls') throw new Error(`floor 1 needs luck, so its stars are for clearing it and for no falls: ${list}`);
+    return `floor 1 cleared after ${tries} H gates (luck needed: two stars, cleared and no falls), stats ${JSON.stringify(bot.G().stats)}`;
   });
   await nextFloor(1);
 
@@ -375,7 +375,7 @@ async function main() {
     const s = bot.G().stats;
     const r = bot.G().results[1];
     const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (r.stars !== 3 || r.of !== 3 || list.join('|') !== '+Reached the exit|+Fewest gates (6), no luck|+Solved without luck') throw new Error(`six gates and no luck should earn all three stars: ${JSON.stringify(r)} ${list}`);
+    if (r.stars !== 4 || r.of !== 4 || list.join('|') !== '+Reached the exit|+No falls|+Fewest gates (6), no luck|+Solved without luck') throw new Error(`six gates, no luck and no falls should earn all four stars: ${JSON.stringify(r)} ${list}`);
     return `floor 2 cleared with no measurement at all: ${list.join(', ')}; stats ${JSON.stringify(s)}`;
   });
   await nextFloor(2);
@@ -637,10 +637,10 @@ async function main() {
     if (!/no observations/.test(line) || !/no unlucky collapses/.test(line)) throw new Error(`floor 7 summary: "${line}"`);
     const res = g.results[6];
     const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => li.textContent);
-    if (res.of !== 2 || res.stars !== 2 || list.join('|') !== 'Reached the exit|Fewest gates (11), no luck') throw new Error(`floor 7: eleven gates should earn both its stars, none for speed or hints: ${res.stars}/${res.of} ${JSON.stringify(list)}`);
+    if (res.of !== 3 || res.stars !== 3 || list.join('|') !== 'Reached the exit|No falls|Fewest gates (11), no luck') throw new Error(`floor 7: eleven gates and no falls should earn all three of its stars, none for speed or hints: ${res.stars}/${res.of} ${JSON.stringify(list)}`);
     // Its best time and stars are kept for the level lists.
     const kept = JSON.parse(localStorage.getItem('blackoutLab.progress.v2') || '{}')['lights-out'];
-    if (!kept || !kept.stars.cleared || !kept.stars.fewest || !(kept.best > 0)) throw new Error(`floor 7's stars and best time should be saved: ${JSON.stringify(kept)}`);
+    if (!kept || !kept.stars.cleared || !kept.stars.noFalls || !kept.stars.fewest || !(kept.best > 0)) throw new Error(`floor 7's stars and best time should be saved: ${JSON.stringify(kept)}`);
     return `floor 7 cleared in the dark in ${Math.round(g.floorTime)} s, ${res.stars} of ${res.of} stars, summary "${line}"`;
   });
   await shot('09-floor7-complete');
@@ -1629,13 +1629,13 @@ async function main() {
   });
   const before = await totals();
   if (!(await page.isVisible('#btn-reset'))) await page.click('#options summary');
-  if (/^★ 0 of/.test(before.total) || !/3 of 3 stars\. Best time \d+:\d\d\./.test(before.floor2)) throw new Error(`the title should show the stars and best times earned: ${JSON.stringify(before)}`);
+  if (/^★ 0 of/.test(before.total) || !/4 of 4 stars\. Best time \d+:\d\d\./.test(before.floor2)) throw new Error(`the title should show the stars and best times earned: ${JSON.stringify(before)}`);
   await page.click('#btn-reset');
   if (/^★ 0 of/.test((await totals()).total)) throw new Error('one click must not reset the game');
   await page.click('#btn-reset');
   const after = await totals();
   const stored = await page.evaluate(() => localStorage.getItem('blackoutLab.progress.v2'));
-  if (!/^★ 0 of/.test(after.total) || !/0 of 3 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset stats should clear every star and time: ${JSON.stringify(after)} ${stored}`);
+  if (!/^★ 0 of/.test(after.total) || !/0 of 4 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset stats should clear every star and time: ${JSON.stringify(after)} ${stored}`);
   report.push(`the title showed ${before.total} and floor 2 "${before.floor2}"; Reset stats (Options, two clicks) brought it back to ${after.total}`);
 
   console.log(report.join('\n'));

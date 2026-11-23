@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-QIvZNSoAiY3+t+D4yB0PgTUTQDqaaXF2DdeuTQLAmj4='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-YKJC/v0Dmn/9s4Y3Q94+z7j9igmPnIM2X03tEFkKtO0='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -706,7 +706,7 @@ const module_game_levels = (() => {
 //              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   stars      see starsOf in game.js: cleared, and on a level that can be solved without luck
+//   stars      see starsOf in game.js: cleared and no falls, and on a level that can be solved without luck
 //              (`deterministic: true`) the fewest gates with no luck, and its own no-luck star. No
 //              star rewards luck, speed or a run without falls, and hints cost nothing.
 //   bonus      the no-luck star as a gate sequence: { sequences: [{ q, gates, value?, untouched? }],
@@ -6554,13 +6554,17 @@ const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
 // Each level's stars, the same every time (so they can be shown before it is played). No star is
 // ever given for a lucky result, nor taken for using hints:
 //   1. cleared;
-//   2. the fewest gates (`shortest`), with no outcome left to chance: only on levels that can be
+//   2. no falls;
+//   3. the fewest gates (`shortest`), with no outcome left to chance: only on levels that can be
 //      solved without luck (`deterministic`);
-//   3. on such levels, their own no-luck star: bonus level 7's eight unobserved turns, a gate
+//   4. on such levels, their own no-luck star: bonus level 7's eight unobserved turns, a gate
 //      sequence (`bonus.sequences`), or with `noLuck`, solved with nothing left to chance.
-// A level that needs luck to solve has just the one star.
+// A level that needs luck to solve has just the first two.
 function starsOf(level) {
-  const stars = [{ key: 'cleared', text: level.firstStar || 'Reached the exit' }];
+  const stars = [
+    { key: 'cleared', text: level.firstStar || 'Reached the exit' },
+    { key: 'noFalls', text: 'No falls' },
+  ];
   if (!level.deterministic) return stars;
   if (level.shortest > 0) stars.push({ key: 'fewest', text: `Fewest gates (${level.shortest}), no luck` });
   if (level.beast) stars.push({ key: 'sure', text: level.beast.sureStar });
@@ -8702,6 +8706,7 @@ function startGame() {
     const s = G.stats;
     const got = {
       cleared: true,
+      noFalls: s.falls === 0,
       fewest: s.gates <= level.shortest && s.chance === 0,
       sure: !!(G.beast && G.beast.deterministic),
       sequence: G.bonusDone,

@@ -42,7 +42,7 @@
 //              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   stars      see starsOf in game.js: cleared, and on a level that can be solved without luck
+//   stars      see starsOf in game.js: cleared and no falls, and on a level that can be solved without luck
 //              (`deterministic: true`) the fewest gates with no luck, and its own no-luck star. No
 //              star rewards luck, speed or a run without falls, and hints cost nothing.
 //   bonus      the no-luck star as a gate sequence: { sequences: [{ q, gates, value?, untouched? }],

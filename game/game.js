@@ -87,13 +87,17 @@ const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
 // Each level's stars, the same every time (so they can be shown before it is played). No star is
 // ever given for a lucky result, nor taken for using hints:
 //   1. cleared;
-//   2. the fewest gates (`shortest`), with no outcome left to chance: only on levels that can be
+//   2. no falls;
+//   3. the fewest gates (`shortest`), with no outcome left to chance: only on levels that can be
 //      solved without luck (`deterministic`);
-//   3. on such levels, their own no-luck star: bonus level 7's eight unobserved turns, a gate
+//   4. on such levels, their own no-luck star: bonus level 7's eight unobserved turns, a gate
 //      sequence (`bonus.sequences`), or with `noLuck`, solved with nothing left to chance.
-// A level that needs luck to solve has just the one star.
+// A level that needs luck to solve has just the first two.
 function starsOf(level) {
-  const stars = [{ key: 'cleared', text: level.firstStar || 'Reached the exit' }];
+  const stars = [
+    { key: 'cleared', text: level.firstStar || 'Reached the exit' },
+    { key: 'noFalls', text: 'No falls' },
+  ];
   if (!level.deterministic) return stars;
   if (level.shortest > 0) stars.push({ key: 'fewest', text: `Fewest gates (${level.shortest}), no luck` });
   if (level.beast) stars.push({ key: 'sure', text: level.beast.sureStar });
@@ -2235,6 +2239,7 @@ export function startGame() {
     const s = G.stats;
     const got = {
       cleared: true,
+      noFalls: s.falls === 0,
       fewest: s.gates <= level.shortest && s.chance === 0,
       sure: !!(G.beast && G.beast.deterministic),
       sequence: G.bonusDone,

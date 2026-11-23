@@ -50,13 +50,24 @@
               <div class="title-actions">
                 <button type="button" class="primary" id="btn-start" disabled>Waiting for the lab</button>
                 <button type="button" class="key-btn" id="btn-floors" aria-expanded="false" aria-controls="title-floors" disabled>Skip to floor</button>
-                <button type="button" class="key-btn" id="btn-reset">Reset game</button>
               </div>
               <p class="star-total" id="star-total" aria-live="off"></p>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
                 <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
+              <details class="dev" id="options">
+                <summary>Options</summary>
+                <div class="dev-opt" role="radiogroup" aria-labelledby="opt-torch-name">
+                  <b id="opt-torch-name">Flashlight</b>
+                  <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
+                  <label title="F switches the flashlight on, and again off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Switch with F</label>
+                </div>
+                <div class="dev-opt">
+                  <button type="button" class="key-btn mini" id="btn-reset">Reset stats</button>
+                  <span class="dev-hint">clears every star and best time</span>
+                </div>
+              </details>
               <details class="dev" id="dev">
                 <summary>Developer options</summary>
                 <label class="dev-opt dev-range" title="How long SWAP waits, with arrows showing where the platforms will go, before they set off.">
@@ -76,8 +87,8 @@
               <dl class="keys">
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
-                <div><dt><kbd>F</kbd> (hold)</dt><dd>Shine the flashlight</dd></div>
-                <div><dt><kbd>I</kbd> <kbd>K</kbd></dt><dd>Tilt the flashlight up / down</dd></div>
+                <div><dt><kbd>F</kbd></dt><dd>Flashlight (hold, or switch: see Options)</dd></div>
+                <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>

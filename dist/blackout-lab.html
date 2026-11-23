@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-0d8NWvbt4KvjQbU0aBaNS0v0Nm1LJCtU3czdXl8IQaM='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-QIvZNSoAiY3+t+D4yB0PgTUTQDqaaXF2DdeuTQLAmj4='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -414,13 +414,24 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
               <div class="title-actions">
                 <button type="button" class="primary" id="btn-start" disabled>Waiting for the lab</button>
                 <button type="button" class="key-btn" id="btn-floors" aria-expanded="false" aria-controls="title-floors" disabled>Skip to floor</button>
-                <button type="button" class="key-btn" id="btn-reset">Reset game</button>
               </div>
               <p class="star-total" id="star-total" aria-live="off"></p>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
                 <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
+              <details class="dev" id="options">
+                <summary>Options</summary>
+                <div class="dev-opt" role="radiogroup" aria-labelledby="opt-torch-name">
+                  <b id="opt-torch-name">Flashlight</b>
+                  <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
+                  <label title="F switches the flashlight on, and again off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Switch with F</label>
+                </div>
+                <div class="dev-opt">
+                  <button type="button" class="key-btn mini" id="btn-reset">Reset stats</button>
+                  <span class="dev-hint">clears every star and best time</span>
+                </div>
+              </details>
               <details class="dev" id="dev">
                 <summary>Developer options</summary>
                 <label class="dev-opt dev-range" title="How long SWAP waits, with arrows showing where the platforms will go, before they set off.">
@@ -440,8 +451,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
               <dl class="keys">
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
-                <div><dt><kbd>F</kbd> (hold)</dt><dd>Shine the flashlight</dd></div>
-                <div><dt><kbd>I</kbd> <kbd>K</kbd></dt><dd>Tilt the flashlight up / down</dd></div>
+                <div><dt><kbd>F</kbd></dt><dd>Flashlight (hold, or switch: see Options)</dd></div>
+                <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
@@ -695,13 +706,13 @@ const module_game_levels = (() => {
 //              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   stars      every floor has up to three (see starsOf in game.js): cleared; the fewest gates
-//              (`shortest`); and a third for solving without luck where that can be done, or with
-//              no hints where it cannot. Stars never reward speed or a run without falls.
+//   stars      see starsOf in game.js: cleared, and on a level that can be solved without luck
+//              (`deterministic: true`) the fewest gates with no luck, and its own no-luck star. No
+//              star rewards luck, speed or a run without falls, and hints cost nothing.
 //   bonus      the no-luck star as a gate sequence: { sequences: [{ q, gates, value?, untouched? }],
 //              text } for applying one of those sequences to its qubit (value: it must end in that
 //              state; untouched: nothing measured in between)
-//   noLuck     true: the third star is for solving with no outcome left to chance
+//   noLuck     true: the no-luck star is for solving with no outcome left to chance
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
 // `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
@@ -786,7 +797,7 @@ const LEVELS = [
       'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random.',
     hints: [
       'Stand at terminal T1, press E, and apply H to platform A.',
-      'Step away from the terminal, then hold F to shine the flashlight on one of the dotted outlines (I and K tilt it). Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
+      'Step away from the terminal, then shine the flashlight (F) on one of the dotted outlines: aim with the mouse, or tilt with I and K. Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
       'Did it collapse to lowered? Apply H again and look again. A measurement cannot be undone, only retried.',
     ],
     takeaway:
@@ -819,6 +830,7 @@ const LEVELS = [
       { id: 'T3', x: 646, y: 265, ops: [{ gate: 'h', q: ['C'] }, { gate: 'z', q: ['C'] }] },
     ],
     door: { x: 916, y: 170, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 6,
     noLuck: true, // H then X on B and H, Z, H on C need no luck at all
     goal: 'Three platforms, three terminals. A is raised out of reach, B is already in superposition, and C has no flip button.',
@@ -1094,6 +1106,7 @@ const LEVELS = [
     door: { x: 170, y: 110, key: '101', lock: ['L1', 'L2', 'L3'] },
     decor: [{ type: 'plate', x: 236, y: 56, text: 'TO TERRACE' }],
     windows: { y: 236, xs: [80, 270, 460] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 11,
     goal: 'No flashlight, so no observing. Put every platform exactly where you need it with gates alone, then set the three-lamp key.',
     concept:
@@ -1167,6 +1180,7 @@ const BEAST = {
     { id: 'T2', x: 700, y: 330, quick: true, ops: [{ gate: 'ry', q: ['CAT'], angle: Math.PI / 8 }] },
   ],
   scene: TERRACE.scene,
+  deterministic: true, // can be solved with nothing left to chance
   shortest: 8,
   firstStar: 'Tamed the beast',
   goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
@@ -1256,6 +1270,7 @@ const BONUS_LEVELS = [
       { id: 'T1', x: 96, y: 440, ops: [{ gate: 'x', q: ['A'] }, { gate: 'swap', q: ['A', 'B'], delay: 0 }, { gate: 'swap', q: ['B', 'C'], delay: 0 }] },
     ],
     door: { x: 900, y: 220, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 5,
     goal: 'A, B and C start lowered: 0 0 0. You need A lowered and B and C raised, 0 1 1, to cross to the exit. T1 has X on A and two SWAPs, nothing else.',
     concept:
@@ -1301,6 +1316,7 @@ const BONUS_LEVELS = [
       { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
     ],
     door: { x: 900, y: 270, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 7,
     bonus: {
       sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
@@ -1352,6 +1368,7 @@ const BONUS_LEVELS = [
       { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
     ],
     door: { x: 900, y: 270, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 7,
     bonus: {
       sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
@@ -1399,6 +1416,7 @@ const BONUS_LEVELS = [
     ],
     door: { x: 900, y: 160, key: null, lock: [] },
     noLuck: true, // beat the faulty lights to every superposition, and nothing is left to chance
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 12,
     goal: 'Raise P to reach the middle, then set A lowered and B raised to cross to the exit. Faulty lights hang over every platform: each superposition has only a few seconds.',
     concept:
@@ -1451,7 +1469,7 @@ const BONUS_LEVELS = [
     concept:
       'Rabi oscillation: the waves from a cavity turn a qubit round and round, 0, then +, then 1, then -, then 0 again. Watching stops it, the quantum watchdog (or Zeno) effect: a qubit that is lit, or stood on, is being measured all the time, so it cannot turn. Look away and it carries on from where it was.',
     hints: [
-      'P never stops turning while nothing watches it. Shine the flashlight (hold F) on P as it comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
+      'P never stops turning while nothing watches it. Shine the flashlight (F) on P as it comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
       'A and B turn together, so they would freeze as 0 0 or 1 1. Before you cross, Ry(pi/2) twice at T1 puts B half a turn ahead of A: whenever A is 0, B is 1.',
       'At T2, X slides the shield into the waves and freezes A and B together. Do it as A comes down to lowered, then light them up and cross.',
     ],
@@ -2393,7 +2411,8 @@ for (const action of Object.keys(KEYS)) for (const code of KEYS[action]) ACTION_
 function createInput(canvas, world) {
   const held = {}; // action -> true while down
   const pressed = {};
-  const pointer = { x: 0, y: 0, active: false, moved: false };
+  // inside: whether the pointer is over the game picture (where the platforms are).
+  const pointer = { x: 0, y: 0, active: false, moved: false, inside: false };
   let enabled = true;
 
   function isTyping(target) {
@@ -2431,7 +2450,14 @@ function createInput(canvas, world) {
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', blur);
-  canvas.addEventListener('pointermove', toWorld);
+  canvas.addEventListener('pointermove', (ev) => {
+    pointer.inside = true;
+    toWorld(ev);
+  });
+  canvas.addEventListener('pointerleave', () => {
+    pointer.inside = false;
+    pointer.moved = true;
+  });
   canvas.addEventListener('pointerdown', (ev) => {
     toWorld(ev);
     if (canvas.focus) canvas.focus({ preventScroll: true });
@@ -5992,7 +6018,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -6077,8 +6103,14 @@ function createUI(dom, handlers) {
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;
-    if (name === 'pause') dom.pauseDevSlot.appendChild(dom.dev);
-    else if (name === 'title') devHome.parent.insertBefore(dom.dev, devHome.next);
+    // The Options and Developer options panels live on the title screen, and visit the pause screen.
+    if (name === 'pause') {
+      dom.pauseDevSlot.appendChild(dom.options);
+      dom.pauseDevSlot.appendChild(dom.dev);
+    } else if (name === 'title') {
+      devHome.parent.insertBefore(dom.dev, devHome.next);
+      devHome.parent.insertBefore(dom.options, dom.dev);
+    }
     if (name) {
       const first = dom[`screen_${name}`].querySelector('.primary:not(:disabled)') || dom[`screen_${name}`].querySelector('button:not(:disabled)');
       focusLater(first);
@@ -6264,24 +6296,26 @@ function createUI(dom, handlers) {
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
   for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
+  const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
+  for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
-  // Reset game: a second click within a few seconds confirms it.
+  // Reset stats: a second click within a few seconds confirms it.
   let resetArmed = null;
   dom.btnReset.addEventListener('click', () => {
     if (resetArmed) {
       clearTimeout(resetArmed);
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset game';
+      dom.btnReset.textContent = 'Reset stats';
       dom.btnReset.classList.remove('armed');
       handlers.reset();
       return;
     }
     dom.btnReset.textContent = 'Click again to erase all stars and times';
     dom.btnReset.classList.add('armed');
-    announce('Click Reset game again to erase all stars and best times.');
+    announce('Click Reset stats again to erase all stars and best times.');
     resetArmed = setTimeout(() => {
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset game';
+      dom.btnReset.textContent = 'Reset stats';
       dom.btnReset.classList.remove('armed');
     }, 4000);
   });
@@ -6357,6 +6391,7 @@ function createUI(dom, handlers) {
     setDev(dev) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
+      for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
@@ -6447,6 +6482,8 @@ const { createUI, grabDom } = module_game_ui;
 
 
 
+// A few steps of walking (in pixels) without I or K, and a keyboard tilt eases back to straight ahead.
+const TILT_RESET_STEPS = 70;
 const PHYS = { speed: 190, accel: 2200, gravity: 1900, jump: 620, coyote: 0.09, buffer: 0.11, maxFall: 900, step: 1 / 120 };
 const MIN_REMARK = 2.5;
 const LONG_TOAST = 5.2;
@@ -6468,16 +6505,16 @@ const NO_QUBITS = {
 };
 
 // Settings that began as developer options and are now simply how the game plays:
-//   keyTorch         hold F to shine, I / K to tilt; the mouse does not aim
 //   touchCollapse    touching a superposed platform measures it
 //   instantResponse  platforms move while you are still at a terminal
 //   passiveTerminal  standing at a terminal shows its gates; 1, 2, 3 apply them
 //   canisterView     the held canister's state shows in the panel
 //   showGates        each gate pops up over the qubits it acts on
-const ALWAYS_ON = { keyTorch: true, touchCollapse: true, instantResponse: true, passiveTerminal: true, canisterView: true, showGates: true };
+const ALWAYS_ON = { touchCollapse: true, instantResponse: true, passiveTerminal: true, canisterView: true, showGates: true };
 // Developer options (title screen). Remembered in this browser only.
 const DEV_KEY = 'blackoutLab.dev';
 const DEV_DEFAULTS = {
+  torchMode: 'hold', // Options: 'hold' (F held shines) or 'switch' (F turns it on and off)
   swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   panel: 'right',
   circuitRight: false,
@@ -6489,6 +6526,7 @@ function loadDev() {
     const dev = { ...DEV_DEFAULTS };
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
     dev.swapDelay = Math.min(5, Math.max(1, Math.round(Number(dev.swapDelay) || 3)));
+    if (dev.torchMode !== 'switch') dev.torchMode = 'hold';
     return { ...dev, ...ALWAYS_ON };
   } catch (err) {
     return { ...DEV_DEFAULTS, ...ALWAYS_ON };
@@ -6513,25 +6551,27 @@ const levelAt = (index) =>
   index < LEVELS.length ? LEVELS[index] : index === BEAST_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
 const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
 
-// Each level's stars, the same every time (so they can be shown before it is played):
+// Each level's stars, the same every time (so they can be shown before it is played). No star is
+// ever given for a lucky result, nor taken for using hints:
 //   1. cleared;
-//   2. the fewest gates (`shortest`), where the floor needs any;
-//   3. solved without luck: bonus level 7's eight unobserved turns; a level's own no-luck
-//      gate sequence (`bonus.sequences`); or, with `noLuck`, no outcome left to chance at all.
-//      Where luck cannot be avoided, solved with no hints instead.
+//   2. the fewest gates (`shortest`), with no outcome left to chance: only on levels that can be
+//      solved without luck (`deterministic`);
+//   3. on such levels, their own no-luck star: bonus level 7's eight unobserved turns, a gate
+//      sequence (`bonus.sequences`), or with `noLuck`, solved with nothing left to chance.
+// A level that needs luck to solve has just the one star.
 function starsOf(level) {
   const stars = [{ key: 'cleared', text: level.firstStar || 'Reached the exit' }];
-  if (level.shortest > 0) stars.push({ key: 'fewest', text: `Fewest gates (${level.shortest})` });
+  if (!level.deterministic) return stars;
+  if (level.shortest > 0) stars.push({ key: 'fewest', text: `Fewest gates (${level.shortest}), no luck` });
   if (level.beast) stars.push({ key: 'sure', text: level.beast.sureStar });
   else if (level.bonus && level.bonus.sequences) stars.push({ key: 'sequence', text: level.bonus.text });
   else if (level.noLuck) stars.push({ key: 'noLuck', text: 'Solved without luck' });
-  else stars.push({ key: 'noHints', text: 'No hints' });
   return stars;
 }
 
-// Stars and best times, kept in this browser: { [level id]: { stars: [true, false, ...], best } }.
+// Stars and best times, kept in this browser: { [level id]: { stars: { cleared: true, ... }, best } }.
 // A star, once earned, stays earned; the best time is the fastest clear.
-const PROGRESS_KEY = 'blackoutLab.progress';
+const PROGRESS_KEY = 'blackoutLab.progress.v2';
 function loadProgress() {
   try {
     const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
@@ -6576,7 +6616,7 @@ function startGame() {
     door: null,
     canister: null,
     player: { x: 0, y: 0, vx: 0, vy: 0, facing: 1, onGround: false, coyote: 0, buffer: 0, anim: 0, standing: null, visible: true },
-    torch: { on: true, active: false, lowered: false, angle: 0, tilt: 0.15, useMouse: false, battery: 'ok', range: TORCH.range, flickT: 3, flickLeft: 0 },
+    torch: { on: true, active: false, lowered: false, angle: 0, tilt: 0, walked: 0, useMouse: false, battery: 'ok', range: TORCH.range, flickT: 3, flickLeft: 0 },
     dialogue: null,
     bubbles: [],
     fx: [],
@@ -6642,8 +6682,10 @@ function startGame() {
   function listFloors() {
     const entry = (level, name, index) => {
       const saved = progress[level.id] || {};
-      const of = starsOf(level).length;
-      const got = Array.isArray(saved.stars) ? saved.stars.slice(0, of).filter(Boolean).length : 0;
+      const stars = starsOf(level);
+      const earned = saved.stars && typeof saved.stars === 'object' ? saved.stars : {};
+      const got = stars.filter((star) => earned[star.key] === true).length;
+      const of = stars.length;
       return { name, index, got, of, best: Number.isFinite(saved.best) ? saved.best : null };
     };
     const floors = LEVELS.map((level, i) => entry(level, `${i + 1}. ${level.name}`, i));
@@ -6656,7 +6698,9 @@ function startGame() {
 
   function recordClear(level, earned, seconds) {
     const saved = progress[level.id] || {};
-    const stars = earned.map((e, i) => e.got || !!(saved.stars && saved.stars[i]));
+    const before = saved.stars && typeof saved.stars === 'object' && !Array.isArray(saved.stars) ? saved.stars : {};
+    const stars = { ...before };
+    for (const e of earned) if (e.got) stars[e.key] = true;
     const best = Number.isFinite(saved.best) ? Math.min(saved.best, seconds) : seconds;
     progress = { ...progress, [level.id]: { stars, best } };
     saveProgress(progress);
@@ -6668,8 +6712,8 @@ function startGame() {
     saveProgress(progress);
     G.results = [];
     listFloors();
-    ui.announce('Game reset: every star and best time is cleared.');
-    ui.toast('Game reset: every star and best time is cleared.', 'info');
+    ui.announce('Stats reset: every star and best time is cleared.');
+    ui.toast('Stats reset: every star and best time is cleared.', 'info');
   }
 
   // -- small helpers --------------------------------------------------------
@@ -6941,7 +6985,8 @@ function startGame() {
     G.scene = null;
     G.hasKey = false;
     G.torch.on = !level.torchOff;
-    G.torch.tilt = 0.15;
+    G.torch.tilt = 0; // straight ahead
+    G.torch.walked = 0;
     G.torch.battery = level.torch || 'ok';
     G.torch.range = TORCH.range;
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
@@ -6952,6 +6997,7 @@ function startGame() {
     G.busy = false;
     G.beast = null;
     G.flung = null;
+    G.lastTerminal = null;
   }
 
   async function loadLevel(index, opts) {
@@ -7062,6 +7108,7 @@ function startGame() {
   // -- terminals: gates ---------------------------------------------------
 
   function useTerminal(term) {
+    G.lastTerminal = term; // where a fall brings you back
     if (term.port && !carrying()) {
       say(
         term.box
@@ -7301,6 +7348,7 @@ function startGame() {
 
   async function applyOp(i) {
     const term = G.terminal || G.passive;
+    if (term && term.ops[i]) G.lastTerminal = term;
     if (term && term.quick) {
       if (term.ops[i]) quickTerminal(term);
       return;
@@ -7417,27 +7465,29 @@ function startGame() {
     const pl = G.player;
     const t = G.torch;
     const dead = t.battery === 'dead';
-    const keyTorch = G.dev.keyTorch; // hold F to shine; I / K tilt it; the mouse does not aim
+    // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
+    const hold = G.dev.torchMode !== 'switch';
+    // Aim: the mouse while it is over the game picture; otherwise straight ahead, tilted by I / K
+    // (the tilt eases back to straight ahead after a few steps of walking without I or K).
     if (input.pointer.moved) {
-      t.useMouse = !keyTorch;
+      t.useMouse = input.pointer.inside;
       input.pointer.moved = false;
     }
-    if (G.mode === 'play' && keyTorch) {
-      t.useMouse = false;
-      if (input.take('torch') && dead && story().onDeadTorch) story().onDeadTorch(storyCtx(null));
-      const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
-      if (tilt) t.tilt = Math.max(-1.35, Math.min(1.35, t.tilt + tilt * 1.2 * dt));
-      t.angle = pl.facing > 0 ? -t.tilt : Math.PI + t.tilt;
-    } else if (G.mode === 'play') {
+    if (!input.pointer.inside) t.useMouse = false;
+    if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
         t.useMouse = false;
         t.tilt = Math.max(-1.35, Math.min(1.35, t.tilt + tilt * 1.2 * dt));
+        t.walked = 0;
+      } else if (pl.onGround && Math.abs(pl.vx) > 20) {
+        t.walked = (t.walked || 0) + Math.abs(pl.vx) * dt;
+        if (t.walked > TILT_RESET_STEPS) t.tilt = Math.sign(t.tilt) * Math.max(0, Math.abs(t.tilt) - 2.5 * dt); // back to level, and no further
       }
       if (input.take('torch')) {
         if (dead) {
           if (story().onDeadTorch) story().onDeadTorch(storyCtx(null));
-        } else {
+        } else if (!hold) {
           t.on = !t.on;
           audio.play('click');
           ui.announce(t.on ? 'Flashlight on.' : 'Flashlight off.');
@@ -7469,7 +7519,7 @@ function startGame() {
       }
     }
     t.lowered = G.mode !== 'play';
-    t.active = (keyTorch ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
+    t.active = (hold ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
 
     if (G.mode !== 'play' || !G.q) return;
     const hand = handOf(pl);
@@ -7905,7 +7955,10 @@ function startGame() {
     G.flung = null;
     if (G.terminal) closeTerminal();
     closePassive();
-    placePlayer(room.spawn.x, room.spawn.y);
+    // Back at the last terminal used in this room, or the room's start if none yet.
+    const at = G.lastTerminal && room.terminals.includes(G.lastTerminal) ? G.lastTerminal : null;
+    if (at) placePlayer(at.x - PLAYER.w / 2, at.y);
+    else placePlayer(room.spawn.x, room.spawn.y);
     G.player.facing = 1;
     if (b) {
       for (const paw of b.paws) {
@@ -7921,8 +7974,8 @@ function startGame() {
     if (b) {
       const qi = G.qIndex.CAT;
       const now = G.q.definite[qi] === 1 ? 'still a monster (1)' : `still ${Math.round((1 - G.q.p1[qi]) * 100)}% cute`;
-      say(`Knocked off the roof, but the cat is just as you left it: ${now}. ${lives}`, 'bad', true);
-    } else say(`You fell, but every qubit is just as you left it. ${lives}`, 'bad', true);
+      say(`Knocked off the roof, but the cat is just as you left it: ${now}. ${at ? `Back at ${at.id}. ` : ''}${lives}`, 'bad', true);
+    } else say(`You fell, but every qubit is just as you left it. ${at ? `Back at ${at.id}. ` : ''}${lives}`, 'bad', true);
   }
 
   function afterFall() {
@@ -7930,17 +7983,9 @@ function startGame() {
       respawn();
       return;
     }
-    if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
-      // A bonus level is not part of the climb: out of lives, it simply starts over.
-      loadLevel(G.levelIndex);
-      say('Out of lives: the bonus level starts over with three.', 'bad', true);
-      return;
-    }
-    if (G.lives <= 0 && !G.infinite) {
-      setMode('over');
-      ui.showScreen('over');
-      ui.announce('Out of lives. You start again from floor 1.');
-    }
+    // Out of lives: this floor starts over, from its starting states, with three lives.
+    loadLevel(G.levelIndex);
+    say('Out of lives: the floor starts over from the beginning, with three lives.', 'bad', true);
   }
 
   // -- bonus level 7: the beast on the roof -------------------------------------
@@ -8548,6 +8593,7 @@ function startGame() {
   }
 
   function quickTerminal(term) {
+    G.lastTerminal = term;
     if (!G.beast || term.wreck > 0 || term.used || !G.q) return;
     const op = term.ops[0];
     const res = Q.apply(op.gate, op.qi, op.angle);
@@ -8643,7 +8689,7 @@ function startGame() {
     else if (term && term.used) ui.setPrompt(`The cat is going for <b>${term.id}</b>: get away from it!`);
     else if (superposed) {
       ui.setPrompt(
-        `The cat is <b>${Math.round(p0 * 100)}%</b> cute. Hold <b>F</b> to shine the flashlight its way and look, or turn it further first.`
+        `The cat is <b>${Math.round(p0 * 100)}%</b> cute. ${shineWords()} its way and look, or turn it further first.`
       );
     } else ui.setPrompt('When a raised paw stops, it is about to drop: move. Turn the cat at <b>T1</b> and <b>T2</b>.');
   }
@@ -8656,13 +8702,12 @@ function startGame() {
     const s = G.stats;
     const got = {
       cleared: true,
-      fewest: s.gates <= level.shortest,
+      fewest: s.gates <= level.shortest && s.chance === 0,
       sure: !!(G.beast && G.beast.deterministic),
       sequence: G.bonusDone,
       noLuck: s.chance === 0,
-      noHints: G.hints === 0,
     };
-    const earned = starsOf(level).map((star) => ({ got: got[star.key], text: star.text }));
+    const earned = starsOf(level).map((star) => ({ key: star.key, got: got[star.key], text: star.text }));
     const stars = earned.filter((e) => e.got).length;
     recordClear(level, earned, G.floorTime);
     const of = earned.length;
@@ -9006,6 +9051,9 @@ function startGame() {
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
+  // How to shine the flashlight, in the current flashlight mode.
+  const shineWords = () => (G.dev.torchMode === 'switch' ? (G.torch.on ? 'Shine the flashlight' : 'Switch on the flashlight (<b>F</b>) and shine it') : 'Hold <b>F</b> to shine the flashlight');
+
   function brokenNear() {
     const pl = G.player;
     return G.room.terminals.find((t) => t.broken && Math.abs(pl.x + PLAYER.w / 2 - t.x) < 30 && Math.abs(pl.y + PLAYER.h - t.y) < 6);
@@ -9036,7 +9084,7 @@ function startGame() {
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
     else if (ghost && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
-    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Hold <b>F</b> to shine the flashlight on a dotted outline and observe it (<b>I</b> / <b>K</b> tilt it).${orAct}`);
+    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. ${shineWords()} on a dotted outline to observe it (aim with the mouse, or <b>I</b> / <b>K</b>).${orAct}`);
     else if (d && d.item && !d.open && G.player.x > d.x - 220) ui.setPrompt('The exit is locked, and this lock takes an ordinary key.');
     else if (d && d.key && !d.unlocked && G.player.x > d.x - 220) {
       const byHand = d.byHand || G.torch.battery === 'dead';

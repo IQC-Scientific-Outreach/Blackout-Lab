@@ -42,13 +42,13 @@
 //              even from a certain 1. Solids and certain platforms cast shadows.
 //   decor      sign { lines }, candle { drop?, reach? }, plate { text }, teleporter
 //   windows    { y, xs }: where the wall's windows sit, if not along the top
-//   stars      every floor has up to three (see starsOf in game.js): cleared; the fewest gates
-//              (`shortest`); and a third for solving without luck where that can be done, or with
-//              no hints where it cannot. Stars never reward speed or a run without falls.
+//   stars      see starsOf in game.js: cleared, and on a level that can be solved without luck
+//              (`deterministic: true`) the fewest gates with no luck, and its own no-luck star. No
+//              star rewards luck, speed or a run without falls, and hints cost nothing.
 //   bonus      the no-luck star as a gate sequence: { sequences: [{ q, gates, value?, untouched? }],
 //              text } for applying one of those sequences to its qubit (value: it must end in that
 //              state; untouched: nothing measured in between)
-//   noLuck     true: the third star is for solving with no outcome left to chance
+//   noLuck     true: the no-luck star is for solving with no outcome left to chance
 // `prep` lists gates the floor applies before play (a pair that starts entangled).
 // `torchOff: true` starts the floor with the flashlight switched off.
 // To add a floor, append an object here. Dialogue lives in story.js.
@@ -133,7 +133,7 @@ export const LEVELS = [
       'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random.',
     hints: [
       'Stand at terminal T1, press E, and apply H to platform A.',
-      'Step away from the terminal, then hold F to shine the flashlight on one of the dotted outlines (I and K tilt it). Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
+      'Step away from the terminal, then shine the flashlight (F) on one of the dotted outlines: aim with the mouse, or tilt with I and K. Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
       'Did it collapse to lowered? Apply H again and look again. A measurement cannot be undone, only retried.',
     ],
     takeaway:
@@ -166,6 +166,7 @@ export const LEVELS = [
       { id: 'T3', x: 646, y: 265, ops: [{ gate: 'h', q: ['C'] }, { gate: 'z', q: ['C'] }] },
     ],
     door: { x: 916, y: 170, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 6,
     noLuck: true, // H then X on B and H, Z, H on C need no luck at all
     goal: 'Three platforms, three terminals. A is raised out of reach, B is already in superposition, and C has no flip button.',
@@ -441,6 +442,7 @@ export const LEVELS = [
     door: { x: 170, y: 110, key: '101', lock: ['L1', 'L2', 'L3'] },
     decor: [{ type: 'plate', x: 236, y: 56, text: 'TO TERRACE' }],
     windows: { y: 236, xs: [80, 270, 460] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 11,
     goal: 'No flashlight, so no observing. Put every platform exactly where you need it with gates alone, then set the three-lamp key.',
     concept:
@@ -514,6 +516,7 @@ export const BEAST = {
     { id: 'T2', x: 700, y: 330, quick: true, ops: [{ gate: 'ry', q: ['CAT'], angle: Math.PI / 8 }] },
   ],
   scene: TERRACE.scene,
+  deterministic: true, // can be solved with nothing left to chance
   shortest: 8,
   firstStar: 'Tamed the beast',
   goal: 'The cat jumped back into the box, and the radiation turned it into a monster: state 1. Now it hides in a mist that only your flashlight parts. Turn it back to cute, state 0: each terminal turns it a little way with RY(\u03c0/8), and each time the cat smashes that terminal. Dodge the paws.',
@@ -603,6 +606,7 @@ export const BONUS_LEVELS = [
       { id: 'T1', x: 96, y: 440, ops: [{ gate: 'x', q: ['A'] }, { gate: 'swap', q: ['A', 'B'], delay: 0 }, { gate: 'swap', q: ['B', 'C'], delay: 0 }] },
     ],
     door: { x: 900, y: 220, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 5,
     goal: 'A, B and C start lowered: 0 0 0. You need A lowered and B and C raised, 0 1 1, to cross to the exit. T1 has X on A and two SWAPs, nothing else.',
     concept:
@@ -648,6 +652,7 @@ export const BONUS_LEVELS = [
       { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
     ],
     door: { x: 900, y: 270, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 7,
     bonus: {
       sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
@@ -699,6 +704,7 @@ export const BONUS_LEVELS = [
       { type: 'sign', x: 846, y: 120, lines: ['BOB'] },
     ],
     door: { x: 900, y: 270, key: null, lock: [] },
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 7,
     bonus: {
       sequences: [{ q: 'Q', gates: ['h', 'swap', 'swap', 'h'], value: 1, untouched: true }],
@@ -746,6 +752,7 @@ export const BONUS_LEVELS = [
     ],
     door: { x: 900, y: 160, key: null, lock: [] },
     noLuck: true, // beat the faulty lights to every superposition, and nothing is left to chance
+    deterministic: true, // can be solved with nothing left to chance
     shortest: 12,
     goal: 'Raise P to reach the middle, then set A lowered and B raised to cross to the exit. Faulty lights hang over every platform: each superposition has only a few seconds.',
     concept:
@@ -798,7 +805,7 @@ export const BONUS_LEVELS = [
     concept:
       'Rabi oscillation: the waves from a cavity turn a qubit round and round, 0, then +, then 1, then -, then 0 again. Watching stops it, the quantum watchdog (or Zeno) effect: a qubit that is lit, or stood on, is being measured all the time, so it cannot turn. Look away and it carries on from where it was.',
     hints: [
-      'P never stops turning while nothing watches it. Shine the flashlight (hold F) on P as it comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
+      'P never stops turning while nothing watches it. Shine the flashlight (F) on P as it comes down to lowered: it freezes where it is, and stays put while it is lit or while you stand on it.',
       'A and B turn together, so they would freeze as 0 0 or 1 1. Before you cross, Ry(pi/2) twice at T1 puts B half a turn ahead of A: whenever A is 0, B is 1.',
       'At T2, X slides the shield into the waves and freezes A and B together. Do it as A comes down to lowered, then light them up and cross.',
     ],

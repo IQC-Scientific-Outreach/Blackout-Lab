@@ -349,7 +349,9 @@ async function main() {
     await bot.hop(bot.slab('B'));
     await bot.hop(bot.solid(2));
     await bot.exit();
-    return `floor 1 cleared after ${tries} H gates, stats ${JSON.stringify(bot.G().stats)}`;
+    const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => li.textContent);
+    if (list.join('|') !== 'Reached the exit') throw new Error(`floor 1 needs luck, so clearing it is its only star: ${list}`);
+    return `floor 1 cleared after ${tries} H gates (luck needed: one star, for clearing it), stats ${JSON.stringify(bot.G().stats)}`;
   });
   await nextFloor(1);
 
@@ -373,7 +375,7 @@ async function main() {
     const s = bot.G().stats;
     const r = bot.G().results[1];
     const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (r.stars !== 3 || r.of !== 3 || list.join('|') !== '+Reached the exit|+Fewest gates (6)|+Solved without luck') throw new Error(`six gates and no luck should earn all three stars: ${JSON.stringify(r)} ${list}`);
+    if (r.stars !== 3 || r.of !== 3 || list.join('|') !== '+Reached the exit|+Fewest gates (6), no luck|+Solved without luck') throw new Error(`six gates and no luck should earn all three stars: ${JSON.stringify(r)} ${list}`);
     return `floor 2 cleared with no measurement at all: ${list.join(', ')}; stats ${JSON.stringify(s)}`;
   });
   await nextFloor(2);
@@ -635,10 +637,10 @@ async function main() {
     if (!/no observations/.test(line) || !/no unlucky collapses/.test(line)) throw new Error(`floor 7 summary: "${line}"`);
     const res = g.results[6];
     const list = [...document.querySelectorAll('#complete-star-list li')].map((li) => li.textContent);
-    if (res.of !== 3 || res.stars !== 3 || list.join('|') !== 'Reached the exit|Fewest gates (11)|No hints') throw new Error(`floor 7: eleven gates and no hints should earn all three stars, none for speed: ${res.stars}/${res.of} ${JSON.stringify(list)}`);
+    if (res.of !== 2 || res.stars !== 2 || list.join('|') !== 'Reached the exit|Fewest gates (11), no luck') throw new Error(`floor 7: eleven gates should earn both its stars, none for speed or hints: ${res.stars}/${res.of} ${JSON.stringify(list)}`);
     // Its best time and stars are kept for the level lists.
-    const kept = JSON.parse(localStorage.getItem('blackoutLab.progress') || '{}')['lights-out'];
-    if (!kept || kept.stars.join() !== 'true,true,true' || !(kept.best > 0)) throw new Error(`floor 7's stars and best time should be saved: ${JSON.stringify(kept)}`);
+    const kept = JSON.parse(localStorage.getItem('blackoutLab.progress.v2') || '{}')['lights-out'];
+    if (!kept || !kept.stars.cleared || !kept.stars.fewest || !(kept.best > 0)) throw new Error(`floor 7's stars and best time should be saved: ${JSON.stringify(kept)}`);
     return `floor 7 cleared in the dark in ${Math.round(g.floorTime)} s, ${res.stars} of ${res.of} stars, summary "${line}"`;
   });
   await shot('09-floor7-complete');
@@ -737,14 +739,13 @@ async function main() {
       if (i === 0 && (g.q.ops.length !== kept.ops || g.q.definite[g.qIndex.Q] !== null || !g.canister.carried)) {
         throw new Error('a fall should leave every qubit as it was: the canister still held and still in superposition');
       }
+      const t1 = g.room.terminals.find((t) => t.id === 'T1');
+      if (i < 2 && Math.abs(g.player.x + 9 - t1.x) > 2) throw new Error(`a fall should bring the player back to the last terminal used (T1 at ${t1.x}): x ${g.player.x + 9}`);
     }
-    await bot.until(() => bot.G().mode === 'over', 4000, 'out of lives');
-    return `on floor 3, the first fall kept the canister in superposition; falls left lives at ${lives.join(', ')} then out of lives`;
+    await bot.until(() => bot.G().mode === 'play' && bot.G().lives === 3 && bot.G().q.ops.length === 0, 4000, 'the floor to start over');
+    if (bot.G().levelIndex !== 2 || bot.G().canister.carried) throw new Error('out of lives, the same floor should start over from the beginning');
+    return `on floor 3, each fall brought the player back to T1, the first with the canister still in superposition; falls left lives at ${lives.join(', ')}, then floor 3 started over with three lives`;
   });
-  await shot('14-out-of-lives');
-  await page.click('#btn-retry');
-  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0 && window.blackoutLab.state.lives === 3);
-  report.push('out of lives on floor 3 restarted the climb from floor 1 with three lives');
 
   // Bonus level 1, Broken Terminal: two terminals stuck in loops, a dead flashlight, a weak spare.
   await page.keyboard.press('KeyP');
@@ -880,7 +881,7 @@ async function main() {
     await bot.hop(bot.solid(1));
     await bot.exit();
     const stars = [...document.querySelectorAll('#complete-star-list li')].map((li) => (li.classList.contains('missed') ? '-' : '+') + li.textContent);
-    if (!stars.includes('+Fewest gates (5)')) throw new Error(`five gates should earn the fewest-gates star: ${stars.join(', ')}`);
+    if (!stars.includes('+Fewest gates (5), no luck')) throw new Error(`five gates should earn the fewest-gates star: ${stars.join(', ')}`);
     return `bonus level 2: X SWAP X SWAP SWAP gave 011 with no countdowns, and the player crossed; stars ${stars.join(', ')}`;
   });
   await page.click('#btn-next');
@@ -1282,7 +1283,7 @@ async function main() {
   // The rest are still developer options: off (or at their defaults) to start, and remembered.
   const dev = () => page.evaluate(() => ({ ...window.blackoutLab.state.dev }));
   let d = await dev();
-  const always = ['keyTorch', 'touchCollapse', 'instantResponse', 'passiveTerminal', 'canisterView', 'showGates'];
+  const always = ['touchCollapse', 'instantResponse', 'passiveTerminal', 'canisterView', 'showGates'];
   if (!always.every((k) => d[k] === true)) throw new Error(`these should always be on: ${JSON.stringify(d)}`);
   const switches = await page.$$eval('#dev input', (els) => els.map((el) => el.id));
   if (switches.some((id) => /key-torch|touch|instant|passive|canister|show-gates/.test(id))) throw new Error(`the always-on settings should have no switches left: ${switches}`);
@@ -1323,45 +1324,77 @@ async function main() {
     return `circuit always adds to the right: X on B drawn at x=${seq.x} after H at x=${seq.h} (x=${packed.x} with the option off)`;
   });
 
-  // The keyboard flashlight on floor 1: the mouse does nothing; F held shines; I and K tilt it.
+  // The flashlight on floor 1: its two modes, the mouse, and I / K with the tilt easing back.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   await page.selectOption('#opt-floor', '0');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
-  await step('keyboard flashlight', async () => {
+  await step('flashlight', async () => {
     const g = bot.G();
     const canvas = document.getElementById('game');
     const r = canvas.getBoundingClientRect();
-    canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + r.width * 0.9, clientY: r.top + 5, bubbles: true }));
-    await bot.frame();
-    await bot.frame();
-    if (g.torch.active || g.torch.useMouse) throw new Error('the beam should be off until F is held, and the mouse ignored');
+    const frames = async (n) => { for (let k = 0; k < n; k += 1) await bot.frame(); };
     g.player.facing = 1;
+    if (g.dev.torchMode !== 'hold') throw new Error(`the flashlight mode should start as Hold: ${g.dev.torchMode}`);
+    // Hold mode, mouse off the game picture: F held shines straight ahead.
     bot.key('KeyF', true);
-    await bot.frame();
-    await bot.frame();
-    const level = { active: g.torch.active, angle: g.torch.angle };
+    await frames(2);
+    const ahead = { active: g.torch.active, angle: g.torch.angle };
+    // I tilts it up; a few steps of walking without I or K bring it back to straight ahead.
     bot.key('KeyI', true);
-    for (let k = 0; k < 15; k += 1) await bot.frame();
+    await frames(15);
     bot.key('KeyI', false);
     const up = g.torch.angle;
-    await bot.tap('ArrowLeft');
-    await bot.frame();
+    bot.key('ArrowRight', true);
+    await bot.until(() => Math.abs(g.torch.angle) < 0.02, 3000, 'the tilt to ease back after a few steps');
+    bot.key('ArrowRight', false);
+    await frames(10);
+    // The mouse over the game picture aims it; off the picture, it is straight ahead again.
+    const target = { x: g.player.x + 160, y: g.player.y - 120 };
+    canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + (target.x / 960) * r.width, clientY: r.top + (target.y / 540) * r.height, bubbles: true }));
+    await frames(2);
+    const mouse = g.torch.angle;
+    canvas.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+    await frames(2);
     const left = g.torch.angle;
     bot.key('KeyF', false);
-    await bot.frame();
-    await bot.frame();
-    if (!level.active || Math.abs(level.angle + 0.15) > 1e-9 || !(up < level.angle) || Math.abs(left - (Math.PI - up)) > 1e-6 || g.torch.active) {
-      throw new Error(`F held should shine ahead, I tilt it up, and facing left mirror it: ${JSON.stringify({ level, up, left, after: g.torch.active })}`);
+    await frames(2);
+    if (!ahead.active || Math.abs(ahead.angle) > 1e-9 || !(up < -0.1) || !(mouse < -0.3) || Math.abs(left) > 1e-9 || g.torch.active) {
+      throw new Error(`Hold mode: ${JSON.stringify({ ahead, up, mouse, left, after: g.torch.active })}`);
     }
-    return `keyboard flashlight: mouse ignored; F held shone at ${level.angle.toFixed(2)} rad, I tilted it to ${up.toFixed(2)}, facing left mirrored it`;
+    return `flashlight, Hold: F held shone straight ahead; I tilted it to ${up.toFixed(2)}, and a few steps brought it back to 0; the mouse over the game aimed it at ${mouse.toFixed(2)}, and off the game it was straight ahead again`;
   });
+  // Switch mode, chosen in Options (on the pause screen here): F turns it on, and F again off.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  if (!(await page.isVisible('#opt-torch-switch'))) await page.click('#options summary');
+  await page.click('#opt-torch-switch');
+  await page.click('#btn-resume');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.dev.torchMode === 'switch');
+  await step('flashlight switch', async () => {
+    const g = bot.G();
+    const frames = async (n) => { for (let k = 0; k < n; k += 1) await bot.frame(); };
+    const start = g.torch.active;
+    await bot.tap('KeyF');
+    await frames(3);
+    const flipped = g.torch.active;
+    await bot.tap('KeyF');
+    await frames(3);
+    const back = g.torch.active;
+    if (flipped === start || back !== start) throw new Error(`Switch mode: F should turn the flashlight ${start ? 'off' : 'on'} and back: ${JSON.stringify({ start, flipped, back })}`);
+    return `flashlight, Switch: F turned it ${flipped ? 'on' : 'off'}, and F again ${back ? 'on' : 'off'}`;
+  });
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.click('#opt-torch-hold');
+  await page.click('#btn-resume');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.dev.torchMode === 'hold');
 
   // The pause screen shows the controls and the developer options, which return to the title afterwards.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
   const pauseHas = await page.evaluate(() => ({
-    dev: !!document.querySelector('#screen-pause #dev'),
+    dev: !!document.querySelector('#screen-pause #dev') && !!document.querySelector('#screen-pause #options'),
     keys: document.querySelectorAll('#screen-pause .keys dt').length,
   }));
   if (!pauseHas.dev || pauseHas.keys < 5) throw new Error(`the pause screen should show the developer options and the controls: ${JSON.stringify(pauseHas)}`);
@@ -1595,14 +1628,15 @@ async function main() {
     floor2: await page.$eval('#title-floors button[data-floor="1"]', (el) => el.getAttribute('aria-label')),
   });
   const before = await totals();
+  if (!(await page.isVisible('#btn-reset'))) await page.click('#options summary');
   if (/^★ 0 of/.test(before.total) || !/3 of 3 stars\. Best time \d+:\d\d\./.test(before.floor2)) throw new Error(`the title should show the stars and best times earned: ${JSON.stringify(before)}`);
   await page.click('#btn-reset');
   if (/^★ 0 of/.test((await totals()).total)) throw new Error('one click must not reset the game');
   await page.click('#btn-reset');
   const after = await totals();
-  const stored = await page.evaluate(() => localStorage.getItem('blackoutLab.progress'));
-  if (!/^★ 0 of/.test(after.total) || !/0 of 3 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset game should clear every star and time: ${JSON.stringify(after)} ${stored}`);
-  report.push(`the title showed ${before.total} and floor 2 "${before.floor2}"; Reset game (two clicks) brought it back to ${after.total}`);
+  const stored = await page.evaluate(() => localStorage.getItem('blackoutLab.progress.v2'));
+  if (!/^★ 0 of/.test(after.total) || !/0 of 3 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset stats should clear every star and time: ${JSON.stringify(after)} ${stored}`);
+  report.push(`the title showed ${before.total} and floor 2 "${before.floor2}"; Reset stats (Options, two clicks) brought it back to ${after.total}`);
 
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');

@@ -23,7 +23,8 @@ for (const action of Object.keys(KEYS)) for (const code of KEYS[action]) ACTION_
 export function createInput(canvas, world) {
   const held = {}; // action -> true while down
   const pressed = {};
-  const pointer = { x: 0, y: 0, active: false, moved: false };
+  // inside: whether the pointer is over the game picture (where the platforms are).
+  const pointer = { x: 0, y: 0, active: false, moved: false, inside: false };
   let enabled = true;
 
   function isTyping(target) {
@@ -61,7 +62,14 @@ export function createInput(canvas, world) {
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', blur);
-  canvas.addEventListener('pointermove', toWorld);
+  canvas.addEventListener('pointermove', (ev) => {
+    pointer.inside = true;
+    toWorld(ev);
+  });
+  canvas.addEventListener('pointerleave', () => {
+    pointer.inside = false;
+    pointer.moved = true;
+  });
   canvas.addEventListener('pointerdown', (ev) => {
     toWorld(ev);
     if (canvas.focus) canvas.focus({ preventScroll: true });

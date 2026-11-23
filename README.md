@@ -25,8 +25,8 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | --- | --- |
 | ← → or A D | Walk |
 | Space or W | Jump |
-| F (hold) | Shine the flashlight (it is off whenever F is up; the mouse does not aim it) |
-| I / K | Tilt the flashlight up / down |
+| F | The flashlight: held down to shine (Hold mode), or pressed to switch it on and off (Switch mode, in Options) |
+| Mouse, or I / K | Aim the flashlight: at the mouse while it is over the game; otherwise straight ahead, tilted with I / K (the tilt eases back to straight ahead after a few steps of walking) |
 | 1, 2, 3… | Apply a gate: standing at a terminal shows its gates, each with its number |
 | E or Enter | Step into a terminal (← → then Enter, or the numbers, pick a gate; E to leave), use a port, talk, go through a room door, try a lock, pet the cat |
 | H | Show a hint |
@@ -41,8 +41,9 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 - Each gate pops up over the qubits it acts on, and while you hold the canister the panel shows it enlarged with its state (or its entangled partners).
 - From floor 3 you carry a **canister** holding one sealed qubit. No light gets in, so the flashlight cannot read it. Dead terminals still have a canister port: plug in and the port applies a CNOT with the canister as control.
 - The title screen's side panel says where the game was made and links to its Qollab and GitHub pages (fill in the two empty `href` attributes in the `about` block of `index.html`, then rebuild the single file; until then each line reads "link not added yet").
-- Falling into the gap costs one of three lives, and you are back at the room's start with every qubit just as you left it (every gate applied so far still applied). Lose all three on one floor and the climb starts again from floor 1. Unlimited lives are in the pause menu. "Skip to floor" on the title screen and in the pause menu jumps to any floor.
-- **Stars** (up to three a floor): cleared; the fewest gates; and solved without luck, where a floor can be (no outcome left to chance, or a floor's own no-luck gate sequence), or with no hints where luck cannot be avoided. Stars never reward speed or a run without falls. Each level in the lists shows its stars (filled once earned, and kept) and its best time; the title shows the total. **Reset game** (two clicks, on the title screen) clears every star and best time.
+- Falling into the gap costs one of three lives, and you are back at the last terminal you used (or the room's start) with every qubit just as you left it (every gate applied so far still applied). Lose all three and the floor starts over from the beginning. Unlimited lives are in the pause menu. "Skip to floor" on the title screen and in the pause menu jumps to any floor.
+- **Stars**: one for clearing a floor, and on a floor that can be solved without luck, one for the fewest gates with nothing left to chance and one for its own no-luck solution. A floor that needs luck has just the one star. No star rewards luck, speed or a run without falls, and hints cost nothing. Each level in the lists shows its stars (filled once earned, and kept) and its best time; the title shows the total.
+- **Options** (a collapsible panel on the title screen, also shown on the pause screen): **Flashlight**, Hold F or Switch with F; and **Reset stats** (two clicks), which clears every star and best time.
 
 The **circuit** you have built on this floor is drawn under the game, whole, with a meter icon and its result for every observation (**Collapse** moves it into the rack on the right, where it scrolls sideways). The rack starts with the floor's **goal**, then the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, **lab notes** with a concept explanation, hints and an event log, and last "This floor as Qiskit code" (the same circuit as code you can paste into a notebook).
 
@@ -56,14 +57,14 @@ The title screen has a collapsible **Developer options** panel, under the credit
 | Panel position | Right (the normal layout) or Bottom: the rack moves under the game, with its modules side by side. |
 | Circuit always adds to the right | Every new step in the circuit gets its own column after everything before it, instead of moving left into the first free column. |
 
-Six earlier developer options are now simply how the game plays, always on, with no switch: the keyboard flashlight, touch-collapse, instant response, the passive terminal, the canister view and show gates (`ALWAYS_ON` in `game/game.js`). To add an option: put its default in `DEV_DEFAULTS` in `game/game.js`, add a switch to the `dev` block in `index.html`, and list it in `devSwitches` in `game/ui.js`.
+Five earlier developer options are now simply how the game plays, always on, with no switch: touch-collapse, instant response, the passive terminal, the canister view and show gates (`ALWAYS_ON` in `game/game.js`). The keyboard flashlight became the Flashlight mode in Options. To add an option: put its default in `DEV_DEFAULTS` in `game/game.js`, add a switch to the `dev` block in `index.html`, and list it in `devSwitches` in `game/ui.js`.
 
 ## The seven floors
 
 | Floor | What happens | What it teaches |
 | --- | --- | --- |
 | 1 Superposition | H, then look, until two platforms land raised. | H makes a 50/50 superposition; looking collapses it; a bad result can only be retried, not undone. |
-| 2 Certainty and Interference | X, H and Z on three platforms. The third star is for solving it without luck: H then X on the middle one and H·Z·H on the last one, with nothing measured. | X is a certain flip. Z changes nothing you can see, yet H·Z·H is an X: phase is real, and interference turns it into certainty if you do not look in between. |
+| 2 Certainty and Interference | X, H and Z on three platforms. Its extra stars are for solving it without luck: H then X on the middle one and H·Z·H on the last one, with nothing measured, in six gates. | X is a certain flip. Z changes nothing you can see, yet H·Z·H is an X: phase is real, and interference turns it into certainty if you do not look in between. |
 | 3 The Sealed Canister | Carry the canister; entangle it with a platform through a port; set a one-lamp exit key. | You cannot look inside the canister, but entangling it with a platform and looking at the platform measures both. |
 | 4 Low Battery | The flashlight flickers, and dies as you reach the ledge with the battery station. The terminal on that ledge drives a platform far across the room. Two-lamp exit key. | You can only observe what your light reaches, so a 50/50 you cannot check from where you stand costs a trip each time it lands wrong. |
 | 5 Schrödinger Lab | The Professor's cat is in a box whose atom is entangled with the canister at the top of the room. A broken bridge on the way holds only when both halves are in state 1. | Nothing done to one half of an entangled pair changes the other's odds. Bring them together and one CNOT undoes the entanglement, but only while the box is still shut. Only one bridge half has an H; the other can only follow it through a CNOT, so the two rise or fall together. |
@@ -98,7 +99,7 @@ The cat is one qubit: **0 is cute, 1 is monster**, and it starts at 1.
 - **Two terminals**, one on each side of the roof, each apply **RY(pi/8)** with a single press of 1 (shown on the terminal panel, as on other levels with the passive terminal option) or E. The cat answers at once: a paw rises straight over that terminal and smashes it, with no following and no wind-up, so run as soon as you press. The terminal comes back 10 seconds later.
 - **Looking** is a measurement: the flashlight on the cat, which takes no aiming up or jumping, since a beam held level along the roof towards the middle finds it. Cute (0) comes up with chance sin^2(k pi/16) after k turns: a MEOW, and the fight ends. Monster (1) undoes every turn: it SCREECHES, shows itself out of the mist for two full seconds, and brings both paws straight down wherever they are. Eight turns with nobody looking make it certainly cute, and that ends the fight too.
 - **Boss music** plays while it fights: an original chiptune loop (A minor, i VI iv V, 150 bpm), written note by note in `game/audio.js` with Web Audio, so there is no music file and nothing to license.
-- Stars: tamed; the fewest gates (8); and deterministically made the cat cute (eight RY turns in a row, no look).
+- Stars: tamed; the fewest gates with no luck (8); and deterministically made the cat cute (eight RY turns in a row, no look).
 
 | Bonus level | What happens | What it teaches |
 | --- | --- | --- |
@@ -158,7 +159,7 @@ npm run playthrough    # the bot plays the whole game (needs Playwright, see bel
 
 `npm test` covers the engine (exact 50/50, H·H, H·Z·H, Bell and GHZ collapse, entanglement groups, resets, the code listing, teleportation for every message, with each correction skipped, and on random states) and checks every floor in `game/levels.js` for unknown qubit ids or gates, mismatched keys and locks, and that the engine can start it.
 
-The playthrough is a bot that plays all seven floors and the ending in headless Chromium through real key events. Along the way it checks that only E leaves a terminal, all three stars on floor 2 with no luck, the flashlight dying and being revived on floor 4, a refused exit key, the Professor refusing to open an uncertain box, petting the cat, a teleport with the correction skipped (refused) and done properly (accepted), the terrace ending line by line, replaying a floor and returning to the start from the final screen, a fall keeping every qubit as it was, touching a superposed platform measuring it, the stars and best times kept on the title and cleared by Reset game, and losing all three lives on floor 3, which restarts the climb from floor 1. It needs Playwright once: `npm install --no-save playwright && npx playwright install chromium`.
+The playthrough is a bot that plays all seven floors and the ending in headless Chromium through real key events. Along the way it checks that only E leaves a terminal, all three stars on floor 2 with no luck, the flashlight dying and being revived on floor 4, a refused exit key, the Professor refusing to open an uncertain box, petting the cat, a teleport with the correction skipped (refused) and done properly (accepted), the terrace ending line by line, replaying a floor and returning to the start from the final screen, a fall keeping every qubit as it was, touching a superposed platform measuring it, the stars and best times kept on the title and cleared by Reset stats, both flashlight modes with the mouse and I / K, a fall bringing the player back to the last terminal used, and losing all three lives on floor 3, which starts that floor over. It needs Playwright once: `npm install --no-save playwright && npx playwright install chromium`.
 
 ```bash
 node tests/playthrough.cjs                           # the site, served from this folder
@@ -168,7 +169,7 @@ node tests/playthrough.cjs https://<you>.github.io/<repo>/   # a published copy
 
 ## Accessibility
 
-- Fully playable from the keyboard, which is the only way to aim the flashlight. Fixed-height jumps, no timers, no quick reactions required, pause at any time.
+- Fully playable from the keyboard; the mouse is a second way to aim the flashlight, over the game only. Fixed-height jumps, no timers, no quick reactions required, pause at any time.
 - Unlimited lives are an option.
 - State is never carried by colour alone: every qubit shows `0` / `1`, lowered / raised, percentages, and solid versus dotted outlines.
 - Terminals and menus are real buttons with visible focus, labelled for screen readers. Every quantum event and every line of dialogue is written to the event log and announced through a live region, and the circuit has a text description. Speech bubbles are repeated as text under the game. The ending plays by itself, but every line of it is also logged and announced, and E moves a spoken line on early.

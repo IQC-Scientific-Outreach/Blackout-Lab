@@ -9,7 +9,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -94,8 +94,14 @@ export function createUI(dom, handlers) {
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;
-    if (name === 'pause') dom.pauseDevSlot.appendChild(dom.dev);
-    else if (name === 'title') devHome.parent.insertBefore(dom.dev, devHome.next);
+    // The Options and Developer options panels live on the title screen, and visit the pause screen.
+    if (name === 'pause') {
+      dom.pauseDevSlot.appendChild(dom.options);
+      dom.pauseDevSlot.appendChild(dom.dev);
+    } else if (name === 'title') {
+      devHome.parent.insertBefore(dom.dev, devHome.next);
+      devHome.parent.insertBefore(dom.options, dom.dev);
+    }
     if (name) {
       const first = dom[`screen_${name}`].querySelector('.primary:not(:disabled)') || dom[`screen_${name}`].querySelector('button:not(:disabled)');
       focusLater(first);
@@ -281,24 +287,26 @@ export function createUI(dom, handlers) {
   const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
   for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
+  const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
+  for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
-  // Reset game: a second click within a few seconds confirms it.
+  // Reset stats: a second click within a few seconds confirms it.
   let resetArmed = null;
   dom.btnReset.addEventListener('click', () => {
     if (resetArmed) {
       clearTimeout(resetArmed);
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset game';
+      dom.btnReset.textContent = 'Reset stats';
       dom.btnReset.classList.remove('armed');
       handlers.reset();
       return;
     }
     dom.btnReset.textContent = 'Click again to erase all stars and times';
     dom.btnReset.classList.add('armed');
-    announce('Click Reset game again to erase all stars and best times.');
+    announce('Click Reset stats again to erase all stars and best times.');
     resetArmed = setTimeout(() => {
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset game';
+      dom.btnReset.textContent = 'Reset stats';
       dom.btnReset.classList.remove('armed');
     }, 4000);
   });
@@ -374,6 +382,7 @@ export function createUI(dom, handlers) {
     setDev(dev) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
+      for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);

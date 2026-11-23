@@ -15,6 +15,8 @@ import { createRenderer } from './render.js';
 import { createPanel, describe } from './panel.js';
 import { createUI, grabDom } from './ui.js';
 
+// A few steps of walking (in pixels) without I or K, and a keyboard tilt eases back to straight ahead.
+const TILT_RESET_STEPS = 70;
 const PHYS = { speed: 190, accel: 2200, gravity: 1900, jump: 620, coyote: 0.09, buffer: 0.11, maxFall: 900, step: 1 / 120 };
 const MIN_REMARK = 2.5;
 const LONG_TOAST = 5.2;
@@ -36,16 +38,16 @@ const NO_QUBITS = {
 };
 
 // Settings that began as developer options and are now simply how the game plays:
-//   keyTorch         hold F to shine, I / K to tilt; the mouse does not aim
 //   touchCollapse    touching a superposed platform measures it
 //   instantResponse  platforms move while you are still at a terminal
 //   passiveTerminal  standing at a terminal shows its gates; 1, 2, 3 apply them
 //   canisterView     the held canister's state shows in the panel
 //   showGates        each gate pops up over the qubits it acts on
-const ALWAYS_ON = { keyTorch: true, touchCollapse: true, instantResponse: true, passiveTerminal: true, canisterView: true, showGates: true };
+const ALWAYS_ON = { touchCollapse: true, instantResponse: true, passiveTerminal: true, canisterView: true, showGates: true };
 // Developer options (title screen). Remembered in this browser only.
 const DEV_KEY = 'blackoutLab.dev';
 const DEV_DEFAULTS = {
+  torchMode: 'hold', // Options: 'hold' (F held shines) or 'switch' (F turns it on and off)
   swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   panel: 'right',
   circuitRight: false,
@@ -57,6 +59,7 @@ function loadDev() {
     const dev = { ...DEV_DEFAULTS };
     for (const name of Object.keys(DEV_DEFAULTS)) if (typeof saved[name] === typeof DEV_DEFAULTS[name]) dev[name] = saved[name];
     dev.swapDelay = Math.min(5, Math.max(1, Math.round(Number(dev.swapDelay) || 3)));
+    if (dev.torchMode !== 'switch') dev.torchMode = 'hold';
     return { ...dev, ...ALWAYS_ON };
   } catch (err) {
     return { ...DEV_DEFAULTS, ...ALWAYS_ON };
@@ -81,25 +84,27 @@ const levelAt = (index) =>
   index < LEVELS.length ? LEVELS[index] : index === BEAST_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
 const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
 
-// Each level's stars, the same every time (so they can be shown before it is played):
+// Each level's stars, the same every time (so they can be shown before it is played). No star is
+// ever given for a lucky result, nor taken for using hints:
 //   1. cleared;
-//   2. the fewest gates (`shortest`), where the floor needs any;
-//   3. solved without luck: bonus level 7's eight unobserved turns; a level's own no-luck
-//      gate sequence (`bonus.sequences`); or, with `noLuck`, no outcome left to chance at all.
-//      Where luck cannot be avoided, solved with no hints instead.
+//   2. the fewest gates (`shortest`), with no outcome left to chance: only on levels that can be
+//      solved without luck (`deterministic`);
+//   3. on such levels, their own no-luck star: bonus level 7's eight unobserved turns, a gate
+//      sequence (`bonus.sequences`), or with `noLuck`, solved with nothing left to chance.
+// A level that needs luck to solve has just the one star.
 function starsOf(level) {
   const stars = [{ key: 'cleared', text: level.firstStar || 'Reached the exit' }];
-  if (level.shortest > 0) stars.push({ key: 'fewest', text: `Fewest gates (${level.shortest})` });
+  if (!level.deterministic) return stars;
+  if (level.shortest > 0) stars.push({ key: 'fewest', text: `Fewest gates (${level.shortest}), no luck` });
   if (level.beast) stars.push({ key: 'sure', text: level.beast.sureStar });
   else if (level.bonus && level.bonus.sequences) stars.push({ key: 'sequence', text: level.bonus.text });
   else if (level.noLuck) stars.push({ key: 'noLuck', text: 'Solved without luck' });
-  else stars.push({ key: 'noHints', text: 'No hints' });
   return stars;
 }
 
-// Stars and best times, kept in this browser: { [level id]: { stars: [true, false, ...], best } }.
+// Stars and best times, kept in this browser: { [level id]: { stars: { cleared: true, ... }, best } }.
 // A star, once earned, stays earned; the best time is the fastest clear.
-const PROGRESS_KEY = 'blackoutLab.progress';
+const PROGRESS_KEY = 'blackoutLab.progress.v2';
 function loadProgress() {
   try {
     const saved = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
@@ -144,7 +149,7 @@ export function startGame() {
     door: null,
     canister: null,
     player: { x: 0, y: 0, vx: 0, vy: 0, facing: 1, onGround: false, coyote: 0, buffer: 0, anim: 0, standing: null, visible: true },
-    torch: { on: true, active: false, lowered: false, angle: 0, tilt: 0.15, useMouse: false, battery: 'ok', range: TORCH.range, flickT: 3, flickLeft: 0 },
+    torch: { on: true, active: false, lowered: false, angle: 0, tilt: 0, walked: 0, useMouse: false, battery: 'ok', range: TORCH.range, flickT: 3, flickLeft: 0 },
     dialogue: null,
     bubbles: [],
     fx: [],
@@ -210,8 +215,10 @@ export function startGame() {
   function listFloors() {
     const entry = (level, name, index) => {
       const saved = progress[level.id] || {};
-      const of = starsOf(level).length;
-      const got = Array.isArray(saved.stars) ? saved.stars.slice(0, of).filter(Boolean).length : 0;
+      const stars = starsOf(level);
+      const earned = saved.stars && typeof saved.stars === 'object' ? saved.stars : {};
+      const got = stars.filter((star) => earned[star.key] === true).length;
+      const of = stars.length;
       return { name, index, got, of, best: Number.isFinite(saved.best) ? saved.best : null };
     };
     const floors = LEVELS.map((level, i) => entry(level, `${i + 1}. ${level.name}`, i));
@@ -224,7 +231,9 @@ export function startGame() {
 
   function recordClear(level, earned, seconds) {
     const saved = progress[level.id] || {};
-    const stars = earned.map((e, i) => e.got || !!(saved.stars && saved.stars[i]));
+    const before = saved.stars && typeof saved.stars === 'object' && !Array.isArray(saved.stars) ? saved.stars : {};
+    const stars = { ...before };
+    for (const e of earned) if (e.got) stars[e.key] = true;
     const best = Number.isFinite(saved.best) ? Math.min(saved.best, seconds) : seconds;
     progress = { ...progress, [level.id]: { stars, best } };
     saveProgress(progress);
@@ -236,8 +245,8 @@ export function startGame() {
     saveProgress(progress);
     G.results = [];
     listFloors();
-    ui.announce('Game reset: every star and best time is cleared.');
-    ui.toast('Game reset: every star and best time is cleared.', 'info');
+    ui.announce('Stats reset: every star and best time is cleared.');
+    ui.toast('Stats reset: every star and best time is cleared.', 'info');
   }
 
   // -- small helpers --------------------------------------------------------
@@ -509,7 +518,8 @@ export function startGame() {
     G.scene = null;
     G.hasKey = false;
     G.torch.on = !level.torchOff;
-    G.torch.tilt = 0.15;
+    G.torch.tilt = 0; // straight ahead
+    G.torch.walked = 0;
     G.torch.battery = level.torch || 'ok';
     G.torch.range = TORCH.range;
     G.torch.flickT = 0.5; // a failing flashlight stutters as soon as the floor starts
@@ -520,6 +530,7 @@ export function startGame() {
     G.busy = false;
     G.beast = null;
     G.flung = null;
+    G.lastTerminal = null;
   }
 
   async function loadLevel(index, opts) {
@@ -630,6 +641,7 @@ export function startGame() {
   // -- terminals: gates ---------------------------------------------------
 
   function useTerminal(term) {
+    G.lastTerminal = term; // where a fall brings you back
     if (term.port && !carrying()) {
       say(
         term.box
@@ -869,6 +881,7 @@ export function startGame() {
 
   async function applyOp(i) {
     const term = G.terminal || G.passive;
+    if (term && term.ops[i]) G.lastTerminal = term;
     if (term && term.quick) {
       if (term.ops[i]) quickTerminal(term);
       return;
@@ -985,27 +998,29 @@ export function startGame() {
     const pl = G.player;
     const t = G.torch;
     const dead = t.battery === 'dead';
-    const keyTorch = G.dev.keyTorch; // hold F to shine; I / K tilt it; the mouse does not aim
+    // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
+    const hold = G.dev.torchMode !== 'switch';
+    // Aim: the mouse while it is over the game picture; otherwise straight ahead, tilted by I / K
+    // (the tilt eases back to straight ahead after a few steps of walking without I or K).
     if (input.pointer.moved) {
-      t.useMouse = !keyTorch;
+      t.useMouse = input.pointer.inside;
       input.pointer.moved = false;
     }
-    if (G.mode === 'play' && keyTorch) {
-      t.useMouse = false;
-      if (input.take('torch') && dead && story().onDeadTorch) story().onDeadTorch(storyCtx(null));
-      const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
-      if (tilt) t.tilt = Math.max(-1.35, Math.min(1.35, t.tilt + tilt * 1.2 * dt));
-      t.angle = pl.facing > 0 ? -t.tilt : Math.PI + t.tilt;
-    } else if (G.mode === 'play') {
+    if (!input.pointer.inside) t.useMouse = false;
+    if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
         t.useMouse = false;
         t.tilt = Math.max(-1.35, Math.min(1.35, t.tilt + tilt * 1.2 * dt));
+        t.walked = 0;
+      } else if (pl.onGround && Math.abs(pl.vx) > 20) {
+        t.walked = (t.walked || 0) + Math.abs(pl.vx) * dt;
+        if (t.walked > TILT_RESET_STEPS) t.tilt = Math.sign(t.tilt) * Math.max(0, Math.abs(t.tilt) - 2.5 * dt); // back to level, and no further
       }
       if (input.take('torch')) {
         if (dead) {
           if (story().onDeadTorch) story().onDeadTorch(storyCtx(null));
-        } else {
+        } else if (!hold) {
           t.on = !t.on;
           audio.play('click');
           ui.announce(t.on ? 'Flashlight on.' : 'Flashlight off.');
@@ -1037,7 +1052,7 @@ export function startGame() {
       }
     }
     t.lowered = G.mode !== 'play';
-    t.active = (keyTorch ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
+    t.active = (hold ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
 
     if (G.mode !== 'play' || !G.q) return;
     const hand = handOf(pl);
@@ -1473,7 +1488,10 @@ export function startGame() {
     G.flung = null;
     if (G.terminal) closeTerminal();
     closePassive();
-    placePlayer(room.spawn.x, room.spawn.y);
+    // Back at the last terminal used in this room, or the room's start if none yet.
+    const at = G.lastTerminal && room.terminals.includes(G.lastTerminal) ? G.lastTerminal : null;
+    if (at) placePlayer(at.x - PLAYER.w / 2, at.y);
+    else placePlayer(room.spawn.x, room.spawn.y);
     G.player.facing = 1;
     if (b) {
       for (const paw of b.paws) {
@@ -1489,8 +1507,8 @@ export function startGame() {
     if (b) {
       const qi = G.qIndex.CAT;
       const now = G.q.definite[qi] === 1 ? 'still a monster (1)' : `still ${Math.round((1 - G.q.p1[qi]) * 100)}% cute`;
-      say(`Knocked off the roof, but the cat is just as you left it: ${now}. ${lives}`, 'bad', true);
-    } else say(`You fell, but every qubit is just as you left it. ${lives}`, 'bad', true);
+      say(`Knocked off the roof, but the cat is just as you left it: ${now}. ${at ? `Back at ${at.id}. ` : ''}${lives}`, 'bad', true);
+    } else say(`You fell, but every qubit is just as you left it. ${at ? `Back at ${at.id}. ` : ''}${lives}`, 'bad', true);
   }
 
   function afterFall() {
@@ -1498,17 +1516,9 @@ export function startGame() {
       respawn();
       return;
     }
-    if (G.lives <= 0 && !G.infinite && isBonus(G.levelIndex)) {
-      // A bonus level is not part of the climb: out of lives, it simply starts over.
-      loadLevel(G.levelIndex);
-      say('Out of lives: the bonus level starts over with three.', 'bad', true);
-      return;
-    }
-    if (G.lives <= 0 && !G.infinite) {
-      setMode('over');
-      ui.showScreen('over');
-      ui.announce('Out of lives. You start again from floor 1.');
-    }
+    // Out of lives: this floor starts over, from its starting states, with three lives.
+    loadLevel(G.levelIndex);
+    say('Out of lives: the floor starts over from the beginning, with three lives.', 'bad', true);
   }
 
   // -- bonus level 7: the beast on the roof -------------------------------------
@@ -2116,6 +2126,7 @@ export function startGame() {
   }
 
   function quickTerminal(term) {
+    G.lastTerminal = term;
     if (!G.beast || term.wreck > 0 || term.used || !G.q) return;
     const op = term.ops[0];
     const res = Q.apply(op.gate, op.qi, op.angle);
@@ -2211,7 +2222,7 @@ export function startGame() {
     else if (term && term.used) ui.setPrompt(`The cat is going for <b>${term.id}</b>: get away from it!`);
     else if (superposed) {
       ui.setPrompt(
-        `The cat is <b>${Math.round(p0 * 100)}%</b> cute. Hold <b>F</b> to shine the flashlight its way and look, or turn it further first.`
+        `The cat is <b>${Math.round(p0 * 100)}%</b> cute. ${shineWords()} its way and look, or turn it further first.`
       );
     } else ui.setPrompt('When a raised paw stops, it is about to drop: move. Turn the cat at <b>T1</b> and <b>T2</b>.');
   }
@@ -2224,13 +2235,12 @@ export function startGame() {
     const s = G.stats;
     const got = {
       cleared: true,
-      fewest: s.gates <= level.shortest,
+      fewest: s.gates <= level.shortest && s.chance === 0,
       sure: !!(G.beast && G.beast.deterministic),
       sequence: G.bonusDone,
       noLuck: s.chance === 0,
-      noHints: G.hints === 0,
     };
-    const earned = starsOf(level).map((star) => ({ got: got[star.key], text: star.text }));
+    const earned = starsOf(level).map((star) => ({ key: star.key, got: got[star.key], text: star.text }));
     const stars = earned.filter((e) => e.got).length;
     recordClear(level, earned, G.floorTime);
     const of = earned.length;
@@ -2574,6 +2584,9 @@ export function startGame() {
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
+  // How to shine the flashlight, in the current flashlight mode.
+  const shineWords = () => (G.dev.torchMode === 'switch' ? (G.torch.on ? 'Shine the flashlight' : 'Switch on the flashlight (<b>F</b>) and shine it') : 'Hold <b>F</b> to shine the flashlight');
+
   function brokenNear() {
     const pl = G.player;
     return G.room.terminals.find((t) => t.broken && Math.abs(pl.x + PLAYER.w / 2 - t.x) < 30 && Math.abs(pl.y + PLAYER.h - t.y) < 6);
@@ -2604,7 +2617,7 @@ export function startGame() {
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
     else if (ghost && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
-    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Hold <b>F</b> to shine the flashlight on a dotted outline and observe it (<b>I</b> / <b>K</b> tilt it).${orAct}`);
+    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. ${shineWords()} on a dotted outline to observe it (aim with the mouse, or <b>I</b> / <b>K</b>).${orAct}`);
     else if (d && d.item && !d.open && G.player.x > d.x - 220) ui.setPrompt('The exit is locked, and this lock takes an ordinary key.');
     else if (d && d.key && !d.unlocked && G.player.x > d.x - 220) {
       const byHand = d.byHand || G.torch.battery === 'dead';

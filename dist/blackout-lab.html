@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-lTC1KKA8EhsSiOnWEWx8lGCScL0J+6KFS8m2Q5ryFaM='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-knDGt8LF3WDNk8ttNd+yxCn9Ue6Wb7kVohCDfMEuDqI='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -427,6 +427,9 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
                   <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
                   <label title="F switches the flashlight on, and again off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Switch with F</label>
                 </div>
+                <label class="dev-opt" title="Off: the flashlight points straight ahead, tilted with I and K. On: it also follows the mouse while the pointer is over the game.">
+                  <input type="checkbox" role="switch" id="opt-mouse-aim"> <b>Aim with the mouse</b>
+                  <span class="dev-hint">only while the pointer is over the game</span></label>
                 <div class="dev-opt">
                   <button type="button" class="key-btn mini" id="btn-reset">Reset stats</button>
                   <span class="dev-hint">clears every star and best time</span>
@@ -452,7 +455,7 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
                 <div><dt><kbd>F</kbd></dt><dd>Flashlight (hold, or switch: see Options)</dd></div>
-                <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
+                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Options)</dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
@@ -797,7 +800,7 @@ const LEVELS = [
       'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random.',
     hints: [
       'Stand at terminal T1, press E, and apply H to platform A.',
-      'Step away from the terminal, then shine the flashlight (F) on one of the dotted outlines: aim with the mouse, or tilt with I and K. Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
+      'Step away from the terminal, then shine the flashlight (F) on one of the dotted outlines: tilt it with I and K (or aim with the mouse, if that is on in Options). Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
       'Did it collapse to lowered? Apply H again and look again. A measurement cannot be undone, only retried.',
     ],
     takeaway:
@@ -6019,7 +6022,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'opt-mouse-aim', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -6299,6 +6302,7 @@ function createUI(dom, handlers) {
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
   for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
+  dom.optMouseAim.addEventListener('change', () => handlers.dev('mouseAim', dom.optMouseAim.checked));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
   // Reset stats: a second click within a few seconds confirms it.
   let resetArmed = null;
@@ -6393,6 +6397,7 @@ function createUI(dom, handlers) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
       for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
+      dom.optMouseAim.checked = !!dev.mouseAim;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
@@ -6516,6 +6521,7 @@ const ALWAYS_ON = { touchCollapse: true, instantResponse: true, passiveTerminal:
 const DEV_KEY = 'blackoutLab.dev';
 const DEV_DEFAULTS = {
   torchMode: 'hold', // Options: 'hold' (F held shines) or 'switch' (F turns it on and off)
+  mouseAim: false, // Options: the mouse aims the flashlight (over the game only); off by default
   swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   panel: 'right',
   circuitRight: false,
@@ -7473,13 +7479,14 @@ function startGame() {
     const dead = t.battery === 'dead';
     // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
     const hold = G.dev.torchMode !== 'switch';
-    // Aim: the mouse while it is over the game picture; otherwise straight ahead, tilted by I / K
-    // (the tilt eases back to straight ahead after a few steps of walking without I or K).
+    // Aim: straight ahead, tilted by I / K (the tilt eases back to straight ahead after a few steps
+    // of walking without I or K); with Aim with the mouse on (Options), the mouse while it is over
+    // the game picture.
     if (input.pointer.moved) {
       t.useMouse = input.pointer.inside;
       input.pointer.moved = false;
     }
-    if (!input.pointer.inside) t.useMouse = false;
+    if (!input.pointer.inside || !G.dev.mouseAim) t.useMouse = false;
     if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
@@ -9098,7 +9105,7 @@ function startGame() {
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
     else if (ghost && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
-    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. ${shineWords()} on a dotted outline to observe it (aim with the mouse, or <b>I</b> / <b>K</b>).${orAct}`);
+    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. ${shineWords()} on a dotted outline to observe it (<b>I</b> / <b>K</b> tilt it${G.dev.mouseAim ? ', or aim with the mouse' : ''}).${orAct}`);
     else if (d && d.item && !d.open && G.player.x > d.x - 220) ui.setPrompt('The exit is locked, and this lock takes an ordinary key.');
     else if (d && d.key && !d.unlocked && G.player.x > d.x - 220) {
       const byHand = d.byHand || G.torch.battery === 'dead';

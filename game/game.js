@@ -48,6 +48,7 @@ const ALWAYS_ON = { touchCollapse: true, instantResponse: true, passiveTerminal:
 const DEV_KEY = 'blackoutLab.dev';
 const DEV_DEFAULTS = {
   torchMode: 'hold', // Options: 'hold' (F held shines) or 'switch' (F turns it on and off)
+  mouseAim: false, // Options: the mouse aims the flashlight (over the game only); off by default
   swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   panel: 'right',
   circuitRight: false,
@@ -1005,13 +1006,14 @@ export function startGame() {
     const dead = t.battery === 'dead';
     // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
     const hold = G.dev.torchMode !== 'switch';
-    // Aim: the mouse while it is over the game picture; otherwise straight ahead, tilted by I / K
-    // (the tilt eases back to straight ahead after a few steps of walking without I or K).
+    // Aim: straight ahead, tilted by I / K (the tilt eases back to straight ahead after a few steps
+    // of walking without I or K); with Aim with the mouse on (Options), the mouse while it is over
+    // the game picture.
     if (input.pointer.moved) {
       t.useMouse = input.pointer.inside;
       input.pointer.moved = false;
     }
-    if (!input.pointer.inside) t.useMouse = false;
+    if (!input.pointer.inside || !G.dev.mouseAim) t.useMouse = false;
     if (G.mode === 'play') {
       const tilt = (input.held.tiltUp ? 1 : 0) - (input.held.tiltDown ? 1 : 0);
       if (tilt) {
@@ -2630,7 +2632,7 @@ export function startGame() {
     } else if (act && !ghost) ui.setPrompt(act);
     else if (ghost && G.torch.battery === 'dead') ui.setPrompt(`<b>${ghost.q}</b> is in superposition and you have no light to observe it. Make it certain with gates.${orAct}`);
     else if (ghost && G.level.torchOff) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. Your flashlight is off, so you are not looking at it.${orAct}`);
-    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. ${shineWords()} on a dotted outline to observe it (aim with the mouse, or <b>I</b> / <b>K</b>).${orAct}`);
+    else if (ghost) ui.setPrompt(`<b>${ghost.q}</b> is in superposition. ${shineWords()} on a dotted outline to observe it (<b>I</b> / <b>K</b> tilt it${G.dev.mouseAim ? ', or aim with the mouse' : ''}).${orAct}`);
     else if (d && d.item && !d.open && G.player.x > d.x - 220) ui.setPrompt('The exit is locked, and this lock takes an ordinary key.');
     else if (d && d.key && !d.unlocked && G.player.x > d.x - 220) {
       const byHand = d.byHand || G.torch.battery === 'dead';

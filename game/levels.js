@@ -133,7 +133,7 @@ export const LEVELS = [
       'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random.',
     hints: [
       'Stand at terminal T1, press E, and apply H to platform A.',
-      'Step away from the terminal, then shine the flashlight (F) on one of the dotted outlines: aim with the mouse, or tilt with I and K. Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
+      'Step away from the terminal, then shine the flashlight (F) on one of the dotted outlines: tilt it with I and K (or aim with the mouse, if that is on in Options). Keep it there: the platform collapses to lowered (0) or raised (1), 50/50.',
       'Did it collapse to lowered? Apply H again and look again. A measurement cannot be undone, only retried.',
     ],
     takeaway:

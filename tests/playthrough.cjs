@@ -1349,7 +1349,35 @@ async function main() {
     await bot.until(() => Math.abs(g.torch.angle) < 0.02, 3000, 'the tilt to ease back after a few steps');
     bot.key('ArrowRight', false);
     await frames(10);
-    // The mouse over the game picture aims it; off the picture, it is straight ahead again.
+    // Aim with the mouse is off by default: the mouse over the game changes nothing.
+    if (g.dev.mouseAim) throw new Error('Aim with the mouse should start off');
+    const target = { x: g.player.x + 160, y: g.player.y - 120 };
+    canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + (target.x / 960) * r.width, clientY: r.top + (target.y / 540) * r.height, bubbles: true }));
+    await frames(2);
+    const ignored = g.torch.angle;
+    canvas.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+    bot.key('KeyF', false);
+    await frames(2);
+    if (!ahead.active || Math.abs(ahead.angle) > 1e-9 || !(up < -0.1) || Math.abs(ignored) > 1e-9 || g.torch.active) {
+      throw new Error(`Hold mode: ${JSON.stringify({ ahead, up, ignored, after: g.torch.active })}`);
+    }
+    return `flashlight, Hold: F held shone straight ahead; I tilted it to ${up.toFixed(2)}, and a few steps brought it back to 0; with Aim with the mouse off (the default), the mouse changed nothing`;
+  });
+  // Aim with the mouse, switched on in Options: the mouse over the game aims it; off the game,
+  // it is straight ahead again. Then off again.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  if (!(await page.isVisible('#opt-mouse-aim'))) await page.click('#options summary');
+  await page.click('#opt-mouse-aim');
+  await page.click('#btn-resume');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.dev.mouseAim === true);
+  await step('flashlight mouse', async () => {
+    const g = bot.G();
+    const canvas = document.getElementById('game');
+    const r = canvas.getBoundingClientRect();
+    const frames = async (n) => { for (let k = 0; k < n; k += 1) await bot.frame(); };
+    g.player.facing = 1;
+    bot.key('KeyF', true);
     const target = { x: g.player.x + 160, y: g.player.y - 120 };
     canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + (target.x / 960) * r.width, clientY: r.top + (target.y / 540) * r.height, bubbles: true }));
     await frames(2);
@@ -1359,11 +1387,15 @@ async function main() {
     const left = g.torch.angle;
     bot.key('KeyF', false);
     await frames(2);
-    if (!ahead.active || Math.abs(ahead.angle) > 1e-9 || !(up < -0.1) || !(mouse < -0.3) || Math.abs(left) > 1e-9 || g.torch.active) {
-      throw new Error(`Hold mode: ${JSON.stringify({ ahead, up, mouse, left, after: g.torch.active })}`);
-    }
-    return `flashlight, Hold: F held shone straight ahead; I tilted it to ${up.toFixed(2)}, and a few steps brought it back to 0; the mouse over the game aimed it at ${mouse.toFixed(2)}, and off the game it was straight ahead again`;
+    const saved = JSON.parse(localStorage.getItem('blackoutLab.dev') || '{}').mouseAim;
+    if (!(mouse < -0.3) || Math.abs(left) > 1e-9 || saved !== true) throw new Error(`Aim with the mouse: ${JSON.stringify({ mouse, left, saved })}`);
+    return `flashlight, Aim with the mouse on: the mouse over the game aimed it at ${mouse.toFixed(2)}, off the game it was straight ahead again; the choice is remembered`;
   });
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.click('#opt-mouse-aim');
+  await page.click('#btn-resume');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.dev.mouseAim === false);
   // Switch mode, chosen in Options (on the pause screen here): F turns it on, and F again off.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');

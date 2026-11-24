@@ -63,6 +63,9 @@
                   <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
                   <label title="F switches the flashlight on, and again off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Switch with F</label>
                 </div>
+                <label class="dev-opt" title="Off: the flashlight points straight ahead, tilted with I and K. On: it also follows the mouse while the pointer is over the game.">
+                  <input type="checkbox" role="switch" id="opt-mouse-aim"> <b>Aim with the mouse</b>
+                  <span class="dev-hint">only while the pointer is over the game</span></label>
                 <div class="dev-opt">
                   <button type="button" class="key-btn mini" id="btn-reset">Reset stats</button>
                   <span class="dev-hint">clears every star and best time</span>
@@ -88,7 +91,7 @@
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
                 <div><dt><kbd>F</kbd></dt><dd>Flashlight (hold, or switch: see Options)</dd></div>
-                <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
+                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Options)</dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>

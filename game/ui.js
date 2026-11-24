@@ -9,7 +9,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'opt-mouse-aim', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -289,6 +289,7 @@ export function createUI(dom, handlers) {
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
   for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
+  dom.optMouseAim.addEventListener('change', () => handlers.dev('mouseAim', dom.optMouseAim.checked));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
   // Reset stats: a second click within a few seconds confirms it.
   let resetArmed = null;
@@ -383,6 +384,7 @@ export function createUI(dom, handlers) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
       for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
+      dom.optMouseAim.checked = !!dev.mouseAim;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);

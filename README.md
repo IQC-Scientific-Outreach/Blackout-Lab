@@ -26,7 +26,7 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | ← → or A D | Walk |
 | Space or W | Jump |
 | F | The flashlight: held down to shine (Hold mode), or pressed to switch it on and off (Switch mode, in Options) |
-| Mouse, or I / K | Aim the flashlight: at the mouse while it is over the game; otherwise straight ahead, tilted with I / K (the tilt eases back to straight ahead after a few steps of walking) |
+| I / K, or the mouse | Aim the flashlight: straight ahead, tilted with I / K (the tilt eases back to straight ahead after a few steps of walking); with Aim with the mouse on in Options, also at the mouse while it is over the game |
 | 1, 2, 3… | Apply a gate: standing at a terminal shows its gates, each with its number |
 | E or Enter | Step into a terminal (← → then Enter, or the numbers, pick a gate; E to leave), use a port, talk, go through a room door, try a lock, pet the cat |
 | H | Show a hint |
@@ -43,7 +43,7 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 - The title screen's side panel says where the game was made and links to its Qollab and GitHub pages (fill in the two empty `href` attributes in the `about` block of `index.html`, then rebuild the single file; until then each line reads "link not added yet").
 - Falling into the gap costs one of three lives, and you are back at the last terminal you used (or the room's start) with every qubit just as you left it (every gate applied so far still applied). Lose all three and the floor starts over from the beginning. Unlimited lives are in the pause menu. "Skip to floor" on the title screen and in the pause menu jumps to any floor.
 - **Stars**: one for clearing a floor and one for clearing it without a fall, and on a floor that can be solved without luck, one for the fewest gates with nothing left to chance and one for its own no-luck solution. A floor that needs luck has just those first two. No star rewards luck or speed, and hints cost nothing. Each level in the lists shows its stars (filled once earned, and kept) and its best time; the title shows the total.
-- **Options** (a collapsible panel on the title screen, also shown on the pause screen): **Flashlight**, Hold F or Switch with F; and **Reset stats** (two clicks), which clears every star and best time.
+- **Options** (a collapsible panel on the title screen, also shown on the pause screen): **Flashlight**, Hold F or Switch with F; **Aim with the mouse** (off by default; on, the mouse aims the flashlight while it is over the game); and **Reset stats** (two clicks), which clears every star and best time.
 
 The **circuit** you have built on this floor is drawn under the game, whole, with a meter icon and its result for every observation (**Collapse** moves it into the rack on the right, where it scrolls sideways). The rack starts with the floor's **goal**, then the **probability** of 0 and 1 for every qubit plus the joint outcomes of anything entangled, **lab notes** with a concept explanation, hints and an event log, and last "This floor as Qiskit code" (the same circuit as code you can paste into a notebook).
 
@@ -169,7 +169,7 @@ node tests/playthrough.cjs https://<you>.github.io/<repo>/   # a published copy
 
 ## Accessibility
 
-- Fully playable from the keyboard; the mouse is a second way to aim the flashlight, over the game only. Fixed-height jumps, no timers, no quick reactions required, pause at any time.
+- Fully playable from the keyboard; the mouse can be switched on in Options as a second way to aim the flashlight, over the game only. Fixed-height jumps, no timers, no quick reactions required, pause at any time.
 - Unlimited lives are an option.
 - State is never carried by colour alone: every qubit shows `0` / `1`, lowered / raised, percentages, and solid versus dotted outlines.
 - Terminals and menus are real buttons with visible focus, labelled for screen readers. Every quantum event and every line of dialogue is written to the event log and announced through a live region, and the circuit has a text description. Speech bubbles are repeated as text under the game. The ending plays by itself, but every line of it is also logged and announced, and E moves a spoken line on early.

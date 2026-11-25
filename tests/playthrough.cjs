@@ -288,7 +288,7 @@ async function main() {
   await page.click('#btn-floors');
   const nameOf = (els) => els.map((el) => el.querySelector('.floor-name').textContent);
   const offered = await page.$$eval('#title-floors:not([hidden]) button:not(.bonus)', nameOf);
-  const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus', nameOf);
+  const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus:not(.story)', nameOf);
   // Each level shows its stars (none earned yet) and the title shows the total.
   const shown = await page.$$eval('#title-floors button', (els) => els.map((el) => { const all = el.querySelector('.floor-stars'); const off = all.querySelector('.off'); return all.textContent.length > 0 && !!off && off.textContent.length === all.textContent.length; }));
   if (!shown.length || !shown.every(Boolean)) throw new Error('every level should show its stars, all blank to start');
@@ -296,6 +296,8 @@ async function main() {
   if (!bonusOffered.length || !bonusOffered[0].startsWith('Bonus 1.') || bonusOffered[bonusOffered.length - 1] !== 'Bonus 7. The Beast on the Roof') {
     throw new Error(`"Skip to floor" should list the seven bonus levels: ${JSON.stringify(bonusOffered)}`);
   }
+  const storyOffered = await page.$$eval('#title-floors:not([hidden]) button.story', nameOf);
+  if (storyOffered[0] !== '0. The Lobby') throw new Error(`"Skip to floor" should list story mode, from Level 0: ${JSON.stringify(storyOffered)}`);
   if (offered.length !== 7 || offered[6] !== '7. Lights Out') throw new Error(`"Skip to floor" should list the seven floors: ${JSON.stringify(offered)}`);
   await page.click('#title-floors button[data-floor="0"]');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 0);
@@ -1651,8 +1653,107 @@ async function main() {
     return `show gates: the ball landed mid-state on A and the H popped up at ${poppedAt.toFixed(2)} s, the superposition appeared at ${changedAt.toFixed(2)} s, the H was gone at ${total.toFixed(2)} s`;
   });
 
-  // The title keeps the stars and best times earned above; Reset game (two clicks) clears them.
+  // Story mode, Level 0: the lobby. Its title card holds the clock until the player moves; the
+  // Professor's intercom speaks by itself (the clock still stopped) while the player walks on;
+  // X raises A, SWAP carries the player across on C, an X on the lock lamp opens the stair door,
+  // and the blackout keeps it shut until the Professor has finished. All with real jumps.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
+  await page.selectOption('#opt-floor', '15');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 15);
+  await step('story level 0', async () => {
+    const g = bot.G();
+    const pl = g.player;
+    const out = [];
+    await new Promise((r) => setTimeout(r, 600));
+    if (!g.titleCard || g.floorTime !== 0) throw new Error(`the title card should show, the clock stopped: ${JSON.stringify([g.titleCard, g.floorTime])}`);
+    await bot.tap('ArrowRight');
+    await bot.until(() => !g.titleCard, 1000, 'the title card to go');
+    await bot.until(() => g.intercom && g.intercom.box.id === 'I1', 2000, 'the first intercom message');
+    const t0 = g.floorTime;
+    await bot.walkTo(150);
+    if (!g.intercom || g.floorTime !== t0) throw new Error('the bubble should stay while walking, and its time should not count');
+    if (g.room.intercoms[0].near !== true) throw new Error('the intercom should know the player is in front of it');
+    await bot.tap('KeyH');
+    if (g.intercom) throw new Error('H should close the bubble');
+    if (!/Professor \(intercom\): Thank heavens/.test(document.getElementById('log').textContent)) throw new Error('the message should be in the log');
+    out.push('title card held the clock; I1 spoke on entry, stayed up while walking (clock still), H closed it, and it went to the log');
+    // H again at the box calls him back.
+    await bot.tap('KeyH');
+    if (!g.intercom) throw new Error('H at an intercom should call the Professor');
+    await bot.tap('KeyH');
+    // Jump from where the player stands up onto a surface, steering in the air.
+    const jumpTo = async (s, from) => {
+      await bot.walkTo(from);
+      bot.key('Space', true);
+      await bot.frame();
+      bot.key('Space', false);
+      await bot.until(() => !pl.onGround, 1000, 'leave the ground');
+      const goal = s.x + s.w / 2;
+      await bot.until(() => {
+        const off = goal - (pl.x + 9);
+        bot.key('ArrowRight', off > 4);
+        bot.key('ArrowLeft', off < -4);
+        return pl.onGround;
+      }, 3000, 'land');
+      bot.key('ArrowRight', false);
+      bot.key('ArrowLeft', false);
+      if (Math.abs(pl.y + 32 - s.y) > 2) throw new Error(`missed the jump to y ${s.y}: landed at ${pl.y + 32}`);
+    };
+    await bot.terminal('T1', [1]);
+    const A = bot.platform('A');
+    await bot.until(() => A.state === 1 && Math.abs(A.y - A.y1) < 1, 4000, 'A to rise');
+    await jumpTo(A, 300);
+    const stand = g.room.solids[2];
+    await jumpTo({ x: stand.x, w: 60, y: stand.y }, A.x + A.w - 12);
+    await bot.until(() => g.intercom && g.intercom.box.id === 'I2', 2000, 'the second intercom message');
+    await bot.tap('KeyQ'); // any other key moves the bubble on
+    if (g.intercom) throw new Error('another key should close the bubble');
+    await bot.terminal('T2', [1]);
+    const C = bot.platform('C');
+    await jumpTo(C, stand.x + 30); // on C before the swap delay runs out
+    await bot.until(() => Math.abs(C.x - 280) < 1 && Math.abs(C.y - 200) < 1, 8000, 'C to carry the player across');
+    if (Math.abs(pl.y + 32 - C.y) > 2) throw new Error('the player should ride C across');
+    await jumpTo(g.room.solids[1], C.x + 10);
+    await bot.until(() => g.intercom && g.intercom.box.id === 'I3', 2000, 'the lock message');
+    await bot.tap('KeyH');
+    out.push('X raised A, SWAP carried the player across on C, onto the stair landing (real jumps)');
+    await bot.terminal('T3', [1]);
+    const d = g.door;
+    await bot.until(() => g.blackout, 2000, 'the blackout');
+    if (d.open) throw new Error('the stair door should stay shut through the blackout');
+    await bot.until(() => g.blackout.dark && g.intercom && g.intercom.box.id === 'I3', 4000, 'the dark and the Professor');
+    const t1 = g.floorTime;
+    await new Promise((r) => setTimeout(r, 400));
+    if (d.open || g.floorTime !== t1) throw new Error('the door should open only after the message, and the message should not count on the clock');
+    await bot.tap('KeyH');
+    await bot.until(() => d.open, 1000, 'the stair door to open');
+    await bot.exit();
+    out.push(`the lock opened the blackout; the door opened once the Professor finished; cleared in ${g.floorTime.toFixed(1)} s of play`);
+    return `story level 0: ${out.join('; ')}`;
+  });
+  const lobbyStars = await page.getAttribute('#complete-stars', 'aria-label');
+  if (lobbyStars !== '3 of 3 stars') throw new Error(`a clean lobby run earns every star: ${lobbyStars}`);
+  report.push(`story level 0: ${lobbyStars}`);
+
+  // Options: Automatic Hints (off by default) and the unlock code.
   await page.click('#btn-menu');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
+  if (!(await page.isVisible('#opt-code'))) await page.click('#options summary');
+  if (!(await page.isChecked('#opt-hints-off'))) throw new Error('Automatic Hints should be off by default');
+  await page.check('#opt-hints-on');
+  if (!(await page.evaluate(() => window.blackoutLab.state.dev.autoHints))) throw new Error('Automatic Hints on did not take');
+  await page.check('#opt-hints-off');
+  await page.fill('#opt-code', 'qbit');
+  await page.click('#btn-code');
+  if (!/does not work/.test(await page.textContent('#opt-code-status'))) throw new Error('a wrong code should be refused');
+  await page.fill('#opt-code', 'qUbIt');
+  await page.press('#opt-code', 'Enter');
+  if (!/All levels unlocked/.test(await page.textContent('#opt-code-status'))) throw new Error('QUBIT should unlock every level');
+  report.push('Options: Automatic Hints off by default and switchable; a wrong code refused, "qUbIt" unlocked every level');
+
+  // The title keeps the stars and best times earned above; Reset game (two clicks) clears them.
+  if (await page.evaluate(() => window.blackoutLab.state.mode !== 'title')) await page.click('#btn-menu');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'title');
   if (await page.isHidden('#title-floors')) await page.click('#btn-floors');
   const totals = async () => ({

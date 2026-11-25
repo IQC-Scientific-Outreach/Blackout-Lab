@@ -333,6 +333,7 @@ export function createRenderer(canvas) {
     }
     ctx.stroke();
 
+    if (G.level.story) return drawCeiling(); // story levels are not numbered floors
     ctx.save();
     ctx.fillStyle = 'rgba(219,231,245,0.17)';
     ctx.font = `800 150px ${SIGN_FONT}`;
@@ -344,7 +345,10 @@ export function createRenderer(canvas) {
     ctx.fillStyle = 'rgba(219,231,245,0.24)';
     ctx.fillText(bonus ? 'BONUS' : 'FLOOR', 254, 78);
     ctx.restore();
+    drawCeiling();
+  }
 
+  function drawCeiling() {
     ctx.fillStyle = '#22314c';
     ctx.fillRect(0, 22, WORLD.w, 9);
     ctx.fillStyle = '#31456a';
@@ -386,6 +390,17 @@ export function createRenderer(canvas) {
         ctx.font = `800 30px ${SIGN_FONT}`;
         d.lines.forEach((line, i) => ctx.fillText(line, d.x, d.y + i * 32));
         ctx.restore();
+      } else if (d.type === 'entrance') {
+        // The street door the player came in by: open, daylight beyond, until they walk away.
+        const r = doorRect(d);
+        const open = G.player.x < d.x + 40 && !G.blackout;
+        if (open) {
+          ctx.fillStyle = '#cfe2ff';
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+        }
+        drawDoorLeaf(r, open, '#44597f');
+        ctx.fillStyle = '#2b3954';
+        ctx.fillRect(r.x - 6, r.y - 8, r.w + 12, 8);
       } else if (d.type === 'candle') {
         ctx.fillStyle = '#3a4d72';
         ctx.fillRect(d.x - 9, d.y + 10, 18, 3); // bracket
@@ -2742,11 +2757,15 @@ export function createRenderer(canvas) {
     for (const p of room.platforms) if (p.state !== null) drawPlatformBody(p);
     drawDoors(G);
     for (const term of room.terminals) drawTerminal(G, term);
+    drawIntercoms(G);
     drawPickups(G);
     drawNpcs(G);
     if (G.player.visible) drawPlayer(G);
 
-    drawDarkness(G);
+    // A lit room (story mode) has no darkness, until its blackout (which flickers first).
+    const b = G.blackout;
+    drawLamps(G, !(b && (b.dark || b.flickerOff)));
+    if (!G.level.lit || (b && (b.dark || b.flickerOff))) drawDarkness(G);
 
     drawWindows(G, true);
     for (const s of room.solids) drawStandGlow(s);
@@ -2759,8 +2778,214 @@ export function createRenderer(canvas) {
     drawCavities(G);
     drawLights(G);
     drawSwapArrows(G);
+    drawIntercomGlow(G);
+    drawBlackoutFx(G);
     drawFx(G);
     drawSpeech(G);
+    drawRadio(G);
+    ctx.restore();
+    drawTitleCard(G);
+  }
+
+  // -- story mode -----------------------------------------------------------------
+
+  // A lit room's ceiling lamps, and the light they throw while they are on.
+  function drawLamps(G, on) {
+    const xs = G.level.lamps;
+    if (!xs) return;
+    ctx.save();
+    if (on) {
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = 'rgba(70,82,104,0.35)';
+      ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+      for (const x of G.blackout ? [] : xs) {
+        const g = ctx.createLinearGradient(0, 34, 0, WORLD.h);
+        g.addColorStop(0, 'rgba(255,236,190,0.22)');
+        g.addColorStop(1, 'rgba(255,236,190,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(x - 14, 40);
+        ctx.lineTo(x + 14, 40);
+        ctx.lineTo(x + 120, WORLD.h);
+        ctx.lineTo(x - 120, WORLD.h);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    for (const x of xs) {
+      if (G.blackout && G.blackout.t > 0.1) continue; // torn down
+      ctx.fillStyle = '#3a4a66';
+      ctx.fillRect(x - 1, 31, 2, 5);
+      ctx.fillStyle = on ? '#fff1c8' : '#3d4659';
+      ctx.beginPath();
+      ctx.ellipse(x, 38, 16, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // An intercom: a small speaker box on the wall, at head height over its surface.
+  function drawIntercoms(G) {
+    for (const i of G.room.intercoms || []) {
+      const x = i.x;
+      const y = i.y - 50;
+      ctx.fillStyle = '#1b2740';
+      rr(ctx, x - 11, y - 14, 22, 28, 3);
+      ctx.fill();
+      ctx.fillStyle = '#3a4d72';
+      rr(ctx, x - 9, y - 12, 18, 24, 2);
+      ctx.fill();
+      ctx.fillStyle = '#16213a'; // the grille
+      for (let r = 0; r < 4; r += 1) for (let c = 0; c < 3; c += 1) ctx.fillRect(x - 6 + c * 5, y - 7 + r * 5, 2, 2);
+      ctx.fillStyle = '#2f4062';
+      ctx.fillRect(x - 1, y - 20, 2, 6); // the wire up to the ceiling run
+    }
+  }
+
+  function drawIntercomGlow(G) {
+    const speaking = G.intercom && G.intercom.box;
+    for (const i of G.room.intercoms || []) {
+      const x = i.x;
+      const y = i.y - 50;
+      const on = speaking === i;
+      const blink = on ? 0.6 + 0.4 * Math.sin(G.t * 14) : 1;
+      ctx.globalAlpha = blink;
+      ctx.fillStyle = on ? '#7dffa8' : i.heard ? '#3f6b52' : '#ffd98a';
+      ctx.beginPath();
+      ctx.arc(x + 6, y + 9, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (i.near && !G.intercom && G.mode === 'play') tag('H', x, y - 30 + Math.sin(G.t * 5) * 2, C.torch);
+    }
+  }
+
+  // The Professor on the radio: a bubble at the top of the screen with jagged edges, and a
+  // lightning-bolt tail down to the intercom he is speaking through.
+  function drawRadio(G) {
+    const ic = G.intercom;
+    if (!ic) return;
+    const text = ic.lines[ic.index];
+    const box = ic.box;
+    ctx.save();
+    ctx.font = `600 14px ${BODY_FONT}`;
+    const lines = wrap(text, 400);
+    const lineH = 18;
+    const w = Math.max(...lines.map((l) => ctx.measureText(l).width), 170) + 34;
+    const h = lines.length * lineH + 40;
+    const bx = Math.max(10, Math.min(WORLD.w - w - 10, box.x - w / 2));
+    const high = box.y < WORLD.h / 2; // a speaker high up: the bubble goes low, clear of the player
+    const by = high ? WORLD.h - h - 16 : 12;
+    const pop = Math.min(1, ic.t / 0.15);
+    ctx.globalAlpha = pop;
+    // The tail: a zigzag from the bubble down to the speaker.
+    const sx = box.x;
+    const sy = box.y - 66;
+    const tx = Math.max(bx + 20, Math.min(bx + w - 20, sx));
+    ctx.strokeStyle = '#ffe9a8';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'miter';
+    ctx.beginPath();
+    const y0 = high ? by : by + h;
+    const y1 = high ? box.y - 34 : sy;
+    ctx.moveTo(tx, y0);
+    const steps = 5;
+    for (let k = 1; k <= steps; k += 1) {
+      const f = k / steps;
+      const zx = tx + (sx - tx) * f + (k < steps ? (k % 2 ? 9 : -9) : 0);
+      ctx.lineTo(zx, y0 + (y1 - y0) * f);
+    }
+    ctx.stroke();
+    // The bubble, its edge jagged like a radio signal.
+    ctx.fillStyle = 'rgba(243,246,251,0.97)';
+    ctx.beginPath();
+    const teeth = (x0, y0, x1, y1, n, out) => {
+      for (let k = 0; k <= n; k += 1) {
+        const f = k / n;
+        const px = x0 + (x1 - x0) * f;
+        const py = y0 + (y1 - y0) * f;
+        const d = k % 2 ? out : 0;
+        const nx = (y1 - y0) === 0 ? 0 : Math.sign(y1 - y0) * d;
+        const ny = (x1 - x0) === 0 ? 0 : -Math.sign(x1 - x0) * d;
+        if (k === 0 && x0 === bx && y0 === by) ctx.moveTo(px, py);
+        else ctx.lineTo(px + nx, py + ny);
+      }
+    };
+    teeth(bx, by, bx + w, by, Math.round(w / 14) * 2, 4);
+    teeth(bx + w, by, bx + w, by + h, Math.round(h / 14) * 2, 4);
+    teeth(bx + w, by + h, bx, by + h, Math.round(w / 14) * 2, 4);
+    teeth(bx, by + h, bx, by, Math.round(h / 14) * 2, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#ffd98a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = `700 10px ${MONO_FONT}`;
+    ctx.fillStyle = '#35607a';
+    ctx.fillText('PROFESSOR · INTERCOM', bx + 16, by + 9);
+    ctx.font = `600 14px ${BODY_FONT}`;
+    ctx.fillStyle = '#101826';
+    lines.forEach((l, k) => ctx.fillText(l, bx + 16, by + 26 + k * lineH));
+    ctx.font = `700 10px ${MONO_FONT}`;
+    ctx.fillStyle = '#35607a';
+    ctx.textAlign = 'right';
+    ctx.fillText(ic.index < ic.lines.length - 1 ? 'H ▸' : 'H ✕', bx + w - 12, by + 9);
+    ctx.restore();
+  }
+
+  // The blackout: cables torn from the ceiling, swinging and sparking.
+  function drawBlackoutFx(G) {
+    const b = G.blackout;
+    if (!b) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const c of b.cables) {
+      const k = Math.max(0, Math.min(1, (b.t - c.delay) / 0.35));
+      if (k <= 0) continue;
+      const len = c.len * k;
+      const swing = Math.sin(b.t * c.sway + c.x) * 10 * Math.min(1, b.t);
+      const end = { x: c.x + swing, y: len };
+      ctx.strokeStyle = '#151c2c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(c.x, 0);
+      ctx.quadraticCurveTo(c.x + swing * 0.3, len * 0.6, end.x, end.y);
+      ctx.stroke();
+      // Sparks at the torn end: often at first, now and then afterwards.
+      const often = b.t < 2.5 ? 0.7 : 0.15;
+      if (Math.sin(G.t * 23 + c.x) > 1 - often) {
+        glow(end.x, end.y, 16, 'rgba(255,214,140,0.7)');
+        ctx.fillStyle = '#fff1c2';
+        for (let n = 0; n < 4; n += 1) ctx.fillRect(end.x + Math.sin(G.t * 40 + n * 2) * 6, end.y + Math.abs(Math.cos(G.t * 33 + n)) * 8, 2, 2);
+      }
+    }
+    ctx.restore();
+  }
+
+  // A story level's name in block letters over the screen, until the player first moves.
+  function drawTitleCard(G) {
+    const lines = G.titleCard;
+    if (!lines) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(7,11,20,0.45)';
+    ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach((line, k) => {
+      const size = k === 0 ? 40 : 76;
+      const y = WORLD.h / 2 - 50 + k * 78;
+      ctx.font = `800 ${size}px ${SIGN_FONT}`;
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(7,11,20,0.9)';
+      ctx.strokeText(line, WORLD.w / 2, y);
+      ctx.fillStyle = k === 0 ? C.qubit : C.torch;
+      ctx.fillText(line, WORLD.w / 2, y);
+    });
+    ctx.font = `700 13px ${MONO_FONT}`;
+    ctx.fillStyle = C.ink;
+    ctx.fillText('Move to begin', WORLD.w / 2, WORLD.h / 2 + 96);
     ctx.restore();
   }
 

@@ -9,7 +9,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'opt-code', 'btn-code', 'opt-code-status', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -230,7 +230,7 @@ export function createUI(dom, handlers) {
     dom.completeStarList.innerHTML = earned.map((e) => `<li class="${e.got ? '' : 'missed'}">${esc(e.text)}</li>`).join('');
     dom.completeTakeaway.textContent = takeaway;
     dom.completeStats.textContent = stats;
-    dom.btnNext.textContent = bonus ? (bonus.more ? 'Next bonus level' : 'Back to title') : last ? 'Up to the terrace' : 'Next floor';
+    dom.btnNext.textContent = bonus ? (bonus.more ? bonus.next || 'Next bonus level' : 'Back to title') : last ? 'Up to the terrace' : 'Next floor';
     showScreen('complete');
   }
 
@@ -290,6 +290,21 @@ export function createUI(dom, handlers) {
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
   for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
+  const hintRadios = Array.from(document.querySelectorAll('input[name="opt-hints"]'));
+  for (const radio of hintRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('autoHints', radio.value === 'on'));
+  // Unlock Code: Enter (the button, or the key in the box) tries it.
+  const tryCode = () => {
+    const ok = handlers.code(dom.optCode.value);
+    dom.optCodeStatus.textContent = ok ? 'All levels unlocked.' : 'That code does not work.';
+    if (ok) dom.optCode.value = '';
+  };
+  dom.btnCode.addEventListener('click', tryCode);
+  dom.optCode.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      tryCode();
+    }
+  });
   const mouseRadios = Array.from(document.querySelectorAll('input[name="opt-mouse"]'));
   for (const radio of mouseRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('mouseAim', radio.value === 'on'));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
@@ -375,6 +390,11 @@ export function createUI(dom, handlers) {
       dom.errorText.textContent = text;
       showScreen('error');
     },
+    // Story levels give hints over the intercom, so the panel's hint button and list stand down.
+    setHintsShown(on) {
+      dom.hintButton.hidden = !on;
+      dom.hints.hidden = !on;
+    },
     setPlaying(playing) {
       dom.btnPause.disabled = !playing;
       dom.btnRestart.disabled = !playing;
@@ -387,6 +407,7 @@ export function createUI(dom, handlers) {
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
       for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
       for (const radio of mouseRadios) radio.checked = (radio.value === 'on') === !!dev.mouseAim;
+      for (const radio of hintRadios) radio.checked = (radio.value === 'on') === !!dev.autoHints;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
@@ -406,23 +427,29 @@ export function createUI(dom, handlers) {
     },
     // floors and bonus: [{ name, index, got, of, best }] (got of `of` stars, best time in seconds
     // or null); ending: the terrace's name. Each level shows its stars and best time.
-    setFloors(floors, ending, bonus = []) {
+    setFloors(floors, ending, bonus = [], story = []) {
       const time = (secs) => `${Math.floor(secs / 60)}:${String(Math.round(secs) % 60).padStart(2, '0')}`;
       const said = (f) => `${f.name}. ${f.got} of ${f.of} stars.${f.best != null ? ` Best time ${time(f.best)}.` : ' Not cleared yet.'}`;
       const plain = (f) => `${f.name}  ${'★'.repeat(f.got)}${'☆'.repeat(f.of - f.got)}${f.best != null ? `  ${time(f.best)}` : ''}`;
-      const option = (f) => `<option value="${f.index}">${esc(plain(f))}</option>`;
+      const option = (f) => `<option value="${f.index}"${f.locked ? ' disabled' : ''}>${esc(f.locked ? `${f.name}  (locked)` : plain(f))}</option>`;
       dom.optFloor.innerHTML =
         floors.map(option).join('') +
         `<option value="${floors.length}">${esc(ending)}</option>` +
-        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map(option).join('')}</optgroup>` : '');
+        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map(option).join('')}</optgroup>` : '') +
+        (story.length ? `<optgroup label="Story mode">${story.map(option).join('')}</optgroup>` : '');
+      // A locked story level shows a lock and cannot be chosen (it opens when the one before is cleared).
       const button = (f, cls) =>
-        `<button type="button" class="key-btn floor-btn${cls}" data-floor="${f.index}" aria-label="${esc(said(f))}">` +
-        `<span class="floor-name">${esc(f.name)}</span><span class="floor-stars" aria-hidden="true">${starsHtml(f.got, f.of)}</span>` +
-        `<span class="floor-best" aria-hidden="true">${f.best != null ? time(f.best) : ''}</span></button>`;
+        `<button type="button" class="key-btn floor-btn${cls}${f.locked ? ' locked' : ''}" data-floor="${f.index}"${f.locked ? ' disabled' : ''} aria-label="${esc(f.locked ? `${f.name}. Locked: clear the level before it.` : said(f))}">` +
+        `<span class="floor-name">${esc(f.name)}</span>` +
+        (f.locked
+          ? '<span class="floor-lock" aria-hidden="true">🔒</span>'
+          : `<span class="floor-stars" aria-hidden="true">${starsHtml(f.got, f.of)}</span><span class="floor-best" aria-hidden="true">${f.best != null ? time(f.best) : ''}</span>`) +
+        '</button>';
       const buttons = floors.map((f) => button(f, '')).join('');
       const extra = bonus.length ? `<p class="bonus-head">Bonus levels</p>${bonus.map((b) => button(b, ' bonus')).join('')}` : '';
-      dom.winFloors.innerHTML = buttons + extra;
-      dom.titleFloors.innerHTML = buttons + extra;
+      const tales = story.length ? `<p class="bonus-head">Story mode</p>${story.map((b) => button(b, ' bonus story')).join('')}` : '';
+      dom.winFloors.innerHTML = buttons + extra + tales;
+      dom.titleFloors.innerHTML = buttons + extra + tales;
     },
     setStarTotal(got, of) {
       dom.starTotal.innerHTML = `${starsHtml(Math.min(got, 1), 1)} <b>${got}</b> of ${of} stars`;

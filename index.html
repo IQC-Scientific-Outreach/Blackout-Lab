@@ -72,6 +72,21 @@
                     <label title="The mouse also aims the flashlight, while the pointer is over the game."><input type="radio" name="opt-mouse" id="opt-mouse-on" value="on"> On</label>
                   </span>
                 </div>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-hints-name">
+                  <b class="opt-name" id="opt-hints-name">Automatic Hints</b>
+                  <span class="opt-choices">
+                    <label title="The Professor speaks when you press H at an intercom."><input type="radio" name="opt-hints" id="opt-hints-off" value="off" checked> Off</label>
+                    <label title="The Professor speaks by himself at each intercom the first time you reach it."><input type="radio" name="opt-hints" id="opt-hints-on" value="on"> On</label>
+                  </span>
+                </div>
+                <div class="opt-row">
+                  <label class="opt-name" for="opt-code">Unlock Code</label>
+                  <span class="opt-choices">
+                    <input type="text" id="opt-code" class="opt-code" autocomplete="off" spellcheck="false" maxlength="12" aria-describedby="opt-code-status">
+                    <button type="button" class="key-btn mini" id="btn-code">Enter</button>
+                    <span class="dev-hint" id="opt-code-status" aria-live="polite"></span>
+                  </span>
+                </div>
                 <div class="opt-row">
                   <b class="opt-name" id="opt-reset-name">Reset Progress</b>
                   <span class="opt-choices"><button type="button" class="key-btn mini" id="btn-reset" aria-describedby="opt-reset-name">Press to Reset</button></span>

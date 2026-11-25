@@ -5,13 +5,13 @@
 // not match its lock, a floor the engine cannot start.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVELS, BONUS_LEVELS, BEAST, GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from '../game/levels.js';
+import { LEVELS, BONUS_LEVELS, BEAST, STORY_LEVELS, GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from '../game/levels.js';
 import { LIGHT_KINDS } from '../game/geometry.js';
 import { Lab } from '../game/quantum.js';
 
 const ROLES = ['platform', 'canister', 'sealed', 'box', 'door', 'beast'];
 
-const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level]), ['bonus level 7', BEAST]];
+const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level]), ['bonus level 7', BEAST], ...STORY_LEVELS.map((level, i) => [`story level ${i}`, level])];
 
 for (const [where0, level] of ALL) {
   test(`${where0}: ${level.name}`, () => {
@@ -89,3 +89,23 @@ test('bonus level 7: one beast qubit, starting as a monster, and two quick RY(pi
   // Eight turns make it certainly cute, as the level says.
   assert.equal(BEAST.shortest, Math.round(Math.PI / BEAST.terminals[0].ops[0].angle));
 });
+
+for (const [i, level] of STORY_LEVELS.entries()) {
+  test(`story level ${i}: ${level.name} has its title, intercoms and blackout in order`, () => {
+    assert.ok(level.story && Array.isArray(level.title) && level.title.length, 'a story level has a title for its title card');
+    for (const room of roomsOf(level)) {
+      const ids = (room.intercoms || []).map((ic) => ic.id);
+      assert.equal(new Set(ids).size, ids.length, 'intercom ids must be unique');
+      for (const ic of room.intercoms || []) {
+        assert.ok([ic.x, ic.y].every(Number.isFinite), `intercom ${ic.id} needs x and y`);
+        assert.ok(Array.isArray(ic.lines) && ic.lines.length && ic.lines.every((l) => typeof l === 'string' && l.length), `intercom ${ic.id} needs lines`);
+        assert.ok(room.solids.some((s) => ic.x >= s.x && ic.x <= s.x + s.w && Math.abs(s.y - ic.y) < 1), `intercom ${ic.id} should stand over a surface`);
+        if (ic.zone) assert.ok(ic.zone.length === 2 && ic.zone[0] < ic.zone[1], `intercom ${ic.id}: zone is [x0, x1]`);
+      }
+      if (level.blackout) {
+        assert.ok(ids.includes(level.blackout.from), 'the blackout speaks through one of the intercoms');
+        assert.ok(room.door && room.door.key, 'a blackout follows the exit unlocking, so the exit needs a key');
+      }
+    }
+  });
+}

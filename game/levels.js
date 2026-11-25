@@ -531,6 +531,81 @@ export const BEAST = {
     'The radiation rotated the cat into a monster, and eight small rotations rotated it back: what one unitary does, another can undo. Looking early was a gamble with exactly the odds sin\u00b2 of half the angle turned.',
 };
 
+// Story mode: the version of the game being built, listed after the bonus levels. Story levels
+// unlock in order (Level 0 is always open; the code QUBIT in Options opens them all). They add:
+//   story      true
+//   title      the level's name in block letters over the screen until the player first moves
+//   lit        the room starts with its lights on (no darkness until a blackout)
+//   intercoms  { id, x, y, lines, auto?, zone? }: a speaker box on the wall at x, over the surface
+//              at y. Near it, H calls the Professor, who says `lines`, one radio bubble each.
+//              auto: he speaks by himself the first time the player is in `zone` ([x0, x1] on that
+//              surface; within 60 px of the box if not given). With Automatic Hints on (Options),
+//              every intercom does that.
+//   blackout   { from, lines }: when the exit unlocks, the building shakes, cables fall, the lights
+//              go out, and intercom `from` says `lines`; the exit opens once he has finished.
+export const STORY_LEVELS = [
+  {
+    id: 'lobby',
+    name: 'The Lobby',
+    tag: 'Level 0',
+    title: ['LEVEL ZERO', 'THE LOBBY'],
+    story: true,
+    lit: true,
+    lamps: [330, 520, 760, 880], // ceiling lamps, lit until the blackout tears them down
+    gates: ['x', 'swap'],
+    qubits: [
+      { id: 'A', init: '0', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'C', init: '0', role: 'platform' },
+      { id: 'D', init: '0', role: 'door' },
+    ],
+    spawn: { x: 32, y: 470 },
+    solids: [
+      { kind: 'ground', x: 0, y: 470, w: 960, h: 70 }, // the lobby floor: a missed jump lands here
+      { kind: 'stand', x: 0, y: 170, w: 260, h: 14 }, // the landing by the stair door
+      { kind: 'stand', x: 455, y: 300, w: 505, h: 14 }, // the high platform on the right
+    ],
+    platforms: [
+      { q: 'A', x: 330, w: 84, y0: 452, y1: 380, need: 1 },
+      { q: 'B', x: 280, w: 80, y0: 200, y1: 120, need: 0 }, // by the stairs
+      { q: 'C', x: 480, w: 80, y0: 230, y1: 150, need: 0 }, // an easy jump up from the high platform
+    ],
+    terminals: [
+      { id: 'T1', x: 200, y: 470, ops: [{ gate: 'x', q: ['A'] }] },
+      { id: 'T2', x: 640, y: 300, ops: [{ gate: 'swap', q: ['B', 'C'] }] },
+      { id: 'T3', x: 60, y: 170, ops: [{ gate: 'x', q: ['D'] }] },
+    ],
+    intercoms: [
+      {
+        id: 'I1',
+        x: 110,
+        y: 470,
+        auto: true,
+        zone: [0, 300],
+        lines: ["Thank heavens you're here! We're almost ready for the experiment, please make your way to the stairs. You'll need to use the terminals to flip some platforms to get here."],
+      },
+      { id: 'I2', x: 720, y: 300, auto: true, zone: [455, 960], lines: ['Oh dear, that is a long jump. Try swapping these two platforms and jumping on while they move.'] },
+      { id: 'I3', x: 120, y: 170, auto: true, zone: [0, 260], lines: ['Looks like it is locked, perhaps if you use the terminal to change the code to "1" it will open?'] },
+    ],
+    blackout: {
+      from: 'I3',
+      lines: ["What was that!?! You better hurry up as fast as you can, we need to turn on the power to fix this mess. There's a generator on the roof. If you need any help, press H to call me on the intercom."],
+    },
+    door: { x: 225, y: 170, key: '1', lock: ['D'] },
+    decor: [
+      { type: 'entrance', x: 32, y: 470 },
+      { type: 'sign', x: 186, y: 66, lines: ['STAIRS'] },
+    ],
+    shortest: 3,
+    deterministic: true,
+    goal: 'Make your way to the stairs at the top left.',
+    concept:
+      'X flips a qubit with certainty: a lowered platform rises. SWAP exchanges two qubits, so the platforms trade places. A lock reads its lamps: set them to match the key and it opens.',
+    hints: [],
+    takeaway: 'X flipped a platform, SWAP traded two of them, and an X on the lock lamp set the key. Then the lights went out.',
+  },
+];
+
 // Bonus levels: only in "Skip to floor", after the climb's floors and the terrace.
 export const BONUS_LEVELS = [
   {

@@ -133,6 +133,17 @@ export function createAudio() {
       tone(60, 0, 0.35, 'sine', 0.1, 30);
     },
     windup: () => tone(180, 0, 0.3, 'triangle', 0.04, 360),
+    // Story mode: the intercom crackling on, sparks from falling cables, the power failing.
+    radio: () => {
+      noise(0, 0.12, 0.05, 'bandpass', 1800);
+      tone(1200, 0.06, 0.05, 'square', 0.02);
+      tone(900, 0.12, 0.06, 'square', 0.02);
+    },
+    spark: () => noise(0, 0.06, 0.06, 'highpass', 4000),
+    powerDown: () => {
+      tone(220, 0, 1.2, 'sawtooth', 0.05, 40);
+      noise(0, 0.4, 0.04, 'lowpass', 400);
+    },
     // The beast caught by the light as a monster: a ragged scream.
     screech: () => {
       tone(1400, 0, 0.9, 'sawtooth', 0.06, 2600);

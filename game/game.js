@@ -5,7 +5,7 @@
 // ever asks the engine to apply a gate, measure, or reset, and then moves the
 // platforms to wherever the returned snapshot says they are.
 
-import { LEVELS, BONUS_LEVELS, BEAST, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
+import { LEVELS, BONUS_LEVELS, BEAST, STORY_LEVELS, TERRACE, WORLD, PLATFORM_H, LIVES_PER_FLOOR, GATE_INFO, ROLE_WORDS, roomsOf } from './levels.js';
 import { TORCH, PLAYER, slotRect, slotMid, doorRect, lockRect, screenRect, center, handOf, rectLit, pointLit, lightPolygon, rectInLight, LIGHT_KINDS, cavityBlocked, cavityHolds } from './geometry.js';
 import { STORY } from './story.js';
 import { createQuantum } from './quantum.js';
@@ -49,6 +49,7 @@ const DEV_KEY = 'blackoutLab.dev';
 const DEV_DEFAULTS = {
   torchMode: 'hold', // Options: 'hold' (F held shines) or 'switch' (F turns it on and off)
   mouseAim: false, // Options: the mouse aims the flashlight (over the game only); off by default
+  autoHints: false, // Options: the Professor speaks by himself at each intercom reached (story mode)
   swapDelay: 3, // whole seconds between choosing SWAP and the platforms setting off (1 to 5), counted down
   panel: 'right',
   circuitRight: false,
@@ -82,9 +83,31 @@ const BONUS_FROM = LEVELS.length + 1;
 const isBonus = (index) => index >= BONUS_FROM;
 // The last bonus level, the beast on the roof, is its own kind of level (BEAST in levels.js).
 const BEAST_INDEX = BONUS_FROM + BONUS_LEVELS.length;
+// Story mode comes after the bonus levels (and, for the game's flow, counts as one of them).
+const STORY_FROM = BEAST_INDEX + 1;
+const isStory = (index) => index >= STORY_FROM && index < STORY_FROM + STORY_LEVELS.length;
 const levelAt = (index) =>
-  index < LEVELS.length ? LEVELS[index] : index === BEAST_INDEX ? BEAST : isBonus(index) ? BONUS_LEVELS[index - BONUS_FROM] : null;
+  index < LEVELS.length
+    ? LEVELS[index]
+    : index === BEAST_INDEX
+    ? BEAST
+    : isStory(index)
+    ? STORY_LEVELS[index - STORY_FROM]
+    : index > LEVELS.length && index < BEAST_INDEX
+    ? BONUS_LEVELS[index - BONUS_FROM]
+    : null;
 const hasNextBonus = (index) => index + 1 <= BEAST_INDEX;
+
+// The code that opens every story level (Options), kept in this browser once entered.
+const UNLOCK_KEY = 'blackoutLab.unlockAll';
+const UNLOCK_CODE = 'QUBIT';
+function allUnlocked() {
+  try {
+    return localStorage.getItem(UNLOCK_KEY) === 'yes';
+  } catch (err) {
+    return false;
+  }
+}
 
 // Each level's stars, the same every time (so they can be shown before it is played). No star is
 // ever given for a lucky result, nor taken for using hints:
@@ -200,9 +223,11 @@ export function startGame() {
       loadLevel(index);
     },
     jump: (index) => {
+      if (isStory(index) && !storyUnlocked(index - STORY_FROM)) return; // locked
       G.started = true;
       loadLevel(index);
     },
+    code: (code) => enterCode(code),
     sound: () => toggleSound(),
     hint: () => showHint(),
     closeTerminal: () => closeTerminal(),
@@ -217,6 +242,7 @@ export function startGame() {
     },
   });
   let progress = loadProgress();
+  let unlockedNow = false; // the code entered while storage is blocked
   // The level lists (title, pause, ending) with each level's stars and best time, and the total.
   function listFloors() {
     const entry = (level, name, index) => {
@@ -229,11 +255,31 @@ export function startGame() {
     };
     const floors = LEVELS.map((level, i) => entry(level, `${i + 1}. ${level.name}`, i));
     const bonus = [...BONUS_LEVELS, BEAST].map((level, i) => entry(level, `Bonus ${i + 1}. ${level.name}`, BONUS_FROM + i));
-    ui.setFloors(floors, `Ending: ${TERRACE.name}`, bonus);
-    const all = [...floors, ...bonus];
+    const story = STORY_LEVELS.map((level, i) => ({ ...entry(level, `${i}. ${level.name}`, STORY_FROM + i), locked: !storyUnlocked(i) }));
+    ui.setFloors(floors, `Ending: ${TERRACE.name}`, bonus, story);
+    const all = [...floors, ...bonus, ...story];
     ui.setStarTotal(all.reduce((n, f) => n + f.got, 0), all.reduce((n, f) => n + f.of, 0));
   }
   listFloors();
+
+  // A story level is open once the one before it has been cleared (Level 0 always is), or with the code.
+  function storyUnlocked(i) {
+    if (i === 0 || unlockedNow || allUnlocked()) return true;
+    const before = progress[STORY_LEVELS[i - 1].id];
+    return !!(before && before.stars && before.stars.cleared);
+  }
+
+  function enterCode(code) {
+    if (String(code || '').trim().toUpperCase() !== UNLOCK_CODE) return false;
+    try {
+      localStorage.setItem(UNLOCK_KEY, 'yes');
+    } catch (err) {
+      // blocked storage: it lasts until the page closes
+    }
+    unlockedNow = true;
+    listFloors();
+    return true;
+  }
 
   function recordClear(level, earned, seconds) {
     const saved = progress[level.id] || {};
@@ -488,6 +534,7 @@ export function startGame() {
         npcs: (room.npcs || []).map((n) => ({ ...n, near: false })),
         portals: (room.portals || []).map((p) => ({ ...p, near: false })),
         battery: room.battery ? { ...room.battery, taken: false } : null,
+        intercoms: (room.intercoms || []).map((i) => ({ ...i, heard: false, near: false })),
         door: null,
       };
       if (room.door) {
@@ -537,6 +584,10 @@ export function startGame() {
     G.beast = null;
     G.flung = null;
     G.lastTerminal = null;
+    G.intercom = null; // the Professor's radio bubble, while he is speaking
+    G.titleCard = null; // a story level's name, over the screen until the player first moves
+    G.blackout = null; // a story level's blackout, once its exit unlocks
+    G.swallowUse = false;
   }
 
   async function loadLevel(index, opts) {
@@ -580,6 +631,8 @@ export function startGame() {
       say(`${isBonus(index) ? level.tag : `Floor ${index + 1}`}: ${level.name}. ${level.goal}`, 'info');
     }
     if (level.beast) startBeast(!carry); // a restart (R) skips the intro; a fall does not reload at all (respawn)
+    G.titleCard = level.title || null;
+    ui.setHintsShown(!level.story); // in story mode, hints come over the intercom
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
     return true;
@@ -1151,7 +1204,8 @@ export function startGame() {
     d.lastRead = bits;
     audio.play('unlock');
     addRing(center(lockRect(d)), '#7dffa8', 60);
-    say(`The lamps show ${bits.split('').join(' ')}, which matches the key: the exit opens by itself.`, 'good', true);
+    // In a story level with a blackout, the blackout is the news, not the lock.
+    if (!G.level.blackout) say(`The lamps show ${bits.split('').join(' ')}, which matches the key: the exit opens by itself.`, 'good', true);
   }
 
   function updateDoor(dt) {
@@ -1160,6 +1214,9 @@ export function startGame() {
     const pl = G.player;
     if (d.deniedT > 0) d.deniedT -= dt;
     if (G.dev.passiveTerminal) autoOpen(d);
+    // A story level's blackout: the exit unlocks, and the lights go out before it opens.
+    if (G.level.blackout && d.unlocked && !G.blackout) startBlackout();
+    if (G.blackout && !G.blackout.over) d.open = false;
     if (d.key && !d.unlocked && !d.byHand) {
       const lit = G.torch.active && rectLit(handOf(pl), G.torch.angle, lockRect(d), G.torch.range);
       if (!lit) {
@@ -1533,6 +1590,135 @@ export function startGame() {
     // Out of lives: this floor starts over, from its starting states, with three lives.
     loadLevel(G.levelIndex);
     say('Out of lives: the floor starts over from the beginning, with three lives.', 'bad', true);
+  }
+
+  // -- story mode: the Professor on the intercom ---------------------------------
+  //
+  // Intercoms are speaker boxes on the wall. Near one, H calls the Professor, whose words appear
+  // in a radio bubble at the top of the screen, one bubble at a time; each line also goes in the
+  // log. Some intercoms (and, with Automatic Hints on, all of them) speak by themselves the first
+  // time the player reaches them. While he speaks the player can still walk, jump, use gates and
+  // the flashlight; H (or any other key) moves on to the next bubble, or closes the last one.
+  function intercomNear() {
+    const pl = G.player;
+    if (!pl.onGround || !G.room.intercoms) return null;
+    const cx = pl.x + PLAYER.w / 2;
+    const feet = pl.y + PLAYER.h;
+    return G.room.intercoms.find((i) => Math.abs(cx - i.x) < 34 && Math.abs(feet - i.y) < 6) || null;
+  }
+
+  function sayIntercom() {
+    const ic = G.intercom;
+    const line = ic.lines[ic.index];
+    panel.log(`Professor (intercom): ${line}`, 'info');
+    ui.announce(`The Professor, on the intercom: ${line}`);
+  }
+
+  function speak(box, lines, done) {
+    if (!box || !lines || !lines.length) return;
+    G.intercom = { box, lines, index: 0, t: 0, done };
+    box.heard = true;
+    audio.play('radio');
+    sayIntercom();
+  }
+
+  function advanceIntercom() {
+    const ic = G.intercom;
+    if (!ic) return;
+    ic.index += 1;
+    if (ic.index >= ic.lines.length) {
+      G.intercom = null;
+      if (ic.done) ic.done();
+      return;
+    }
+    ic.t = 0;
+    audio.play('radio');
+    sayIntercom();
+  }
+
+  function hintKey() {
+    if (G.intercom) {
+      advanceIntercom();
+      return;
+    }
+    const near = intercomNear();
+    if (near) speak(near, near.lines);
+    else say('Find an intercom (a speaker box on the wall) and press H there to call the Professor.', 'info', true);
+  }
+
+  function updateIntercoms(dt) {
+    const room = G.room;
+    if (G.intercom) G.intercom.t += dt;
+    if (!room.intercoms.length) return;
+    const near = intercomNear();
+    for (const i of room.intercoms) i.near = i === near;
+    const pl = G.player;
+    if (G.intercom || G.titleCard || !pl.onGround) return;
+    const cx = pl.x + PLAYER.w / 2;
+    const feet = pl.y + PLAYER.h;
+    for (const i of room.intercoms) {
+      if (i.heard || !(i.auto || G.dev.autoHints)) continue;
+      const [x0, x1] = i.zone || [i.x - 60, i.x + 60];
+      if (cx >= x0 && cx <= x1 && Math.abs(feet - i.y) < 6) {
+        speak(i, i.lines);
+        break;
+      }
+    }
+  }
+
+  // Any key but walking, jumping, gates, the flashlight and the game's own keys (pause, sound,
+  // restart, and H, handled with the hints) moves the Professor's bubble on.
+  const KEEP_KEYS = /^(Arrow(Left|Right|Up|Down)|Key[ADWFIKPMRH]|Space|Escape|Tab|Digit[1-9]|Numpad[1-9]|(Shift|Control|Alt|Meta)(Left|Right)|CapsLock)$/;
+  window.addEventListener('keydown', (ev) => {
+    if (!G.intercom || G.mode !== 'play' || ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const tag = ev.target && ev.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || KEEP_KEYS.test(ev.code)) return;
+    if (ev.code === 'KeyE' || ev.code === 'Enter' || ev.code === 'NumpadEnter') G.swallowUse = true;
+    advanceIntercom();
+  });
+
+  // The blackout: the exit unlocks, the building shakes, cables spark and fall from the ceiling,
+  // the lights flicker and go out, and the Professor comes on the intercom. The exit opens once
+  // he has finished.
+  function startBlackout() {
+    G.blackout = {
+      t: 0,
+      dark: false,
+      flickerOff: false,
+      said: false,
+      over: false,
+      // The cables tear down from the ceiling lamps.
+      cables: (G.level.lamps || [330, 520, 760, 880]).map((x, k) => ({ x, len: [150, 110, 170, 90][k % 4], delay: [0.1, 0.35, 0.2, 0.55][k % 4], sway: [1.3, 2.1, 1.7, 2.5][k % 4] })),
+    };
+    G.shake = 1;
+    audio.play('thud');
+    audio.play('smash');
+    say('The building shakes. Cables spark and fall from the ceiling.', 'bad');
+  }
+
+  function updateBlackout(dt) {
+    const b = G.blackout;
+    if (!b) return;
+    b.t += dt;
+    if (b.t < 1.3) {
+      b.flickerOff = Math.sin(b.t * 31) * Math.sin(b.t * 7) > 0.2;
+      if (Math.random() < dt * 6) audio.play('spark');
+    } else if (!b.dark) {
+      b.dark = true;
+      b.flickerOff = false;
+      audio.play('powerDown');
+      say('The lights go out.', 'bad');
+    }
+    if (b.t >= 1.7 && !b.said) {
+      b.said = true;
+      const box = G.room.intercoms.find((i) => i.id === G.level.blackout.from) || G.room.intercoms[0];
+      speak(box, G.level.blackout.lines, () => {
+        b.over = true;
+        if (G.door) G.door.open = true;
+        audio.play('unlock');
+        say('The stair door is open.', 'good', true);
+      });
+    }
   }
 
   // -- bonus level 7: the beast on the roof -------------------------------------
@@ -2275,7 +2461,7 @@ export function startGame() {
       name: level.name,
       index: G.levelIndex,
       total: LEVELS.length,
-      bonus: bonusLevel ? { tag: level.tag, more: hasNextBonus(G.levelIndex) } : null,
+      bonus: bonusLevel ? { tag: level.tag, more: isStory(G.levelIndex) ? !!levelAt(G.levelIndex + 1) && isStory(G.levelIndex + 1) : hasNextBonus(G.levelIndex), next: isStory(G.levelIndex) ? 'Next level' : 'Next bonus level' } : null,
       stars,
       of,
       earned,
@@ -2287,7 +2473,10 @@ export function startGame() {
   }
 
   function nextFloor() {
-    if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level
+    if (isStory(G.levelIndex)) {
+      if (isStory(G.levelIndex + 1) && storyUnlocked(G.levelIndex + 1 - STORY_FROM)) loadLevel(G.levelIndex + 1);
+      else toTitle(); // after the last story level so far
+    } else if (isBonus(G.levelIndex) && !hasNextBonus(G.levelIndex)) toTitle(); // after the last bonus level
     else loadLevel(G.levelIndex + 1);
   }
 
@@ -2613,6 +2802,21 @@ export function startGame() {
       beastPrompt(hit);
       return;
     }
+    if (G.level.story && !G.intercom) {
+      const near = intercomNear();
+      if (G.titleCard) {
+        ui.setPrompt('Walk with <b>&larr;</b> <b>&rarr;</b> and jump with <b>Space</b>.');
+        return;
+      }
+      if (near) {
+        ui.setPrompt('Press <b>H</b> to call the Professor on the intercom.');
+        return;
+      }
+      if (G.blackout && G.blackout.over) {
+        ui.setPrompt('The stair door is open. Head up the stairs.');
+        return;
+      }
+    }
     const ghosts = G.room.platforms.filter((p) => p.state === null);
     const lit = ghosts.find((p) => p.exposure > 0);
     const ghost = ghosts[0];
@@ -2650,7 +2854,10 @@ export function startGame() {
     G.t += dt;
     // Boss music while the beast fights (not while paused, nor in its intro or ending).
     audio.music(G.beast && G.beast.phase === 'fight' && (G.mode === 'play' || G.mode === 'falling') ? 'boss' : null);
-    if (G.mode === 'play' || G.mode === 'terminal' || G.mode === 'dialogue') G.floorTime += dt;
+    // The clock waits for the player's first move (a story level's title), and stops while the
+    // Professor is speaking on the intercom.
+    if ((G.mode === 'play' || G.mode === 'terminal' || G.mode === 'dialogue') && !G.titleCard && !G.intercom) G.floorTime += dt;
+    if (G.titleCard && G.mode === 'play' && (input.held.left || input.held.right || input.held.jump)) G.titleCard = null;
     for (const fx of G.fx) fx.t += dt;
     for (const f of G.floaters) f.t += dt;
     for (const b of G.bubbles) {
@@ -2715,7 +2922,14 @@ export function startGame() {
       restartFloor();
       return;
     }
-    if (input.take('hint')) showHint();
+    if (input.take('hint')) {
+      if (G.level.story) hintKey(); // H: the intercom
+      else showHint();
+    }
+    if (G.swallowUse) {
+      input.take('use'); // E closed the Professor's bubble: it does nothing else this time
+      G.swallowUse = false;
+    }
 
     let left = dt;
     while (left > 1e-6) {
@@ -2727,6 +2941,10 @@ export function startGame() {
     updateLights(dt);
     updateCavities(dt);
     updateBroken(dt);
+    if (G.level.story) {
+      updateIntercoms(dt);
+      updateBlackout(dt);
+    }
     if (G.beast) {
       updateBeast(dt);
       if (G.mode !== 'play') return; // flattened, or the cat is cute again

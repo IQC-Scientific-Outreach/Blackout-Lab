@@ -118,6 +118,18 @@ They bring new pieces, which any floor can use:
 - **The Ry gate** turns a qubit part of the way round by an angle (a terminal's Ry(pi/2) is a quarter turn); a cavity's drive shows in the circuit as one dashed RY box per stretch of driving, and as `qc.ry(angle, qubit)` in the Qiskit code.
 - **The CZ gate** applies Z to one qubit when the other is 1 (it works the same both ways round), drawn as two joined dots, `qc.cz()` in the Qiskit code.
 
+## Story mode
+
+Story mode is listed under its own heading in "Skip to floor", after the bonus levels. The levels above stay as they are. Story levels start lit and introduce one idea at a time, with the Professor talking over the building's intercoms.
+
+- **Title card.** Each story level opens with its name in block letters. The card goes, and the clock starts, as soon as the player moves.
+- **Intercoms.** These are speaker boxes on the wall. In front of one, an H shows above it; press H to call the Professor. His answer appears as a radio bubble with a lightning-bolt tail to the speaker, and goes into the log. Walking, jumping, gates and the flashlight all keep working while the bubble is up; H (or any other key) moves it on. Time spent on the Professor's messages does not count towards the level's time. A few intercoms speak by themselves, the first time the player reaches them; with **Automatic Hints** (Options, off by default) every intercom does.
+- **Unlock Code.** Under Options, a code unlocks every level.
+
+| Story level | What happens | What it teaches |
+| --- | --- | --- |
+| 0 The Lobby | A bright lobby. X at T1 raises a platform (with the floor underneath). SWAP at T2 carries the player across on a moving platform to the stair landing. X at T3 sets the lock to the key, 1. Then the building shakes, cables spark and fall, the lights go out, and the stair door opens once the Professor has finished speaking. | X flips a qubit with certainty; SWAP exchanges two qubits; a lock reads its lamps. |
+
 ## Where the quantum computing is
 
 All quantum behaviour is computed in the browser by a small exact simulator, `game/quantum.js`. It models **ideal** quantum mechanics: no device parameters, no noise.

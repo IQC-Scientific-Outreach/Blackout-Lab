@@ -184,6 +184,10 @@ kbd {
 .opt-choices input[type="radio"] { accent-color: var(--torch); width: 14px; height: 14px; margin: 0; }
 .opt-choices select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
 label.opt-name { cursor: pointer; }
+.opt-code { font: 700 13px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; width: 8.5em; }
+.opt-code:focus-visible { outline: 2px solid var(--torch); outline-offset: 1px; }
+.floor-lock { margin-left: 6px; font-size: 12px; }
+#title-floors button:disabled { opacity: 0.55; cursor: not-allowed; }
 input[role="switch"] {
   appearance: none; flex: none; position: relative; width: 34px; height: 18px; margin: 1px 0 0;
   border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;

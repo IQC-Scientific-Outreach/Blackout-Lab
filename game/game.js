@@ -251,8 +251,8 @@ export function startGame() {
     saveProgress(progress);
     G.results = [];
     listFloors();
-    ui.announce('Stats reset: every star and best time is cleared.');
-    ui.toast('Stats reset: every star and best time is cleared.', 'info');
+    ui.announce('Progress reset: every star and best time is cleared.');
+    ui.toast('Progress reset: every star and best time is cleared.', 'info');
   }
 
   // -- small helpers --------------------------------------------------------
@@ -1007,7 +1007,7 @@ export function startGame() {
     // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
     const hold = G.dev.torchMode !== 'switch';
     // Aim: straight ahead, tilted by I / K (the tilt eases back to straight ahead after a few steps
-    // of walking without I or K); with Aim with the mouse on (Options), the mouse while it is over
+    // of walking without I or K); with Mouse Aim on (Options), the mouse while it is over
     // the game picture.
     if (input.pointer.moved) {
       t.useMouse = input.pointer.inside;

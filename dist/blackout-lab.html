@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-knDGt8LF3WDNk8ttNd+yxCn9Ue6Wb7kVohCDfMEuDqI='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-uW0bq8IbnBqRaMpII3dsUKDdde1LlB7Ku2E3IKy9sas='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -192,6 +192,14 @@ kbd {
 .dev-range input[type="range"] { width: 120px; margin: 0; accent-color: var(--torch); } /* lines up with the names beside the switches */
 .dev-opt[role="radiogroup"] label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 .dev-opt input[type="radio"] { accent-color: var(--torch); width: 14px; height: 14px; margin: 0; }
+/* Options: every row a name, then its choices, the choices lined up in one column. */
+.opt-row { display: grid; grid-template-columns: 9.5em 1fr; align-items: center; gap: 10px; font-size: 13px; }
+.opt-name { font-weight: 700; white-space: nowrap; }
+.opt-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.opt-choices label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.opt-choices input[type="radio"] { accent-color: var(--torch); width: 14px; height: 14px; margin: 0; }
+.opt-choices select { font: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
+label.opt-name { cursor: pointer; }
 input[role="switch"] {
   appearance: none; flex: none; position: relative; width: 34px; height: 18px; margin: 1px 0 0;
   border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer;
@@ -422,17 +430,23 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
               </div>
               <details class="dev" id="options">
                 <summary>Options</summary>
-                <div class="dev-opt" role="radiogroup" aria-labelledby="opt-torch-name">
-                  <b id="opt-torch-name">Flashlight</b>
-                  <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
-                  <label title="F switches the flashlight on, and again off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Switch with F</label>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-torch-name">
+                  <b class="opt-name" id="opt-torch-name">Flashlight Switch</b>
+                  <span class="opt-choices">
+                    <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
+                    <label title="Each press of F switches the flashlight on, or off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Press F</label>
+                  </span>
                 </div>
-                <label class="dev-opt" title="Off: the flashlight points straight ahead, tilted with I and K. On: it also follows the mouse while the pointer is over the game.">
-                  <input type="checkbox" role="switch" id="opt-mouse-aim"> <b>Aim with the mouse</b>
-                  <span class="dev-hint">only while the pointer is over the game</span></label>
-                <div class="dev-opt">
-                  <button type="button" class="key-btn mini" id="btn-reset">Reset stats</button>
-                  <span class="dev-hint">clears every star and best time</span>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-mouse-name">
+                  <b class="opt-name" id="opt-mouse-name">Mouse Aim</b>
+                  <span class="opt-choices">
+                    <label title="The flashlight points straight ahead, tilted with I and K."><input type="radio" name="opt-mouse" id="opt-mouse-off" value="off" checked> Off</label>
+                    <label title="The mouse also aims the flashlight, while the pointer is over the game."><input type="radio" name="opt-mouse" id="opt-mouse-on" value="on"> On</label>
+                  </span>
+                </div>
+                <div class="opt-row">
+                  <b class="opt-name" id="opt-reset-name">Reset Progress</b>
+                  <span class="opt-choices"><button type="button" class="key-btn mini" id="btn-reset" aria-describedby="opt-reset-name">Press to Reset</button></span>
                 </div>
               </details>
               <details class="dev" id="dev">
@@ -454,8 +468,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
               <dl class="keys">
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
-                <div><dt><kbd>F</kbd></dt><dd>Flashlight (hold, or switch: see Options)</dd></div>
-                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Options)</dt><dd>Aim the flashlight</dd></div>
+                <div><dt><kbd>F</kbd></dt><dd>Flashlight (Hold F or Press F: see Options)</dd></div>
+                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Mouse Aim)</dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
@@ -472,9 +486,18 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
             <div class="pause-cols">
               <div class="pause-main">
                 <fieldset class="options">
-                  <legend>Options</legend>
-                  <label class="opt"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
-                  <label class="opt">Skip to floor <select id="opt-floor"></select></label>
+                  <legend>This Game</legend>
+                  <div class="opt-row" role="radiogroup" aria-labelledby="opt-lives-name">
+                    <b class="opt-name" id="opt-lives-name">Unlimited Lives</b>
+                    <span class="opt-choices">
+                      <label><input type="radio" name="opt-lives" id="opt-lives-off" value="off" checked> Off</label>
+                      <label><input type="radio" name="opt-lives" id="opt-lives" value="on"> On</label>
+                    </span>
+                  </div>
+                  <div class="opt-row">
+                    <label class="opt-name" for="opt-floor">Skip to Floor</label>
+                    <span class="opt-choices"><select id="opt-floor"></select></span>
+                  </div>
                 </fieldset>
                 <div id="pause-dev-slot"></div>
                 <div class="title-actions">
@@ -6022,7 +6045,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'opt-mouse-aim', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -6292,7 +6315,8 @@ function createUI(dom, handlers) {
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
     if (passive && ev.detail > 0) dom.game.focus({ preventScroll: true }); // a click hands the keys back to the game
   });
-  dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
+  const livesRadios = Array.from(document.querySelectorAll('input[name="opt-lives"]'));
+  for (const radio of livesRadios) radio.addEventListener('change', () => radio.checked && handlers.option('lives', radio.value === 'on'));
   // Developer options: each control is one entry of the game's `dev` settings.
   const devSwitches = {
     circuitRight: dom.devCircuitRight,
@@ -6302,25 +6326,26 @@ function createUI(dom, handlers) {
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
   for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
-  dom.optMouseAim.addEventListener('change', () => handlers.dev('mouseAim', dom.optMouseAim.checked));
+  const mouseRadios = Array.from(document.querySelectorAll('input[name="opt-mouse"]'));
+  for (const radio of mouseRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('mouseAim', radio.value === 'on'));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
-  // Reset stats: a second click within a few seconds confirms it.
+  // Reset Progress: a second press within a few seconds confirms it.
   let resetArmed = null;
   dom.btnReset.addEventListener('click', () => {
     if (resetArmed) {
       clearTimeout(resetArmed);
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset stats';
+      dom.btnReset.textContent = 'Press to Reset';
       dom.btnReset.classList.remove('armed');
       handlers.reset();
       return;
     }
-    dom.btnReset.textContent = 'Click again to erase all stars and times';
+    dom.btnReset.textContent = 'Press again to erase all stars and times';
     dom.btnReset.classList.add('armed');
-    announce('Click Reset stats again to erase all stars and best times.');
+    announce('Press Reset Progress again to erase all stars and best times.');
     resetArmed = setTimeout(() => {
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset stats';
+      dom.btnReset.textContent = 'Press to Reset';
       dom.btnReset.classList.remove('armed');
     }, 4000);
   });
@@ -6397,7 +6422,7 @@ function createUI(dom, handlers) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
       for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
-      dom.optMouseAim.checked = !!dev.mouseAim;
+      for (const radio of mouseRadios) radio.checked = (radio.value === 'on') === !!dev.mouseAim;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
@@ -6412,7 +6437,7 @@ function createUI(dom, handlers) {
       dom.btnSound.setAttribute('aria-pressed', on ? 'true' : 'false');
     },
     setOptions({ lives, floor }) {
-      dom.optLives.checked = lives;
+      for (const radio of livesRadios) radio.checked = (radio.value === 'on') === !!lives;
       dom.optFloor.value = String(floor);
     },
     // floors and bonus: [{ name, index, got, of, best }] (got of `of` stars, best time in seconds
@@ -6724,8 +6749,8 @@ function startGame() {
     saveProgress(progress);
     G.results = [];
     listFloors();
-    ui.announce('Stats reset: every star and best time is cleared.');
-    ui.toast('Stats reset: every star and best time is cleared.', 'info');
+    ui.announce('Progress reset: every star and best time is cleared.');
+    ui.toast('Progress reset: every star and best time is cleared.', 'info');
   }
 
   // -- small helpers --------------------------------------------------------
@@ -7480,7 +7505,7 @@ function startGame() {
     // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
     const hold = G.dev.torchMode !== 'switch';
     // Aim: straight ahead, tilted by I / K (the tilt eases back to straight ahead after a few steps
-    // of walking without I or K); with Aim with the mouse on (Options), the mouse while it is over
+    // of walking without I or K); with Mouse Aim on (Options), the mouse while it is over
     // the game picture.
     if (input.pointer.moved) {
       t.useMouse = input.pointer.inside;

@@ -58,17 +58,23 @@
               </div>
               <details class="dev" id="options">
                 <summary>Options</summary>
-                <div class="dev-opt" role="radiogroup" aria-labelledby="opt-torch-name">
-                  <b id="opt-torch-name">Flashlight</b>
-                  <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
-                  <label title="F switches the flashlight on, and again off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Switch with F</label>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-torch-name">
+                  <b class="opt-name" id="opt-torch-name">Flashlight Switch</b>
+                  <span class="opt-choices">
+                    <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
+                    <label title="Each press of F switches the flashlight on, or off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Press F</label>
+                  </span>
                 </div>
-                <label class="dev-opt" title="Off: the flashlight points straight ahead, tilted with I and K. On: it also follows the mouse while the pointer is over the game.">
-                  <input type="checkbox" role="switch" id="opt-mouse-aim"> <b>Aim with the mouse</b>
-                  <span class="dev-hint">only while the pointer is over the game</span></label>
-                <div class="dev-opt">
-                  <button type="button" class="key-btn mini" id="btn-reset">Reset stats</button>
-                  <span class="dev-hint">clears every star and best time</span>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-mouse-name">
+                  <b class="opt-name" id="opt-mouse-name">Mouse Aim</b>
+                  <span class="opt-choices">
+                    <label title="The flashlight points straight ahead, tilted with I and K."><input type="radio" name="opt-mouse" id="opt-mouse-off" value="off" checked> Off</label>
+                    <label title="The mouse also aims the flashlight, while the pointer is over the game."><input type="radio" name="opt-mouse" id="opt-mouse-on" value="on"> On</label>
+                  </span>
+                </div>
+                <div class="opt-row">
+                  <b class="opt-name" id="opt-reset-name">Reset Progress</b>
+                  <span class="opt-choices"><button type="button" class="key-btn mini" id="btn-reset" aria-describedby="opt-reset-name">Press to Reset</button></span>
                 </div>
               </details>
               <details class="dev" id="dev">
@@ -90,8 +96,8 @@
               <dl class="keys">
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
-                <div><dt><kbd>F</kbd></dt><dd>Flashlight (hold, or switch: see Options)</dd></div>
-                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Options)</dt><dd>Aim the flashlight</dd></div>
+                <div><dt><kbd>F</kbd></dt><dd>Flashlight (Hold F or Press F: see Options)</dd></div>
+                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Mouse Aim)</dt><dd>Aim the flashlight</dd></div>
                 <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
                 <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
@@ -108,9 +114,18 @@
             <div class="pause-cols">
               <div class="pause-main">
                 <fieldset class="options">
-                  <legend>Options</legend>
-                  <label class="opt"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
-                  <label class="opt">Skip to floor <select id="opt-floor"></select></label>
+                  <legend>This Game</legend>
+                  <div class="opt-row" role="radiogroup" aria-labelledby="opt-lives-name">
+                    <b class="opt-name" id="opt-lives-name">Unlimited Lives</b>
+                    <span class="opt-choices">
+                      <label><input type="radio" name="opt-lives" id="opt-lives-off" value="off" checked> Off</label>
+                      <label><input type="radio" name="opt-lives" id="opt-lives" value="on"> On</label>
+                    </span>
+                  </div>
+                  <div class="opt-row">
+                    <label class="opt-name" for="opt-floor">Skip to Floor</label>
+                    <span class="opt-choices"><select id="opt-floor"></select></span>
+                  </div>
                 </fieldset>
                 <div id="pause-dev-slot"></div>
                 <div class="title-actions">

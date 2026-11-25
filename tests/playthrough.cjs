@@ -1349,8 +1349,8 @@ async function main() {
     await bot.until(() => Math.abs(g.torch.angle) < 0.02, 3000, 'the tilt to ease back after a few steps');
     bot.key('ArrowRight', false);
     await frames(10);
-    // Aim with the mouse is off by default: the mouse over the game changes nothing.
-    if (g.dev.mouseAim) throw new Error('Aim with the mouse should start off');
+    // Mouse Aim is off by default: the mouse over the game changes nothing.
+    if (g.dev.mouseAim) throw new Error('Mouse Aim should start off');
     const target = { x: g.player.x + 160, y: g.player.y - 120 };
     canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + (target.x / 960) * r.width, clientY: r.top + (target.y / 540) * r.height, bubbles: true }));
     await frames(2);
@@ -1361,14 +1361,14 @@ async function main() {
     if (!ahead.active || Math.abs(ahead.angle) > 1e-9 || !(up < -0.1) || Math.abs(ignored) > 1e-9 || g.torch.active) {
       throw new Error(`Hold mode: ${JSON.stringify({ ahead, up, ignored, after: g.torch.active })}`);
     }
-    return `flashlight, Hold: F held shone straight ahead; I tilted it to ${up.toFixed(2)}, and a few steps brought it back to 0; with Aim with the mouse off (the default), the mouse changed nothing`;
+    return `flashlight, Hold: F held shone straight ahead; I tilted it to ${up.toFixed(2)}, and a few steps brought it back to 0; with Mouse Aim off (the default), the mouse changed nothing`;
   });
-  // Aim with the mouse, switched on in Options: the mouse over the game aims it; off the game,
+  // Mouse Aim, switched on in Options: the mouse over the game aims it; off the game,
   // it is straight ahead again. Then off again.
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
-  if (!(await page.isVisible('#opt-mouse-aim'))) await page.click('#options summary');
-  await page.click('#opt-mouse-aim');
+  if (!(await page.isVisible('#opt-mouse-on'))) await page.click('#options summary');
+  await page.click('#opt-mouse-on');
   await page.click('#btn-resume');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.dev.mouseAim === true);
   await step('flashlight mouse', async () => {
@@ -1388,12 +1388,12 @@ async function main() {
     bot.key('KeyF', false);
     await frames(2);
     const saved = JSON.parse(localStorage.getItem('blackoutLab.dev') || '{}').mouseAim;
-    if (!(mouse < -0.3) || Math.abs(left) > 1e-9 || saved !== true) throw new Error(`Aim with the mouse: ${JSON.stringify({ mouse, left, saved })}`);
-    return `flashlight, Aim with the mouse on: the mouse over the game aimed it at ${mouse.toFixed(2)}, off the game it was straight ahead again; the choice is remembered`;
+    if (!(mouse < -0.3) || Math.abs(left) > 1e-9 || saved !== true) throw new Error(`Mouse Aim: ${JSON.stringify({ mouse, left, saved })}`);
+    return `flashlight, Mouse Aim on: the mouse over the game aimed it at ${mouse.toFixed(2)}, off the game it was straight ahead again; the choice is remembered`;
   });
   await page.keyboard.press('KeyP');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'paused');
-  await page.click('#opt-mouse-aim');
+  await page.click('#opt-mouse-off');
   await page.click('#btn-resume');
   await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.dev.mouseAim === false);
   // Switch mode, chosen in Options (on the pause screen here): F turns it on, and F again off.
@@ -1667,8 +1667,8 @@ async function main() {
   await page.click('#btn-reset');
   const after = await totals();
   const stored = await page.evaluate(() => localStorage.getItem('blackoutLab.progress.v2'));
-  if (!/^★ 0 of/.test(after.total) || !/0 of 4 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset stats should clear every star and time: ${JSON.stringify(after)} ${stored}`);
-  report.push(`the title showed ${before.total} and floor 2 "${before.floor2}"; Reset stats (Options, two clicks) brought it back to ${after.total}`);
+  if (!/^★ 0 of/.test(after.total) || !/0 of 4 stars\. Not cleared yet\./.test(after.floor2) || stored !== '{}') throw new Error(`Reset Progress should clear every star and time: ${JSON.stringify(after)} ${stored}`);
+  report.push(`the title showed ${before.total} and floor 2 "${before.floor2}"; Reset Progress (Options, two clicks) brought it back to ${after.total}`);
 
   console.log(report.join('\n'));
   console.log(problems.length ? `PROBLEMS:\n${problems.join('\n')}` : 'no page errors');

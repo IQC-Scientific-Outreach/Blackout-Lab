@@ -9,7 +9,7 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'opt-mouse-aim', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
@@ -279,7 +279,8 @@ export function createUI(dom, handlers) {
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
     if (passive && ev.detail > 0) dom.game.focus({ preventScroll: true }); // a click hands the keys back to the game
   });
-  dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
+  const livesRadios = Array.from(document.querySelectorAll('input[name="opt-lives"]'));
+  for (const radio of livesRadios) radio.addEventListener('change', () => radio.checked && handlers.option('lives', radio.value === 'on'));
   // Developer options: each control is one entry of the game's `dev` settings.
   const devSwitches = {
     circuitRight: dom.devCircuitRight,
@@ -289,25 +290,26 @@ export function createUI(dom, handlers) {
   for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
   const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
   for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
-  dom.optMouseAim.addEventListener('change', () => handlers.dev('mouseAim', dom.optMouseAim.checked));
+  const mouseRadios = Array.from(document.querySelectorAll('input[name="opt-mouse"]'));
+  for (const radio of mouseRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('mouseAim', radio.value === 'on'));
   dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
-  // Reset stats: a second click within a few seconds confirms it.
+  // Reset Progress: a second press within a few seconds confirms it.
   let resetArmed = null;
   dom.btnReset.addEventListener('click', () => {
     if (resetArmed) {
       clearTimeout(resetArmed);
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset stats';
+      dom.btnReset.textContent = 'Press to Reset';
       dom.btnReset.classList.remove('armed');
       handlers.reset();
       return;
     }
-    dom.btnReset.textContent = 'Click again to erase all stars and times';
+    dom.btnReset.textContent = 'Press again to erase all stars and times';
     dom.btnReset.classList.add('armed');
-    announce('Click Reset stats again to erase all stars and best times.');
+    announce('Press Reset Progress again to erase all stars and best times.');
     resetArmed = setTimeout(() => {
       resetArmed = null;
-      dom.btnReset.textContent = 'Reset stats';
+      dom.btnReset.textContent = 'Press to Reset';
       dom.btnReset.classList.remove('armed');
     }, 4000);
   });
@@ -384,7 +386,7 @@ export function createUI(dom, handlers) {
       for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
       for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
       for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
-      dom.optMouseAim.checked = !!dev.mouseAim;
+      for (const radio of mouseRadios) radio.checked = (radio.value === 'on') === !!dev.mouseAim;
       dom.devSwapDelay.value = String(dev.swapDelay);
       dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
       dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
@@ -399,7 +401,7 @@ export function createUI(dom, handlers) {
       dom.btnSound.setAttribute('aria-pressed', on ? 'true' : 'false');
     },
     setOptions({ lives, floor }) {
-      dom.optLives.checked = lives;
+      for (const radio of livesRadios) radio.checked = (radio.value === 'on') === !!lives;
       dom.optFloor.value = String(floor);
     },
     // floors and bonus: [{ name, index, got, of, best }] (got of `of` stars, best time in seconds

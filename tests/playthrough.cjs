@@ -1671,7 +1671,7 @@ async function main() {
     await bot.until(() => !g.titleCard, 1000, 'the title card to go');
     await bot.until(() => g.intercom && g.intercom.box.id === 'I1', 2000, 'the first intercom message');
     const t0 = g.floorTime;
-    await bot.walkTo(150);
+    await bot.walkTo(118);
     if (!g.intercom || g.floorTime !== t0) throw new Error('the bubble should stay while walking, and its time should not count');
     if (g.room.intercoms[0].near !== true) throw new Error('the intercom should know the player is in front of it');
     await bot.tap('KeyH');
@@ -1709,7 +1709,12 @@ async function main() {
     await bot.until(() => g.intercom && g.intercom.box.id === 'I2', 2000, 'the second intercom message');
     await bot.tap('KeyQ'); // any other key moves the bubble on
     if (g.intercom) throw new Error('another key should close the bubble');
-    await bot.terminal('T2', [1]);
+    // SWAP from the terminal's screen (key 1), then on to C during the countdown.
+    const T2 = g.room.terminals.find((t) => t.id === 'T2');
+    await bot.walkTo(T2.x);
+    await bot.until(() => g.passive === T2, 2000, 'T2 to show its gate');
+    await bot.tap('Digit1');
+    await bot.until(() => g.swap, 2000, 'the swap countdown');
     const C = bot.platform('C');
     await jumpTo(C, stand.x + 30); // on C before the swap delay runs out
     await bot.until(() => Math.abs(C.x - 280) < 1 && Math.abs(C.y - 200) < 1, 8000, 'C to carry the player across');

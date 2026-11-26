@@ -535,7 +535,11 @@ export function startGame() {
         portals: (room.portals || []).map((p) => ({ ...p, near: false })),
         battery: room.battery ? { ...room.battery, taken: false } : null,
         flashlight: room.flashlight ? { ...room.flashlight, taken: false } : null,
-        intercoms: (room.intercoms || []).map((i) => ({ ...i, heard: false, near: false })),
+        // An intercom right beside a terminal (on its surface) also answers H at that terminal.
+        intercoms: (room.intercoms || []).map((i) => {
+          const term = room.terminals.find((t) => Math.abs(t.x - i.x) <= 50 && Math.abs(t.y - i.y) < 1);
+          return { ...i, heard: false, near: false, term: term ? term.id : null };
+        }),
         door: null,
       };
       if (room.door) {
@@ -1653,7 +1657,11 @@ export function startGame() {
     if (!pl.onGround || !G.room.intercoms) return null;
     const cx = pl.x + PLAYER.w / 2;
     const feet = pl.y + PLAYER.h;
-    return G.room.intercoms.find((i) => Math.abs(cx - i.x) < 34 && Math.abs(feet - i.y) < 6) || null;
+    const here = G.room.intercoms.find((i) => Math.abs(cx - i.x) < 34 && Math.abs(feet - i.y) < 6);
+    if (here) return here;
+    // Anywhere the terminal beside it can be used.
+    const term = G.passive || G.room.terminals.find((t) => t.near);
+    return (term && G.room.intercoms.find((i) => i.term === term.id)) || null;
   }
 
   function sayIntercom() {
@@ -2865,7 +2873,8 @@ export function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
-    if (G.dev.passiveTerminal) return `${esc(term.id)}: <b>Enter</b> applies the highlighted gate; <b>Q</b> and <b>E</b> move the highlight. Or press a gate's number, or click it.`;
+    const call = (G.room.intercoms || []).some((i) => i.term === term.id) ? ' <b>H</b> calls the Professor on the intercom beside it.' : '';
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: <b>Enter</b> applies the highlighted gate; <b>Q</b> and <b>E</b> move the highlight. Or press a gate's number, or click it.${call}`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -2889,7 +2898,7 @@ export function startGame() {
         ui.setPrompt('Walk with <b>&larr;</b> <b>&rarr;</b> and jump with <b>Space</b>.');
         return;
       }
-      if (near) {
+      if (near && !G.passive) {
         ui.setPrompt('Press <b>H</b> to call the Professor on the intercom.');
         return;
       }

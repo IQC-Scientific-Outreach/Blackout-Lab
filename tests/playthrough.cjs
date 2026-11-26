@@ -1807,8 +1807,12 @@ async function main() {
     await bot.hop(bot.slab('A'));
     await bot.hop(stand2);
     // T2's intercom only speaks when called.
+    // H at T2 (anywhere T2 can be used) calls its intercom, which stands just left of it.
     const I2 = g.room.intercoms[1];
-    await bot.walkTo(I2.x);
+    const T2 = g.room.terminals[1];
+    if (!(I2.x < T2.x) || I2.term !== 'T2') throw new Error('the intercom by T2 should stand just left of it');
+    await bot.walkTo(T2.x + 10);
+    await bot.until(() => g.passive === T2, 2000, 'T2 to show its gate');
     if (g.intercom) throw new Error('the intercom by T2 should not speak by itself');
     await bot.tap('KeyH');
     if (!/^There's no way to jump across/.test(said())) throw new Error(`H at T2's intercom: "${said()}"`);
@@ -1827,7 +1831,10 @@ async function main() {
     await bot.hop(bot.slab('B'));
     await bot.hop(stand3);
     const I3 = g.room.intercoms[2];
-    await bot.walkTo(I3.x);
+    const T3 = g.room.terminals[2];
+    if (!(I3.x < T3.x) || I3.term !== 'T3') throw new Error('the intercom by T3 should stand just left of it');
+    await bot.walkTo(T3.x + 10);
+    await bot.until(() => g.passive === T3, 2000, 'T3 to show its gate');
     if (g.intercom) throw new Error('the intercom by T3 should not speak by itself');
     await bot.tap('KeyH');
     if (said() !== 'This platform is too high. Do you think the Hadamard gate works on the higher state too?') throw new Error(`H at T3's intercom: "${said()}"`);
@@ -1835,7 +1842,7 @@ async function main() {
     await bot.hop(bot.slab('C'));
     await bot.hop(g.room.solids[4]);
     await bot.exit();
-    out.push(`B raised after ${nB} H${nB === 1 ? '' : 's'}, C lowered (from raised) after ${nC}; the intercoms by T2 and T3 answered H; out up the stairs`);
+    out.push(`B raised after ${nB} H${nB === 1 ? '' : 's'}, C lowered (from raised) after ${nC}; the intercoms just left of T2 and T3 answered H at the terminals; out up the stairs`);
     return `story level 1: ${out.join('; ')}`;
   });
   const oneStars = await page.getAttribute('#complete-stars', 'aria-label');

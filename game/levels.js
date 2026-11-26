@@ -551,6 +551,7 @@ export const STORY_LEVELS = [
     title: ['LEVEL ZERO', 'THE LOBBY'],
     story: true,
     lit: true,
+    torch: 'none', // no flashlight yet: F does nothing
     lamps: [330, 520, 760, 880], // ceiling lamps, lit until the blackout tears them down
     gates: ['x', 'swap'],
     qubits: [

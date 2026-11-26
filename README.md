@@ -27,9 +27,12 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 | Space or W | Jump |
 | F | The flashlight: held down to shine (Hold mode), or pressed to switch it on and off (Switch mode, in Options) |
 | I / K, or the mouse | Aim the flashlight: straight ahead, tilted with I / K (the tilt eases back to straight ahead after a few steps of walking); with Mouse Aim on in Options, also at the mouse while it is over the game |
-| 1, 2, 3… | Apply a gate: standing at a terminal shows its gates, each with its number |
-| E or Enter | Step into a terminal (← → then Enter, or the numbers, pick a gate; E to leave), use a port, talk, go through a room door, try a lock, pet the cat |
-| H | Show a hint |
+| Enter | At a terminal: apply the highlighted gate (standing at a terminal shows its gates; the first is highlighted). Elsewhere, the same as E |
+| Q / E, [ / ], comma / full stop | At a terminal: move the highlight left / right |
+| 1, 2, 3… or a click | Apply a terminal's gate directly, by its number |
+| E | Use a port, talk, go through a room door, try a lock, pet the cat (at a terminal, it moves the highlight) |
+| H | Show a hint; in story mode, call the Professor at an intercom |
+| X | Story mode: clear the Professor's bubble (so do H, E, Enter, using a terminal, walking into the bubble, or clicking its ✕) |
 | R / P / M | Restart floor / pause and options / sound |
 | Main menu (top right) | Back to the title screen from anywhere, including the cleared-floor, pause and out-of-lives screens |
 
@@ -37,7 +40,7 @@ Blackout Lab is a static web page: HTML, CSS and plain JavaScript, with no serve
 - A platform in superposition is drawn as dotted outlines at both heights.
 - Hold the flashlight beam on an outline for about half a second and the qubit is measured. It collapses to one height, at random, with the odds shown in the rack.
 - Touching is measuring too. Land on either outline of a superposed platform and it collapses, by the Born rule (50/50 after an H): you land if it went to the height you touched, otherwise you drop past it. And if a gate leaves the platform you are standing on in superposition, your touch measures it at once: you stay on if it collapses where you stand, and fall if it goes to the other height. (A gate is taken as instantaneous; only a steady drive, like a cavity's, can be frozen by watching it.)
-- Standing at a terminal shows its gates with their numbers, and 1, 2, 3 apply them while you can still move and look; platforms move as soon as a gate is applied. E steps into the terminal (flashlight lowered), where nothing is observed between gates. An exit opens by itself once every lock lamp is certain and matches the key (except floor 6's, whose lock runs its own gates before reading).
+- Standing at a terminal shows its gates with their numbers. Enter applies the highlighted one (Q and E move the highlight), and 1, 2, 3 or a click apply one directly, while you can still move and look; platforms move as soon as a gate is applied. Nothing shuts you in at a terminal. An exit opens by itself once every lock lamp is certain and matches the key (except floor 6's, whose lock runs its own gates before reading).
 - Each gate pops up over the qubits it acts on, and while you hold the canister the panel shows it enlarged with its state (or its entangled partners).
 - From floor 3 you carry a **canister** holding one sealed qubit. No light gets in, so the flashlight cannot read it. Dead terminals still have a canister port: plug in and the port applies a CNOT with the canister as control.
 - The title screen's side panel says where the game was made and links to its Qollab and GitHub pages (fill in the two empty `href` attributes in the `about` block of `index.html`, then rebuild the single file; until then each line reads "link not added yet").
@@ -123,12 +126,12 @@ They bring new pieces, which any floor can use:
 Story mode is listed under its own heading in "Skip to floor", after the bonus levels. The levels above stay as they are. Story levels start lit and introduce one idea at a time, with the Professor talking over the building's intercoms.
 
 - **Title card.** Each story level opens with its name in block letters. The card goes, and the clock starts, as soon as the player moves.
-- **Intercoms.** These are speaker boxes on the wall. In front of one, an H shows above it; press H to call the Professor. His answer appears as a radio bubble with a lightning-bolt tail to the speaker, and goes into the log. Walking, jumping, gates and the flashlight all keep working while the bubble is up; H (or any other key) moves it on. Time spent on the Professor's messages does not count towards the level's time. A few intercoms speak by themselves, the first time the player reaches them; with **Automatic Hints** (Options, off by default) every intercom does.
+- **Intercoms.** These are speaker boxes on the wall. In front of one, an H shows above it; press H to call the Professor. His answer appears as a radio bubble with a lightning-bolt tail to the speaker, in the terminals' blue, and goes into the log. Walking, jumping, gates and the flashlight all keep working while the bubble is up. H, E, X or Enter clears it, and so do using a terminal, walking into the bubble, and clicking its ✕. Time spent on the Professor's messages does not count towards the level's time. A few intercoms speak by themselves, the first time the player reaches them; with **Automatic Hints** (Options, off by default) every intercom does.
 - **Unlock Code.** Under Options, a code unlocks every level.
 
 | Story level | What happens | What it teaches |
 | --- | --- | --- |
-| 0 The Lobby | A bright lobby. X at T1 raises a platform (with the floor underneath). SWAP at T2 carries the player across on a moving platform to the stair landing. X at T3 sets the lock to the key, 1. Then the building shakes, cables spark and fall, the lights go out, and the stair door opens once the Professor has finished speaking. | X flips a qubit with certainty; SWAP exchanges two qubits; a lock reads its lamps. |
+| 0 The Lobby | A bright lobby; the player has no flashlight yet. X at T1 raises a platform (with the floor underneath). SWAP at T2 carries the player across on a moving platform to the stair landing. X at T3 sets the lock to the key, 1. The stair door opens at once, and the building shakes, cables spark and fall, and the lights go out. | X flips a qubit with certainty; SWAP exchanges two qubits; a lock reads its lamps. |
 
 ## Where the quantum computing is
 

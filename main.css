@@ -226,6 +226,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px 6px 6px;
 }
 .op-btn:hover:not(:disabled), .op-btn:focus-visible { border-color: var(--torch); }
+.op-btn.is-selected { position: relative; border-color: var(--qubit); box-shadow: 0 0 0 2px rgba(94, 230, 255, 0.35); }
+.op-btn.is-selected::before { content: 'Enter ▸'; position: absolute; top: -9px; left: 8px; padding: 0 4px; font: 700 9px var(--mono); color: var(--qubit); background: var(--panel); }
 .op-btn:disabled { opacity: 0.6; cursor: progress; }
 .op-btn[data-locked='1'] { cursor: not-allowed; border-style: dashed; }
 .op-btn[data-locked='1'] .op-hint { color: var(--torch); }

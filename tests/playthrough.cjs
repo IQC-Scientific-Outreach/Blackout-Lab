@@ -163,28 +163,26 @@ function installBot() {
     await frame();
     return p.state;
   }
-  // Use a terminal or port: `picks` are 1-based positions of the gate buttons to press.
+  // Use a terminal or port: `picks` are 1-based positions of the gate buttons to apply. Standing at
+  // it shows its gates; E moves the highlight right, Q left, and Enter applies the highlighted one.
   async function terminal(id, picks) {
     const g = G();
     const term = g.room.terminals.find((t) => t.id === id);
     if (!term) throw new Error(`no terminal ${id} in this room`);
     await walkTo(term.x);
-    await until(() => term.near, 2000, `stand at ${id}`);
+    await until(() => term.near && g.passive === term, 2000, `stand at ${id}`);
     dark();
-    await tap('KeyE');
-    await until(() => G().mode === 'terminal', 2000, `${id} to open`);
     for (const n of picks) {
       const button = document.querySelectorAll('#term-ops button')[n - 1];
-      if (!button || button.disabled) throw new Error(`gate ${n} at ${id} is not available`);
+      if (!button || button.dataset.locked === '1') throw new Error(`gate ${n} at ${id} is not available`);
+      await until(() => !G().busy, 12000, `${id} to be free`);
+      for (let k = 0; G().sel !== n - 1 && k < 12; k += 1) await tap(G().sel < n - 1 ? 'KeyE' : 'KeyQ');
+      if (G().sel !== n - 1 || !button.classList.contains('is-selected')) throw new Error(`E and Q should highlight gate ${n} at ${id}`);
       const before = G().q.ops.length;
-      button.click();
+      await tap('Enter');
       await until(() => G().q.ops.length > before && !G().busy, 12000, `gate ${n} at ${id}`); // a swap counts down, then travels
     }
-    await tap('Escape'); // Esc must not leave a terminal: only E does
-    await frame();
-    if (G().mode !== 'terminal') throw new Error(`Esc closed ${id}`);
-    await tap('KeyE');
-    await until(() => G().mode === 'play', 2000, `${id} to close`);
+    if (G().mode !== 'play') throw new Error(`${id} should never take the player out of play: ${G().mode}`);
   }
   // Talk to someone until they have nothing more to say (later lines may arrive after a measurement).
   async function talk(id) {
@@ -919,11 +917,8 @@ async function main() {
       Object.assign(g.player, { x: 871, y: 450 - 32, vx: 0, vy: 0 });
       const t2 = g.room.terminals.find((t) => t.id === 'T2');
       await bot.until(() => t2.near, 2000, 'stand at T2');
-      await bot.tap('KeyE');
-      await bot.until(() => g.mode === 'terminal', 2000, 'T2 to open');
+      await bot.until(() => g.passive && g.passive.id === 'T2', 2000, 'T2 to show its gates');
       document.querySelector('#term-ops button[data-op="0"]').click();
-      await bot.tap('KeyE');
-      await bot.until(() => g.mode === 'play', 2000, 'T2 to close');
       const ride = bot.platform('R');
       await bot.walkTo(ride.x + ride.w / 2);
       if (g.player.standing !== ride || !g.swap || g.swap.travel) throw new Error('the player should be on R\'s platform before the swap sets off');
@@ -943,14 +938,11 @@ async function main() {
     const t1 = g.room.terminals[0];
     await bot.walkTo(t1.x);
     await bot.until(() => t1.near, 2000, 'stand at T1');
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'terminal', 2000, 'T1 to open');
+    await bot.until(() => g.passive && g.passive.id === 'T1', 2000, 'T1 to show its gates');
     document.querySelector('#term-ops button[data-op="1"]').click();
     await bot.frame();
     if (!g.swap || [...document.querySelectorAll('#term-ops button')].some((b) => !b.disabled)) throw new Error('during a swap every gate should be greyed out');
     if (g.swap.count !== 3) throw new Error(`the countdown should start at 3: ${g.swap.count}`);
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
     const ride = bot.platform('Q');
     await bot.hop(bot.slab('Q'));
     if (g.player.standing !== ride || g.swap.travel) throw new Error('the player should be aboard before the swap sets off');
@@ -978,17 +970,14 @@ async function main() {
     const t1 = g.room.terminals.find((t) => t.id === 'T1');
     await bot.walkTo(t1.x);
     await bot.until(() => t1.near, 2000, 'stand at T1');
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'terminal', 2000, 'T1 to open');
+    await bot.until(() => g.passive && g.passive.id === 'T1', 2000, 'T1 to show its gates');
     const opened = performance.now();
     document.querySelector('#term-ops button[data-op="0"]').click();
     await bot.until(() => P.state === null, 2000, 'P in superposition');
     await bot.until(() => P.state !== null, 4000, 'the weak light to catch P');
     const caughtAfter = (performance.now() - opened) / 1000;
     const last = g.q.ops[g.q.ops.length - 1];
-    if (g.mode !== 'terminal' || last.by !== 'light' || caughtAfter < 2) throw new Error(`the weak light should measure P after about 2.25 s, even at the terminal: ${JSON.stringify(last)} after ${caughtAfter.toFixed(2)} s in ${g.mode}`);
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
+    if (!g.passive || last.by !== 'light' || caughtAfter < 2) throw new Error(`the weak light should measure P after about 2.25 s, even at the terminal: ${JSON.stringify(last)} after ${caughtAfter.toFixed(2)} s in ${g.mode}`);
     let tries = 0;
     // Stage 1: H, Z, H on P, quickly (a lucky collapse to 1 would do as well).
     while (P.state !== 1 && tries < 6) {
@@ -1069,8 +1058,7 @@ async function main() {
       const t2 = g.room.terminals.find((t) => t.id === 'T2');
       await bot.walkTo(t2.x);
       await bot.until(() => t2.near, 2000, 'stand at T2');
-      await bot.tap('KeyE');
-      await bot.until(() => g.mode === 'terminal', 2000, 'T2 to open');
+      await bot.until(() => g.passive && g.passive.id === 'T2', 2000, 'T2 to show its gates');
       if (S.state === 1) {
         document.querySelector('#term-ops button[data-op="0"]').click(); // shield out: A and B turn again
         await bot.until(() => S.state === 0, 1000, 'the shield to go');
@@ -1082,8 +1070,6 @@ async function main() {
       const frozen = [A.p1, B.p1];
       for (let k = 0; k < 20; k += 1) await bot.frame();
       if (Math.abs(A.p1 - frozen[0]) > 1e-6 || Math.abs(B.p1 - frozen[1]) > 1e-6) throw new Error('behind the shield, A and B should stop turning');
-      await bot.tap('KeyE');
-      await bot.until(() => g.mode === 'play', 2000, 'T2 to close');
       bot.aim(600, 330);
       await bot.until(() => A.state !== null && B.state !== null, 4000, 'A and B to collapse');
       bot.dark();
@@ -1408,6 +1394,7 @@ async function main() {
   await step('flashlight switch', async () => {
     const g = bot.G();
     const frames = async (n) => { for (let k = 0; k < n; k += 1) await bot.frame(); };
+    await frames(3); // let the game run after the pause screen, so the flashlight is up again
     const start = g.torch.active;
     await bot.tap('KeyF');
     await frames(3);
@@ -1453,23 +1440,21 @@ async function main() {
     await bot.until(() => g.q.ops.length === before + 2, 2000, '1 again to undo it');
     const a = bot.platform('A');
     if (a.state !== 0) throw new Error('H twice should leave A lowered');
-    // E steps in: the gate buttons take the keys (arrows, then Enter or Space), and the numbers still work.
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'terminal', 2000, 'E to step into T1');
-    await bot.frame();
-    const focused = document.activeElement;
-    if (!focused.matches('.op-btn') || !focused.querySelector('.op-key')) throw new Error('stepping in should focus a numbered gate button');
-    focused.click(); // what Enter or Space does on the focused button
-    await bot.until(() => g.q.ops.length === before + 3, 2000, 'the focused gate');
-    await bot.tap('Digit1');
-    await bot.until(() => g.q.ops.length === before + 4, 2000, '1 inside the terminal');
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'play' && g.passive, 2000, 'E to step out, gates still showing');
+    // Enter applies the highlighted gate; Q, E, [ ], comma and full stop only move the highlight
+    // (with one gate, it stays put); a click applies a gate too. Nothing ever shuts the player in.
+    for (const code of ['KeyE', 'KeyQ', 'BracketLeft', 'BracketRight', 'Comma', 'Period']) await bot.tap(code);
+    if (g.q.ops.length !== before + 2 || g.mode !== 'play' || g.sel !== 0) throw new Error(`moving the highlight should apply nothing: ${g.q.ops.length - before} ops, mode ${g.mode}, sel ${g.sel}`);
+    if (!document.querySelector('#term-ops button.is-selected')) throw new Error('the gate Enter applies should be highlighted');
+    await bot.tap('Enter');
+    await bot.until(() => g.q.ops.length === before + 3 && !g.busy, 2000, 'Enter to apply the highlighted gate');
+    document.querySelector('#term-ops button').click();
+    await bot.until(() => g.q.ops.length === before + 4 && !g.busy, 2000, 'a click on the gate');
+    if (g.mode !== 'play' || !g.passive) throw new Error('the gates should still be showing, with the player free to move');
     if (a.state !== 0) throw new Error('four H gates should leave A lowered');
     bot.key('ArrowLeft', true);
     await bot.until(() => !g.passive, 2000, 'walking away to hide the gates');
     bot.key('ArrowLeft', false);
-    return 'passive terminal: standing at T1 showed its numbered gates and 1 applied H; E stepped in (focused button and 1 both applied H) and E stepped out; walking away hid them';
+    return 'passive terminal: standing at T1 showed its numbered gates; 1 applied H; Q, E, [, ], comma and full stop moved the highlight only; Enter and a click applied H; walking away hid them';
   });
   // Passive terminal also opens an exit by itself once every lamp is certain and matches the key.
   // (The lamp readings are set directly here; floor 3's real play is covered above.)
@@ -1516,15 +1501,12 @@ async function main() {
     const term = g.room.terminals.find((t) => t.id === 'T1');
     await bot.walkTo(term.x);
     await bot.until(() => term.near, 2000, 'stand at T1');
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'terminal', 2000, 'T1 to open');
+    await bot.until(() => g.passive && g.passive.id === 'T1', 2000, 'T1 to show its gates');
     const y0 = a.y;
     document.querySelector('#term-ops button').click();
     await bot.until(() => a.state === 0, 2000, 'X to flip A');
     await bot.until(() => a.y === a.y0, 2000, 'A to glide down while T1 is open');
-    if (g.mode !== 'terminal' || y0 === a.y) throw new Error('A should move while the terminal is open');
-    await bot.tap('KeyE');
-    await bot.until(() => g.mode === 'play', 2000, 'T1 to close');
+    if (!g.passive || y0 === a.y) throw new Error('A should move while the gates are showing');
     return `instant response: X at T1 moved A from y=${y0} to y=${a.y} with the terminal still open`;
   });
   await page.keyboard.press('KeyP');
@@ -1674,14 +1656,42 @@ async function main() {
     await bot.walkTo(118);
     if (!g.intercom || g.floorTime !== t0) throw new Error('the bubble should stay while walking, and its time should not count');
     if (g.room.intercoms[0].near !== true) throw new Error('the intercom should know the player is in front of it');
-    await bot.tap('KeyH');
-    if (g.intercom) throw new Error('H should close the bubble');
-    if (!/Professor \(intercom\): Thank heavens/.test(document.getElementById('log').textContent)) throw new Error('the message should be in the log');
-    out.push('title card held the clock; I1 spoke on entry, stayed up while walking (clock still), H closed it, and it went to the log');
-    // H again at the box calls him back.
-    await bot.tap('KeyH');
-    if (!g.intercom) throw new Error('H at an intercom should call the Professor');
-    await bot.tap('KeyH');
+    await bot.tap('KeyX');
+    if (g.intercom) throw new Error('X should clear the bubble');
+    if (!/Professor: Thank heavens/.test(document.getElementById('log').textContent)) throw new Error('the message should be in the log');
+    out.push('title card held the clock; I1 spoke on entry, stayed up while walking (clock still), X cleared it, and it went to the log');
+    // H at the box calls him back; H clears him again; then a click on the close box, and walking into the bubble.
+    const cleared = [];
+    for (const how of ['H', 'E', 'Enter', 'click', 'walk into it']) {
+      await bot.tap('KeyH');
+      await bot.until(() => g.intercom && g.intercom.rect, 1000, 'H to call the Professor');
+      const r = g.intercom.closeRect;
+      if (how === 'H') await bot.tap('KeyH');
+      else if (how === 'E') await bot.tap('KeyE');
+      else if (how === 'Enter') await bot.tap('Enter');
+      else if (how === 'click') {
+        const c = document.getElementById('game').getBoundingClientRect();
+        const at = { clientX: c.left + ((r.x + r.w / 2) / 960) * c.width, clientY: c.top + ((r.y + r.h / 2) / 540) * c.height, bubbles: true };
+        document.getElementById('game').dispatchEvent(new PointerEvent('pointerdown', at));
+      } else {
+        const keep = { x: pl.x, y: pl.y };
+        Object.assign(pl, { x: g.intercom.rect.x + 20, y: g.intercom.rect.y + 10, vy: 0 }); // as if jumping into it
+        await bot.frame();
+        await bot.frame();
+        Object.assign(pl, { ...keep, vy: 0 });
+      }
+      await bot.frame();
+      if (g.intercom) throw new Error(`${how} should clear the bubble`);
+      cleared.push(how);
+      await bot.until(() => pl.onGround, 2000, 'land');
+    }
+    out.push(`the bubble cleared with X, ${cleared.join(', ')}`);
+    // No flashlight in the lobby: F does nothing.
+    bot.key('KeyF', true);
+    for (let k = 0; k < 5; k += 1) await bot.frame();
+    bot.key('KeyF', false);
+    if (g.torch.active || g.torch.battery !== 'none') throw new Error('the lobby has no flashlight: F should do nothing');
+    out.push('F did nothing (no flashlight yet)');
     // Jump from where the player stands up onto a surface, steering in the air.
     const jumpTo = async (s, from) => {
       await bot.walkTo(from);
@@ -1707,14 +1717,14 @@ async function main() {
     const stand = g.room.solids[2];
     await jumpTo({ x: stand.x, w: 60, y: stand.y }, A.x + A.w - 12);
     await bot.until(() => g.intercom && g.intercom.box.id === 'I2', 2000, 'the second intercom message');
-    await bot.tap('KeyQ'); // any other key moves the bubble on
-    if (g.intercom) throw new Error('another key should close the bubble');
     // SWAP from the terminal's screen (key 1), then on to C during the countdown.
     const T2 = g.room.terminals.find((t) => t.id === 'T2');
     await bot.walkTo(T2.x);
     await bot.until(() => g.passive === T2, 2000, 'T2 to show its gate');
-    await bot.tap('Digit1');
+    if (!g.intercom) throw new Error('the second message should still be up');
+    await bot.tap('Enter');
     await bot.until(() => g.swap, 2000, 'the swap countdown');
+    if (g.intercom) throw new Error('using a terminal should clear the bubble');
     const C = bot.platform('C');
     await jumpTo(C, stand.x + 30); // on C before the swap delay runs out
     await bot.until(() => Math.abs(C.x - 280) < 1 && Math.abs(C.y - 200) < 1, 8000, 'C to carry the player across');
@@ -1726,15 +1736,13 @@ async function main() {
     await bot.terminal('T3', [1]);
     const d = g.door;
     await bot.until(() => g.blackout, 2000, 'the blackout');
-    if (d.open) throw new Error('the stair door should stay shut through the blackout');
+    if (!d.open) throw new Error('the stair door should open as soon as the lock reads 1');
     await bot.until(() => g.blackout.dark && g.intercom && g.intercom.box.id === 'I3', 4000, 'the dark and the Professor');
     const t1 = g.floorTime;
     await new Promise((r) => setTimeout(r, 400));
-    if (d.open || g.floorTime !== t1) throw new Error('the door should open only after the message, and the message should not count on the clock');
-    await bot.tap('KeyH');
-    await bot.until(() => d.open, 1000, 'the stair door to open');
+    if (g.floorTime !== t1) throw new Error('the message should not count on the clock');
     await bot.exit();
-    out.push(`the lock opened the blackout; the door opened once the Professor finished; cleared in ${g.floorTime.toFixed(1)} s of play`);
+    out.push(`the lock opened the door at once and set off the blackout; walked out while the Professor spoke; cleared in ${g.floorTime.toFixed(1)} s of play`);
     return `story level 0: ${out.join('; ')}`;
   });
   const lobbyStars = await page.getAttribute('#complete-stars', 'aria-label');

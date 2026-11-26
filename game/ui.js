@@ -164,7 +164,7 @@ export function createUI(dom, handlers) {
     dom.dockTerminal.hidden = false;
     dom.termClose.hidden = passive;
     const kind = term.box ? 'Box port' : term.port ? `${term.id} · dead terminal, canister port only` : `Terminal ${term.id}`;
-    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · ${passive ? 'flashlight still on' : 'flashlight lowered'}`;
+    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''}${passive ? '' : ' · flashlight lowered'}`;
     dom.termOps.innerHTML = term.ops
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
@@ -183,7 +183,7 @@ export function createUI(dom, handlers) {
       return;
     }
     if (passive) {
-      setTerminalStatus(`Press ${range}, or click a gate. Your flashlight stays on here. E or Enter steps in to pick with the arrow keys.`, '');
+      setTerminalStatus(`Enter applies the highlighted gate. Q or E moves the highlight (also [ and ], or comma and full stop). Or press ${range}, or click a gate.`, '');
       return;
     }
     setTerminalStatus(
@@ -193,6 +193,16 @@ export function createUI(dom, handlers) {
       ''
     );
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
+  }
+
+  // The gate Enter applies at a terminal, highlighted.
+  function setSelected(i) {
+    for (const b of dom.termOps.querySelectorAll('button')) {
+      const on = Number(b.dataset.op) === i;
+      b.classList.toggle('is-selected', on);
+      if (on) b.setAttribute('aria-current', 'true');
+      else b.removeAttribute('aria-current');
+    }
   }
 
   function closeTerminal() {
@@ -385,6 +395,7 @@ export function createUI(dom, handlers) {
     setTerminalStatus,
     setTerminalBusy,
     showComplete,
+    setSelected,
     showWin,
     showError(text) {
       dom.errorText.textContent = text;

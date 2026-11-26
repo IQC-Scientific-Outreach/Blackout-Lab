@@ -844,6 +844,10 @@ export function createRenderer(canvas) {
       ctx.restore();
       return;
     }
+    if (G.torch.battery === 'none') {
+      ctx.restore(); // no flashlight yet: arms at the sides
+      return;
+    }
     const hand = handOf(p);
     const a = G.torch.lowered ? (f > 0 ? 1.2 : Math.PI - 1.2) : G.torch.angle;
     ctx.strokeStyle = '#3f8f9a';
@@ -2862,6 +2866,7 @@ export function createRenderer(canvas) {
 
   // The Professor on the radio: a bubble at the top of the screen with jagged edges, and a
   // lightning-bolt tail down to the intercom he is speaking through.
+  const TERMINAL_BLUE = '#3fb6cf'; // the terminals' screens
   function drawRadio(G) {
     const ic = G.intercom;
     if (!ic) return;
@@ -2882,7 +2887,7 @@ export function createRenderer(canvas) {
     const sx = box.x;
     const sy = box.y - 66;
     const tx = Math.max(bx + 20, Math.min(bx + w - 20, sx));
-    ctx.strokeStyle = '#ffe9a8';
+    ctx.strokeStyle = TERMINAL_BLUE;
     ctx.lineWidth = 3;
     ctx.lineJoin = 'miter';
     ctx.beginPath();
@@ -2917,21 +2922,39 @@ export function createRenderer(canvas) {
     teeth(bx, by + h, bx, by, Math.round(h / 14) * 2, 4);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#ffd98a';
+    ctx.strokeStyle = TERMINAL_BLUE;
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.font = `700 10px ${MONO_FONT}`;
     ctx.fillStyle = '#35607a';
-    ctx.fillText('PROFESSOR · INTERCOM', bx + 16, by + 9);
+    ctx.fillText('PROFESSOR', bx + 16, by + 9);
     ctx.font = `600 14px ${BODY_FONT}`;
     ctx.fillStyle = '#101826';
     lines.forEach((l, k) => ctx.fillText(l, bx + 16, by + 26 + k * lineH));
     ctx.font = `700 10px ${MONO_FONT}`;
     ctx.fillStyle = '#35607a';
-    ctx.textAlign = 'right';
-    ctx.fillText(ic.index < ic.lines.length - 1 ? 'H ▸' : 'H ✕', bx + w - 12, by + 9);
+    // The close box, top right (a click on it clears the bubble); H moves on to a next line.
+    const close = { x: bx + w - 26, y: by + 7, w: 17, h: 17 };
+    ctx.fillStyle = TERMINAL_BLUE;
+    rr(ctx, close.x, close.y, close.w, close.h, 3);
+    ctx.fill();
+    ctx.strokeStyle = '#06202a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(close.x + 5, close.y + 5);
+    ctx.lineTo(close.x + close.w - 5, close.y + close.h - 5);
+    ctx.moveTo(close.x + close.w - 5, close.y + 5);
+    ctx.lineTo(close.x + 5, close.y + close.h - 5);
+    ctx.stroke();
+    if (ic.index < ic.lines.length - 1) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#35607a';
+      ctx.fillText('H ▸', close.x - 8, by + 11);
+    }
+    ic.rect = { x: bx, y: by, w, h };
+    ic.closeRect = { x: close.x - 4, y: close.y - 4, w: close.w + 8, h: close.h + 8 }; // a little extra to hit
     ctx.restore();
   }
 

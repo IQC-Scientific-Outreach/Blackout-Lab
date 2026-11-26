@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-JnFITn8+mkLiJ2Bk3t8O1P+iIJVXA6qqpaMORAbM3so='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-HDJqYeGclSKErwODr6av3nhXZKSBS3ia+k8nGqwFbzs='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -242,6 +242,8 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px 6px 6px;
 }
 .op-btn:hover:not(:disabled), .op-btn:focus-visible { border-color: var(--torch); }
+.op-btn.is-selected { position: relative; border-color: var(--qubit); box-shadow: 0 0 0 2px rgba(94, 230, 255, 0.35); }
+.op-btn.is-selected::before { content: 'Enter ▸'; position: absolute; top: -9px; left: 8px; padding: 0 4px; font: 700 9px var(--mono); color: var(--qubit); background: var(--panel); }
 .op-btn:disabled { opacity: 0.6; cursor: progress; }
 .op-btn[data-locked='1'] { cursor: not-allowed; border-style: dashed; }
 .op-btn[data-locked='1'] .op-hint { color: var(--torch); }
@@ -489,8 +491,10 @@ input[role="switch"]:checked::after { transform: translateX(16px); background: v
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
                 <div><dt><kbd>F</kbd></dt><dd>Flashlight (Hold F or Press F: see Options)</dd></div>
                 <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Mouse Aim)</dt><dd>Aim the flashlight</dd></div>
-                <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate at a terminal</dd></div>
-                <div><dt><kbd>E</kbd> or <kbd>Enter</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
+                <div><dt><kbd>Enter</kbd></dt><dd>Apply the highlighted gate at a terminal</dd></div>
+                <div><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Move the highlight (also <kbd>[</kbd> <kbd>]</kbd>, <kbd>,</kbd> <kbd>.</kbd>)</dd></div>
+                <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate directly</dd></div>
+                <div><dt><kbd>E</kbd></dt><dd>Talk, open a door, use a port</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
                 <div><dt><kbd>P</kbd></dt><dd>Pause and options</dd></div>
               </dl>
@@ -1260,6 +1264,7 @@ const STORY_LEVELS = [
     title: ['LEVEL ZERO', 'THE LOBBY'],
     story: true,
     lit: true,
+    torch: 'none', // no flashlight yet: F does nothing
     lamps: [330, 520, 760, 880], // ceiling lamps, lit until the blackout tears them down
     gates: ['x', 'swap'],
     qubits: [
@@ -2515,14 +2520,17 @@ const KEYS = {
   jump: ['Space', 'ArrowUp', 'KeyW'],
   tiltUp: ['KeyI'],
   tiltDown: ['KeyK'],
-  use: ['KeyE', 'Enter'],
+  use: ['KeyE'], // and, at a terminal, moves the gate highlight right
+  apply: ['Enter', 'NumpadEnter'], // at a terminal, applies the highlighted gate; elsewhere, as E
+  selLeft: ['KeyQ', 'BracketLeft', 'Comma'], // q Q [ { , <
+  selRight: ['BracketRight', 'Period'], // ] } . > (and E)
   torch: ['KeyF'],
   pause: ['KeyP', 'Escape'],
   restart: ['KeyR'],
   mute: ['KeyM'],
   hint: ['KeyH'],
 };
-// 1 to 9 pick a gate at a passive terminal (developer option).
+// 1 to 9 apply a terminal's gates directly.
 for (let k = 1; k <= 9; k += 1) KEYS[`op${k}`] = [`Digit${k}`, `Numpad${k}`];
 
 const ACTION_OF = {};
@@ -3719,6 +3727,10 @@ function createRenderer(canvas) {
       ctx.lineTo(grip.x, grip.y);
       ctx.stroke();
       ctx.restore();
+      return;
+    }
+    if (G.torch.battery === 'none') {
+      ctx.restore(); // no flashlight yet: arms at the sides
       return;
     }
     const hand = handOf(p);
@@ -5739,6 +5751,7 @@ function createRenderer(canvas) {
 
   // The Professor on the radio: a bubble at the top of the screen with jagged edges, and a
   // lightning-bolt tail down to the intercom he is speaking through.
+  const TERMINAL_BLUE = '#3fb6cf'; // the terminals' screens
   function drawRadio(G) {
     const ic = G.intercom;
     if (!ic) return;
@@ -5759,7 +5772,7 @@ function createRenderer(canvas) {
     const sx = box.x;
     const sy = box.y - 66;
     const tx = Math.max(bx + 20, Math.min(bx + w - 20, sx));
-    ctx.strokeStyle = '#ffe9a8';
+    ctx.strokeStyle = TERMINAL_BLUE;
     ctx.lineWidth = 3;
     ctx.lineJoin = 'miter';
     ctx.beginPath();
@@ -5794,21 +5807,39 @@ function createRenderer(canvas) {
     teeth(bx, by + h, bx, by, Math.round(h / 14) * 2, 4);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#ffd98a';
+    ctx.strokeStyle = TERMINAL_BLUE;
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.font = `700 10px ${MONO_FONT}`;
     ctx.fillStyle = '#35607a';
-    ctx.fillText('PROFESSOR · INTERCOM', bx + 16, by + 9);
+    ctx.fillText('PROFESSOR', bx + 16, by + 9);
     ctx.font = `600 14px ${BODY_FONT}`;
     ctx.fillStyle = '#101826';
     lines.forEach((l, k) => ctx.fillText(l, bx + 16, by + 26 + k * lineH));
     ctx.font = `700 10px ${MONO_FONT}`;
     ctx.fillStyle = '#35607a';
-    ctx.textAlign = 'right';
-    ctx.fillText(ic.index < ic.lines.length - 1 ? 'H ▸' : 'H ✕', bx + w - 12, by + 9);
+    // The close box, top right (a click on it clears the bubble); H moves on to a next line.
+    const close = { x: bx + w - 26, y: by + 7, w: 17, h: 17 };
+    ctx.fillStyle = TERMINAL_BLUE;
+    rr(ctx, close.x, close.y, close.w, close.h, 3);
+    ctx.fill();
+    ctx.strokeStyle = '#06202a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(close.x + 5, close.y + 5);
+    ctx.lineTo(close.x + close.w - 5, close.y + close.h - 5);
+    ctx.moveTo(close.x + close.w - 5, close.y + 5);
+    ctx.lineTo(close.x + 5, close.y + close.h - 5);
+    ctx.stroke();
+    if (ic.index < ic.lines.length - 1) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#35607a';
+      ctx.fillText('H ▸', close.x - 8, by + 11);
+    }
+    ic.rect = { x: bx, y: by, w, h };
+    ic.closeRect = { x: close.x - 4, y: close.y - 4, w: close.w + 8, h: close.h + 8 }; // a little extra to hit
     ctx.restore();
   }
 
@@ -6530,7 +6561,7 @@ function createUI(dom, handlers) {
     dom.dockTerminal.hidden = false;
     dom.termClose.hidden = passive;
     const kind = term.box ? 'Box port' : term.port ? `${term.id} · dead terminal, canister port only` : `Terminal ${term.id}`;
-    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · ${passive ? 'flashlight still on' : 'flashlight lowered'}`;
+    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''}${passive ? '' : ' · flashlight lowered'}`;
     dom.termOps.innerHTML = term.ops
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
@@ -6549,7 +6580,7 @@ function createUI(dom, handlers) {
       return;
     }
     if (passive) {
-      setTerminalStatus(`Press ${range}, or click a gate. Your flashlight stays on here. E or Enter steps in to pick with the arrow keys.`, '');
+      setTerminalStatus(`Enter applies the highlighted gate. Q or E moves the highlight (also [ and ], or comma and full stop). Or press ${range}, or click a gate.`, '');
       return;
     }
     setTerminalStatus(
@@ -6559,6 +6590,16 @@ function createUI(dom, handlers) {
       ''
     );
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
+  }
+
+  // The gate Enter applies at a terminal, highlighted.
+  function setSelected(i) {
+    for (const b of dom.termOps.querySelectorAll('button')) {
+      const on = Number(b.dataset.op) === i;
+      b.classList.toggle('is-selected', on);
+      if (on) b.setAttribute('aria-current', 'true');
+      else b.removeAttribute('aria-current');
+    }
   }
 
   function closeTerminal() {
@@ -6751,6 +6792,7 @@ function createUI(dom, handlers) {
     setTerminalStatus,
     setTerminalBusy,
     showComplete,
+    setSelected,
     showWin,
     showError(text) {
       dom.errorText.textContent = text;
@@ -7442,7 +7484,7 @@ function startGame() {
     G.intercom = null; // the Professor's radio bubble, while he is speaking
     G.titleCard = null; // a story level's name, over the screen until the player first moves
     G.blackout = null; // a story level's blackout, once its exit unlocks
-    G.swallowUse = false;
+    G.sel = 0;
   }
 
   async function loadLevel(index, opts) {
@@ -7554,6 +7596,30 @@ function startGame() {
 
   // -- terminals: gates ---------------------------------------------------
 
+  // E, or Enter away from a terminal: use what is at hand. Both keys are taken.
+  function takeUse() {
+    const e = input.take('use');
+    const enter = input.take('apply');
+    return e || enter;
+  }
+
+  // Standing at a terminal shows its gates (the player is never shut in): Enter applies the
+  // highlighted one, Q [ , and E ] . move the highlight, and 1 to 9 or a click apply one directly.
+  function moveSelection(step) {
+    const term = G.passive;
+    if (!term || term.quick) return;
+    const usable = term.ops.map((op, i) => i).filter((i) => !(term.ops[i].needsCanister && !carrying()));
+    if (!usable.length) return;
+    const at = usable.indexOf(G.sel);
+    G.sel = usable[(at < 0 ? 0 : at + step + usable.length) % usable.length];
+    ui.setSelected(G.sel);
+    clearIntercom();
+    audio.play('tick');
+    const op = term.ops[G.sel];
+    ui.announce(`${GATE_INFO[op.gate].name} on ${op.q.join(' and ')} selected.`);
+  }
+
+  // E at a terminal that shows nothing: a dead terminal or the box, without the canister.
   function useTerminal(term) {
     G.lastTerminal = term; // where a fall brings you back
     if (term.port && !carrying()) {
@@ -7593,6 +7659,9 @@ function startGame() {
     G.passive = term;
     G.passiveCarrying = carrying();
     ui.openTerminal(term, carrying(), { passive: true });
+    const first = term.ops.findIndex((op) => !(op.needsCanister && !carrying()));
+    G.sel = first < 0 ? 0 : first;
+    if (!term.quick) ui.setSelected(G.sel);
   }
 
   function closePassive() {
@@ -7795,6 +7864,7 @@ function startGame() {
 
   async function applyOp(i) {
     const term = G.terminal || G.passive;
+    if (term && term.ops[i]) clearIntercom(); // using a terminal clears the Professor's bubble
     if (term && term.ops[i]) G.lastTerminal = term;
     if (term && term.quick) {
       if (term.ops[i]) quickTerminal(term);
@@ -7912,6 +7982,7 @@ function startGame() {
     const pl = G.player;
     const t = G.torch;
     const dead = t.battery === 'dead';
+    const none = t.battery === 'none'; // no flashlight yet (story level 0): F does nothing
     // Flashlight mode (Options): 'hold', F held shines; 'switch', F turns it on and off.
     const hold = G.dev.torchMode !== 'switch';
     // Aim: straight ahead, tilted by I / K (the tilt eases back to straight ahead after a few steps
@@ -7932,7 +8003,7 @@ function startGame() {
         t.walked = (t.walked || 0) + Math.abs(pl.vx) * dt;
         if (t.walked > TILT_RESET_STEPS) t.tilt = Math.sign(t.tilt) * Math.max(0, Math.abs(t.tilt) - 2.5 * dt); // back to level, and no further
       }
-      if (input.take('torch')) {
+      if (input.take('torch') && !none) {
         if (dead) {
           if (story().onDeadTorch) story().onDeadTorch(storyCtx(null));
         } else if (!hold) {
@@ -7967,7 +8038,7 @@ function startGame() {
       }
     }
     t.lowered = G.mode !== 'play';
-    t.active = (hold ? !!input.held.torch : t.on) && !t.lowered && !dead && !blink;
+    t.active = (hold ? !!input.held.torch : t.on) && !t.lowered && !dead && !none && !blink;
 
     if (G.mode !== 'play' || !G.q) return;
     const hand = handOf(pl);
@@ -8071,7 +8142,6 @@ function startGame() {
     if (G.dev.passiveTerminal) autoOpen(d);
     // A story level's blackout: the exit unlocks, and the lights go out before it opens.
     if (G.level.blackout && d.unlocked && !G.blackout) startBlackout();
-    if (G.blackout && !G.blackout.over) d.open = false;
     if (d.key && !d.unlocked && !d.byHand) {
       const lit = G.torch.active && rectLit(handOf(pl), G.torch.angle, lockRect(d), G.torch.range);
       if (!lit) {
@@ -8465,7 +8535,7 @@ function startGame() {
   function sayIntercom() {
     const ic = G.intercom;
     const line = ic.lines[ic.index];
-    panel.log(`Professor (intercom): ${line}`, 'info');
+    panel.log(`Professor: ${line}`, 'info');
     ui.announce(`The Professor, on the intercom: ${line}`);
   }
 
@@ -8491,6 +8561,13 @@ function startGame() {
     sayIntercom();
   }
 
+  function clearIntercom() {
+    const ic = G.intercom;
+    if (!ic) return;
+    G.intercom = null;
+    if (ic.done) ic.done();
+  }
+
   function hintKey() {
     if (G.intercom) {
       advanceIntercom();
@@ -8503,7 +8580,14 @@ function startGame() {
 
   function updateIntercoms(dt) {
     const room = G.room;
-    if (G.intercom) G.intercom.t += dt;
+    const ic = G.intercom;
+    if (ic) {
+      ic.t += dt;
+      // The player walking (or jumping) into the bubble clears it. `rect` is set as it is drawn.
+      const r = ic.rect;
+      const pl = G.player;
+      if (r && pl.x < r.x + r.w && pl.x + PLAYER.w > r.x && pl.y < r.y + r.h && pl.y + PLAYER.h > r.y) clearIntercom();
+    }
     if (!room.intercoms.length) return;
     const near = intercomNear();
     for (const i of room.intercoms) i.near = i === near;
@@ -8521,15 +8605,13 @@ function startGame() {
     }
   }
 
-  // Any key but walking, jumping, gates, the flashlight and the game's own keys (pause, sound,
-  // restart, and H, handled with the hints) moves the Professor's bubble on.
-  const KEEP_KEYS = /^(Arrow(Left|Right|Up|Down)|Key[ADWFIKPMRH]|Space|Escape|Tab|Digit[1-9]|Numpad[1-9]|(Shift|Control|Alt|Meta)(Left|Right)|CapsLock)$/;
+  // H, E, X or Enter clears the Professor's bubble (H also calls him at an intercom; E and Enter
+  // still do their own jobs). So do using a terminal, walking into the bubble, and its close box.
   window.addEventListener('keydown', (ev) => {
     if (!G.intercom || G.mode !== 'play' || ev.repeat || ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const tag = ev.target && ev.target.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || KEEP_KEYS.test(ev.code)) return;
-    if (ev.code === 'KeyE' || ev.code === 'Enter' || ev.code === 'NumpadEnter') G.swallowUse = true;
-    advanceIntercom();
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (['KeyE', 'KeyX', 'Enter', 'NumpadEnter'].includes(ev.code)) clearIntercom();
   });
 
   // The blackout: the exit unlocks, the building shakes, cables spark and fall from the ceiling,
@@ -8569,9 +8651,6 @@ function startGame() {
       const box = G.room.intercoms.find((i) => i.id === G.level.blackout.from) || G.room.intercoms[0];
       speak(box, G.level.blackout.lines, () => {
         b.over = true;
-        if (G.door) G.door.open = true;
-        audio.play('unlock');
-        say('The stair door is open.', 'good', true);
       });
     }
   }
@@ -8922,7 +9001,7 @@ function startGame() {
         }
         if (Math.abs(pl.vx) > 5) pl.facing = Math.sign(pl.vx);
         b.near = pl.onGround && pl.x + PLAYER.w / 2 > CRANK_X - 30;
-        const used = input.take('use');
+        const used = takeUse();
         if (used && b.near) {
           b.step = 'crank';
           b.st = 0;
@@ -8932,7 +9011,7 @@ function startGame() {
         G.torch.active = false;
         return;
       }
-      if (input.take('use') || input.take('jump')) {
+      if (takeUse() || input.take('jump')) {
         endIntro();
         return;
       }
@@ -8942,7 +9021,7 @@ function startGame() {
       return;
     }
     if (b.phase === 'tamed') {
-      const skip = input.take('use') || input.take('jump');
+      const skip = takeUse() || input.take('jump');
       b.tame = ease(Math.min(1, b.t / 2.2));
       b.seen = 'cute';
       b.reveal = Math.min(1, b.reveal + dt * 4);
@@ -9411,7 +9490,7 @@ function startGame() {
     G.torch.active = false;
     G.torch.lowered = true;
     if (G.mode === 'play' && Math.abs(pl.vx) > 5) pl.facing = Math.sign(pl.vx);
-    const used = input.take('use');
+    const used = takeUse();
     const skip = G.mode === 'cutscene' && (used || input.take('jump') || sc.skip);
     sc.skip = false;
     sc.t += dt;
@@ -9639,7 +9718,7 @@ function startGame() {
     if (term.port && !carrying()) {
       return term.box ? 'The box has a canister port. You need the canister.' : `${esc(term.id)}: a dead terminal with a working canister port. You need the canister.`;
     }
-    if (G.dev.passiveTerminal) return `${esc(term.id)}: press the number under a gate, or <b>E</b> to step in.`;
+    if (G.dev.passiveTerminal) return `${esc(term.id)}: <b>Enter</b> applies the highlighted gate; <b>Q</b> and <b>E</b> move the highlight. Or press a gate's number, or click it.`;
     return `Press <b>E</b> to use ${term.port ? esc(term.id) : `terminal ${esc(term.id)}`}.`;
   }
 
@@ -9739,7 +9818,7 @@ function startGame() {
       return;
     }
     if (G.mode === 'terminal') {
-      if (input.take('use')) closeTerminal();
+      if (takeUse()) closeTerminal();
       input.take('pause'); // only E leaves a terminal
       for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.dev.passiveTerminal) applyOp(k - 1);
       // Platforms wait until you leave the terminal, except with the instant response developer
@@ -9755,7 +9834,7 @@ function startGame() {
     }
     if (G.mode === 'dialogue') {
       if (input.take('pause')) advanceDialogue(true);
-      else if (input.take('use') || input.take('jump')) advanceDialogue(false);
+      else if (takeUse() || input.take('jump')) advanceDialogue(false);
       updateTorch(dt);
       return;
     }
@@ -9781,10 +9860,6 @@ function startGame() {
       if (G.level.story) hintKey(); // H: the intercom
       else showHint();
     }
-    if (G.swallowUse) {
-      input.take('use'); // E closed the Professor's bubble: it does nothing else this time
-      G.swallowUse = false;
-    }
 
     let left = dt;
     while (left > 1e-6) {
@@ -9809,12 +9884,17 @@ function startGame() {
     const hit = findInteract();
     updatePassive(hit);
     for (let k = 1; k <= 9; k += 1) if (input.take(`op${k}`) && G.passive) applyOp(k - 1);
-    if (input.take('use') && hit) {
+    if (G.passive && !G.passive.quick) {
+      if (input.take('selLeft')) moveSelection(-1);
+      if (input.take('selRight') || input.take('use')) moveSelection(1);
+      if (input.take('apply') && !G.busy) applyOp(G.sel);
+    } else {
+      input.take('selLeft');
+      input.take('selRight');
+    }
+    if (takeUse() && hit) {
       if (hit.type === 'terminal' && hit.obj.quick) quickTerminal(hit.obj);
-      else if (hit.type === 'terminal') {
-        closePassive(); // with the passive terminal option, E steps in: arrow keys or numbers pick a gate
-        useTerminal(hit.obj);
-      }
+      else if (hit.type === 'terminal') useTerminal(hit.obj);
       else if (hit.type === 'npc') {
         const talk = (story().talk || {})[hit.obj.id];
         if (talk) talk(storyCtx(hit.obj));
@@ -9836,6 +9916,9 @@ function startGame() {
   for (const type of ['pointerdown', 'pointerup', 'click', 'touchend', 'keydown']) window.addEventListener(type, () => audio.unlock());
 
   dom.game.addEventListener('pointerdown', () => {
+    const box = G.intercom && G.intercom.closeRect;
+    const pt = input.pointer;
+    if (box && G.mode === 'play' && pt.x >= box.x && pt.x <= box.x + box.w && pt.y >= box.y && pt.y <= box.y + box.h) clearIntercom();
     if (G.mode === 'dialogue') advanceDialogue(false);
     else if (G.mode === 'cutscene' && G.scene) G.scene.skip = true;
   });

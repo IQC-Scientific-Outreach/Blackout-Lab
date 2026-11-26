@@ -6,7 +6,7 @@
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
 <!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-K6hZ0biZ+YhDF490e2Kmes7H8SR8qwkh4ORQFGIs5FE='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-5DYd6BgUNdif6RjwpY4BGD8M7Z2BOfcXrrD6jtP8Dw0='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
@@ -1249,6 +1249,8 @@ const BEAST = {
 //   story      true
 //   title      the level's name in block letters over the screen until the player first moves
 //   lit        the room starts with its lights on (no darkness until a blackout)
+//   flashlight { x, y }: the flashlight, lying on the floor (with torch: 'none'); walking over picks it up
+//   events     the Professor's answers to what happens: see the story level that uses them
 //   intercoms  { id, x, y, lines, auto?, zone?, then? }: a speaker box on the wall at x, over the surface
 //              at y. Near it, H calls the Professor, who says `lines`, one radio bubble each.
 //              auto: he speaks by himself the first time the player is in `zone` ([x0, x1] on that
@@ -1321,6 +1323,80 @@ const STORY_LEVELS = [
       'X flips a qubit with certainty: a lowered platform rises. SWAP exchanges two qubits, so the platforms trade places. A lock reads its lamps: set them to match the key and it opens.',
     hints: [],
     takeaway: 'X flipped a platform, SWAP traded two of them, and an X on the lock lamp set the key. Then the lights went out.',
+  },
+  {
+    // Started from floor 1 (Superposition): the same idea, with the flashlight found on the floor
+    // and the Professor on the intercoms.
+    id: 'story-superposition',
+    name: 'Superposition',
+    tag: 'Level 1',
+    title: ['LEVEL ONE', 'SUPERPOSITION'],
+    story: true,
+    torch: 'none', // until the player picks it up
+    gates: ['h'],
+    qubits: [
+      { id: 'A', init: '+', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'C', init: '1', role: 'platform' },
+    ],
+    spawn: { x: 20, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 170, h: 100 },
+      { kind: 'ground', x: 170, y: 530, w: 160, h: 10 }, // the only floor: under A, for another try
+      { kind: 'stand', x: 330, y: 340, w: 100, h: 14 },
+      { kind: 'stand', x: 600, y: 245, w: 100, h: 14 },
+      { kind: 'ground', x: 870, y: 215, w: 90, h: 325 },
+    ],
+    platforms: [
+      { q: 'A', x: 215, w: 80, y0: 505, y1: 395, need: 1 },
+      { q: 'B', x: 475, w: 80, y0: 405, y1: 290, need: 1 },
+      { q: 'C', x: 745, w: 80, y0: 265, y1: 130, need: 0 }, // raised, it is out of reach
+    ],
+    flashlight: { x: 85, y: 440 }, // lying on the floor in front of the player
+    terminals: [
+      { id: 'T1', x: 140, y: 440, ops: [{ gate: 'h', q: ['A'] }] },
+      { id: 'T2', x: 375, y: 340, ops: [{ gate: 'h', q: ['B'] }] },
+      { id: 'T3', x: 640, y: 245, ops: [{ gate: 'h', q: ['C'] }] },
+    ],
+    intercoms: [
+      {
+        id: 'I1',
+        x: 50,
+        y: 440,
+        auto: true,
+        zone: [0, 170],
+        lines: ['Uh-oh, these platforms are in a quantum superposition. Take the flashlight to measure them and collapse to one state or the other.'],
+      },
+      { id: 'I2', x: 410, y: 340, lines: ["There's no way to jump across in this state, and it seems we've misplaced the floor. Try putting it into a superposition with the terminal and using your flashlight!"] },
+      { id: 'I3', x: 680, y: 245, lines: ['This platform is too high. Do you think the Hadamard gate works on the higher state too?'] },
+    ],
+    // The Professor answers what happens: `on` 'flashlight' (picked up) or 'collapse' (qubit q
+    // measured, found `value`); he speaks through `from`, and `sets` becomes that intercom's message.
+    events: [
+      {
+        on: 'flashlight',
+        from: 'I1',
+        lines: ['Perfect! Press F to turn on the flashlight. That platform there is in a quantum superposition, by observing it with the flashlight, you can collapse the state.'],
+        sets: ['Perfect! Press F to turn on the flashlight. That platform there is in a quantum superposition, by observing it with the flashlight, you can collapse the state.'],
+      },
+      { on: 'collapse', q: 'A', value: 1, from: 'I1', lines: ['That was lucky!'] },
+      {
+        on: 'collapse',
+        q: 'A',
+        value: 0,
+        from: 'I1',
+        lines: ['Bad luck! Use the terminal to put it back into a superposition state and try again.'],
+        sets: ['Use the terminal to apply a Hadamard (H) gate. This operation puts the platform into a superposition of the higher and lower states. Then try your flashlight!'],
+      },
+    ],
+    door: { x: 925, y: 215, key: null, lock: [] },
+    decor: [{ type: 'sign', x: 862, y: 92, lines: ['STAIRS'] }],
+    shortest: 2,
+    goal: 'Cross the three platforms to the stairs.',
+    concept:
+      'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random. H works on a raised platform too.',
+    hints: [],
+    takeaway: 'H made each platform a 50/50 superposition, from lowered or from raised, and the flashlight made it pick one, at random: a measurement cannot be undone, only retried.',
   },
 ];
 
@@ -2714,6 +2790,14 @@ function createAudio() {
       tone(160, 0, 0.16, 'square', 0.05);
       tone(120, 0.18, 0.22, 'square', 0.05);
     },
+    // An item found: a quick rising fanfare (C E G, then a held high C).
+    success: () => {
+      tone(523, 0, 0.09, 'square', 0.04);
+      tone(659, 0.09, 0.09, 'square', 0.04);
+      tone(784, 0.18, 0.09, 'square', 0.04);
+      tone(1047, 0.27, 0.45, 'square', 0.045);
+      tone(1568, 0.27, 0.45, 'triangle', 0.025);
+    },
     unlock: () => {
       tone(523, 0, 0.12, 'triangle', 0.07);
       tone(659, 0.11, 0.12, 'triangle', 0.07);
@@ -3546,6 +3630,23 @@ function createRenderer(canvas) {
       ctx.fillRect(c.x + 7, c.y - 10, 2, 6);
       if (!c.carried) drawCanister(c.x, c.y - 4);
     }
+    const fl = G.room.flashlight;
+    if (fl && !fl.taken) {
+      // A flashlight lying on the floor, its lens glinting.
+      const bob = Math.sin(G.t * 3) * 1.5;
+      ctx.save();
+      ctx.translate(fl.x, fl.y - 6 + bob);
+      ctx.fillStyle = '#2b3550';
+      rr(ctx, -11, -4, 16, 8, 2);
+      ctx.fill();
+      ctx.fillStyle = '#55617a';
+      ctx.fillRect(-11, -4, 3, 8);
+      ctx.fillStyle = '#3a4762';
+      ctx.fillRect(5, -6, 6, 12);
+      ctx.fillStyle = C.torch;
+      ctx.fillRect(10, -5, 2, 10);
+      ctx.restore();
+    }
     const b = G.room.battery;
     if (b) {
       ctx.fillStyle = '#1b2740';
@@ -3792,6 +3893,8 @@ function createRenderer(canvas) {
     for (const n of room.npcs) hole(n.x, n.y - 20, 46, 0.55);
     for (const pt of room.portals) hole(pt.x, pt.y - 52, 60, 0.5);
     if (room.battery) hole(room.battery.x, room.battery.y - 36, 44, 0.5);
+    if (room.flashlight && !room.flashlight.taken) hole(room.flashlight.x, room.flashlight.y - 8, 40, 0.6);
+    for (const ic of room.intercoms || []) hole(ic.x, ic.y - 50, 26, 0.35);
     if (G.canister && !G.canister.carried && G.canister.roomId === room.id) hole(G.canister.x, G.canister.y - 12, 34, 0.5);
     for (const d of room.decor) {
       if (d.type === 'candle') hole(d.x, d.y - 30 + (d.drop || 0), (d.reach || 118) + (Math.sin(G.t * 11) * 4), 0.86);
@@ -5672,12 +5775,37 @@ function createRenderer(canvas) {
     drawLights(G);
     drawSwapArrows(G);
     drawIntercomGlow(G);
+    const fl = G.room.flashlight;
+    if (fl && !fl.taken) glow(fl.x + 11, fl.y - 6, 22 + Math.sin(G.t * 4) * 4, 'rgba(255,217,138,0.45)');
     drawBlackoutFx(G);
     drawFx(G);
     drawSpeech(G);
     drawRadio(G);
     ctx.restore();
     drawTitleCard(G);
+    drawBanner(G);
+  }
+
+  // A short announcement in block letters across the middle (FLASHLIGHT ACQUIRED!).
+  function drawBanner(G) {
+    const b = G.banner;
+    if (!b) return;
+    const k = b.t / b.dur;
+    const alpha = Math.min(1, b.t / 0.15, (1 - k) / 0.2);
+    const pop = 1 + 0.25 * Math.max(0, 1 - b.t / 0.2);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.translate(WORLD.w / 2, WORLD.h / 2 - 40);
+    ctx.scale(pop, pop);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 56px ${SIGN_FONT}`;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(7,11,20,0.9)';
+    ctx.strokeText(b.text, 0, 0);
+    ctx.fillStyle = C.torch;
+    ctx.fillText(b.text, 0, 0);
+    ctx.restore();
   }
 
   // -- story mode -----------------------------------------------------------------
@@ -7435,6 +7563,7 @@ function startGame() {
         npcs: (room.npcs || []).map((n) => ({ ...n, near: false })),
         portals: (room.portals || []).map((p) => ({ ...p, near: false })),
         battery: room.battery ? { ...room.battery, taken: false } : null,
+        flashlight: room.flashlight ? { ...room.flashlight, taken: false } : null,
         intercoms: (room.intercoms || []).map((i) => ({ ...i, heard: false, near: false })),
         door: null,
       };
@@ -7533,6 +7662,7 @@ function startGame() {
     }
     if (level.beast) startBeast(!carry); // a restart (R) skips the intro; a fall does not reload at all (respawn)
     G.titleCard = level.title || null;
+    G.banner = null;
     ui.setHintsShown(!level.story); // in story mode, hints come over the intercom
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
@@ -7541,7 +7671,14 @@ function startGame() {
 
   // `quiet`: a cavity's drive, every frame; the rack is then redrawn ten times a second.
   function applySnapshot(snap, quiet) {
+    const prev = G.q;
     G.q = snap;
+    // New measurements, for the Professor to answer (story mode).
+    if (G.level && G.level.events && prev && snap.ops.length > prev.ops.length) {
+      for (const op of snap.ops.slice(prev.ops.length)) {
+        if (op.kind === 'measure') storyEvent('collapse', { q: snap.labels[op.qubits[0]], value: op.result });
+      }
+    }
     for (const p of G.platforms) {
       const now = snap.definite[p.qi];
       p.p1 = snap.p1[p.qi];
@@ -8205,6 +8342,18 @@ function startGame() {
       say(`You picked up the canister. It holds the sealed qubit ${c.q}.`, 'info', LONG_TOAST);
       if (story().onCanister) story().onCanister(storyCtx(null));
     }
+    const fl = G.room.flashlight;
+    if (fl && !fl.taken && Math.abs(cx - fl.x) < 18 && Math.abs(feet - fl.y) < 8) {
+      fl.taken = true;
+      G.torch.battery = 'ok';
+      G.torch.on = false; // Switch mode: F turns it on
+      audio.play('success');
+      G.banner = { text: 'FLASHLIGHT ACQUIRED!', t: 0, dur: 2.2 };
+      panel.log('Flashlight acquired. F shines it.', 'good');
+      ui.announce('Flashlight acquired! Press F to shine it.');
+      updateHud();
+      storyEvent('flashlight');
+    }
     const b = G.room.battery;
     if (!b || b.taken) return;
     if (b.diesOnArrival && G.torch.battery === 'low' && pl.onGround && Math.abs(feet - b.y) < 2) {
@@ -8565,6 +8714,19 @@ function startGame() {
     sayIntercom();
   }
 
+  // Something happened that the Professor answers (a story level's `events`): he cuts in through
+  // the event's intercom, and `sets` becomes what that intercom says from then on.
+  function storyEvent(on, what = {}) {
+    for (const ev of G.level.events || []) {
+      if (ev.on !== on || (ev.q !== undefined && (ev.q !== what.q || ev.value !== what.value))) continue;
+      const box = G.room.intercoms.find((i) => i.id === ev.from);
+      if (!box) continue;
+      if (ev.sets) box.lines = ev.sets;
+      G.intercom = null;
+      speak(box, ev.lines);
+    }
+  }
+
   function clearIntercom() {
     const ic = G.intercom;
     if (!ic) return;
@@ -8584,6 +8746,7 @@ function startGame() {
 
   function updateIntercoms(dt) {
     const room = G.room;
+    if (G.banner && (G.banner.t += dt) > G.banner.dur) G.banner = null;
     const ic = G.intercom;
     if (ic) {
       ic.t += dt;

@@ -288,7 +288,10 @@ async function main() {
   const offered = await page.$$eval('#title-floors:not([hidden]) button:not(.bonus)', nameOf);
   const bonusOffered = await page.$$eval('#title-floors:not([hidden]) button.bonus:not(.story)', nameOf);
   // Each level shows its stars (none earned yet) and the title shows the total.
-  const shown = await page.$$eval('#title-floors button', (els) => els.map((el) => { const all = el.querySelector('.floor-stars'); const off = all.querySelector('.off'); return all.textContent.length > 0 && !!off && off.textContent.length === all.textContent.length; }));
+  // A locked story level shows a lock instead (it opens once the level before it is cleared).
+  const locked = await page.$$eval('#title-floors button.locked', (els) => els.map((el) => [el.dataset.floor, el.disabled, !!el.querySelector('.floor-lock')]));
+  if (JSON.stringify(locked) !== JSON.stringify([['16', true, true]])) throw new Error(`only story level 1 should start locked, showing a lock: ${JSON.stringify(locked)}`);
+  const shown = await page.$$eval('#title-floors button:not(.locked)', (els) => els.map((el) => { const all = el.querySelector('.floor-stars'); const off = all.querySelector('.off'); return all.textContent.length > 0 && !!off && off.textContent.length === all.textContent.length; }));
   if (!shown.length || !shown.every(Boolean)) throw new Error('every level should show its stars, all blank to start');
   if (!/^★ 0 of \d+ stars$/.test((await page.textContent('#star-total')).trim())) throw new Error(`the title should show the star total: ${await page.textContent('#star-total')}`);
   if (!bonusOffered.length || !bonusOffered[0].startsWith('Bonus 1.') || bonusOffered[bonusOffered.length - 1] !== 'Bonus 7. The Beast on the Roof') {
@@ -1754,6 +1757,90 @@ async function main() {
   const lobbyStars = await page.getAttribute('#complete-stars', 'aria-label');
   if (lobbyStars !== '3 of 3 stars') throw new Error(`a clean lobby run earns every star: ${lobbyStars}`);
   report.push(`story level 0: ${lobbyStars}`);
+
+  // Story mode, Level 1: Superposition. "Next level" from the lobby. The flashlight lies on the
+  // floor; the Professor answers each look at A (lucky or not); T2's and T3's intercoms speak only
+  // when called. Each platform is retried with H and the flashlight until it lands where needed.
+  if ((await page.textContent('#btn-next')).trim() !== 'Next level') throw new Error('the lobby should lead on to the next story level');
+  await page.click('#btn-next');
+  await page.waitForFunction(() => window.blackoutLab.state.mode === 'play' && window.blackoutLab.state.levelIndex === 16);
+  await step('story level 1', async () => {
+    const g = bot.G();
+    const pl = g.player;
+    const out = [];
+    const said = () => (g.intercom ? g.intercom.lines[g.intercom.index] : '');
+    await new Promise((r) => setTimeout(r, 400));
+    if (!g.titleCard || g.torch.battery !== 'none') throw new Error('Level 1 opens on its title card, with no flashlight yet');
+    bot.key('ArrowRight', true);
+    await bot.until(() => !g.titleCard, 1000, 'the title card to go');
+    bot.key('ArrowRight', false);
+    await bot.until(() => /^Uh-oh, these platforms are in a quantum superposition/.test(said()), 2000, 'the Professor on entry');
+    const fl = g.room.flashlight;
+    await bot.walkTo(fl.x);
+    await bot.until(() => fl.taken, 2000, 'the flashlight');
+    if (g.torch.battery !== 'ok' || !g.banner || g.banner.text !== 'FLASHLIGHT ACQUIRED!') throw new Error('picking up the flashlight should fit it and say so');
+    if (!/^Perfect! Press F to turn on the flashlight/.test(said())) throw new Error(`the Professor should explain F: "${said()}"`);
+    out.push('the flashlight on the floor was picked up (FLASHLIGHT ACQUIRED!), and the Professor explained F');
+    // A starts in superposition: look at it until it is raised; H at T1 between tries.
+    let looks = 0;
+    let unlucky = false;
+    while (looks < 12) {
+      await bot.walkTo(g.room.terminals[0].x);
+      const got = await bot.observe('A');
+      looks += 1;
+      await bot.until(() => said(), 1000, 'the Professor to answer the look');
+      if (got === 1) {
+        if (said() !== 'That was lucky!') throw new Error(`a raised A should be "That was lucky!": "${said()}"`);
+        break;
+      }
+      if (!/^Bad luck! Use the terminal/.test(said())) throw new Error(`a lowered A should be bad luck: "${said()}"`);
+      unlucky = true;
+      if (!/^Use the terminal to apply a Hadamard/.test(g.room.intercoms[0].lines[0])) throw new Error('after bad luck, the first intercom should explain H');
+      await bot.terminal('T1', [1]);
+      if (g.intercom) throw new Error('using T1 should clear the bubble');
+    }
+    const A = bot.platform('A');
+    if (A.state !== 1) throw new Error('A never came up raised');
+    out.push(`A came up raised after ${looks} look${looks === 1 ? '' : 's'}${unlucky ? ' (the Professor said "Bad luck!" and explained H first)' : ''}, "That was lucky!"`);
+    await bot.tap('KeyX');
+    const [stand2, stand3] = [g.room.solids[2], g.room.solids[3]];
+    await bot.hop(bot.slab('A'));
+    await bot.hop(stand2);
+    // T2's intercom only speaks when called.
+    const I2 = g.room.intercoms[1];
+    await bot.walkTo(I2.x);
+    if (g.intercom) throw new Error('the intercom by T2 should not speak by itself');
+    await bot.tap('KeyH');
+    if (!/^There's no way to jump across/.test(said())) throw new Error(`H at T2's intercom: "${said()}"`);
+    const retry = async (term, q, want) => {
+      let n = 0;
+      while (bot.platform(q).state !== want && n < 12) {
+        await bot.terminal(term, [1]);
+        await bot.observe(q);
+        n += 1;
+      }
+      if (bot.platform(q).state !== want) throw new Error(`${q} never came to ${want}`);
+      await bot.tap('KeyX');
+      return n;
+    };
+    const nB = await retry('T2', 'B', 1);
+    await bot.hop(bot.slab('B'));
+    await bot.hop(stand3);
+    const I3 = g.room.intercoms[2];
+    await bot.walkTo(I3.x);
+    if (g.intercom) throw new Error('the intercom by T3 should not speak by itself');
+    await bot.tap('KeyH');
+    if (said() !== 'This platform is too high. Do you think the Hadamard gate works on the higher state too?') throw new Error(`H at T3's intercom: "${said()}"`);
+    const nC = await retry('T3', 'C', 0);
+    await bot.hop(bot.slab('C'));
+    await bot.hop(g.room.solids[4]);
+    await bot.exit();
+    out.push(`B raised after ${nB} H${nB === 1 ? '' : 's'}, C lowered (from raised) after ${nC}; the intercoms by T2 and T3 answered H; out up the stairs`);
+    return `story level 1: ${out.join('; ')}`;
+  });
+  const oneStars = await page.getAttribute('#complete-stars', 'aria-label');
+  if (oneStars !== '2 of 2 stars') throw new Error(`a clean run of story level 1 earns both stars: ${oneStars}`);
+  report.push(`story level 1: ${oneStars}`);
 
   // Options: Automatic Hints (off by default) and the unlock code.
   await page.click('#btn-menu');

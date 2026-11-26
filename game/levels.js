@@ -536,6 +536,8 @@ export const BEAST = {
 //   story      true
 //   title      the level's name in block letters over the screen until the player first moves
 //   lit        the room starts with its lights on (no darkness until a blackout)
+//   flashlight { x, y }: the flashlight, lying on the floor (with torch: 'none'); walking over picks it up
+//   events     the Professor's answers to what happens: see the story level that uses them
 //   intercoms  { id, x, y, lines, auto?, zone?, then? }: a speaker box on the wall at x, over the surface
 //              at y. Near it, H calls the Professor, who says `lines`, one radio bubble each.
 //              auto: he speaks by himself the first time the player is in `zone` ([x0, x1] on that
@@ -608,6 +610,80 @@ export const STORY_LEVELS = [
       'X flips a qubit with certainty: a lowered platform rises. SWAP exchanges two qubits, so the platforms trade places. A lock reads its lamps: set them to match the key and it opens.',
     hints: [],
     takeaway: 'X flipped a platform, SWAP traded two of them, and an X on the lock lamp set the key. Then the lights went out.',
+  },
+  {
+    // Started from floor 1 (Superposition): the same idea, with the flashlight found on the floor
+    // and the Professor on the intercoms.
+    id: 'story-superposition',
+    name: 'Superposition',
+    tag: 'Level 1',
+    title: ['LEVEL ONE', 'SUPERPOSITION'],
+    story: true,
+    torch: 'none', // until the player picks it up
+    gates: ['h'],
+    qubits: [
+      { id: 'A', init: '+', role: 'platform' },
+      { id: 'B', init: '0', role: 'platform' },
+      { id: 'C', init: '1', role: 'platform' },
+    ],
+    spawn: { x: 20, y: 440 },
+    solids: [
+      { kind: 'ground', x: 0, y: 440, w: 170, h: 100 },
+      { kind: 'ground', x: 170, y: 530, w: 160, h: 10 }, // the only floor: under A, for another try
+      { kind: 'stand', x: 330, y: 340, w: 100, h: 14 },
+      { kind: 'stand', x: 600, y: 245, w: 100, h: 14 },
+      { kind: 'ground', x: 870, y: 215, w: 90, h: 325 },
+    ],
+    platforms: [
+      { q: 'A', x: 215, w: 80, y0: 505, y1: 395, need: 1 },
+      { q: 'B', x: 475, w: 80, y0: 405, y1: 290, need: 1 },
+      { q: 'C', x: 745, w: 80, y0: 265, y1: 130, need: 0 }, // raised, it is out of reach
+    ],
+    flashlight: { x: 85, y: 440 }, // lying on the floor in front of the player
+    terminals: [
+      { id: 'T1', x: 140, y: 440, ops: [{ gate: 'h', q: ['A'] }] },
+      { id: 'T2', x: 375, y: 340, ops: [{ gate: 'h', q: ['B'] }] },
+      { id: 'T3', x: 640, y: 245, ops: [{ gate: 'h', q: ['C'] }] },
+    ],
+    intercoms: [
+      {
+        id: 'I1',
+        x: 50,
+        y: 440,
+        auto: true,
+        zone: [0, 170],
+        lines: ['Uh-oh, these platforms are in a quantum superposition. Take the flashlight to measure them and collapse to one state or the other.'],
+      },
+      { id: 'I2', x: 410, y: 340, lines: ["There's no way to jump across in this state, and it seems we've misplaced the floor. Try putting it into a superposition with the terminal and using your flashlight!"] },
+      { id: 'I3', x: 680, y: 245, lines: ['This platform is too high. Do you think the Hadamard gate works on the higher state too?'] },
+    ],
+    // The Professor answers what happens: `on` 'flashlight' (picked up) or 'collapse' (qubit q
+    // measured, found `value`); he speaks through `from`, and `sets` becomes that intercom's message.
+    events: [
+      {
+        on: 'flashlight',
+        from: 'I1',
+        lines: ['Perfect! Press F to turn on the flashlight. That platform there is in a quantum superposition, by observing it with the flashlight, you can collapse the state.'],
+        sets: ['Perfect! Press F to turn on the flashlight. That platform there is in a quantum superposition, by observing it with the flashlight, you can collapse the state.'],
+      },
+      { on: 'collapse', q: 'A', value: 1, from: 'I1', lines: ['That was lucky!'] },
+      {
+        on: 'collapse',
+        q: 'A',
+        value: 0,
+        from: 'I1',
+        lines: ['Bad luck! Use the terminal to put it back into a superposition state and try again.'],
+        sets: ['Use the terminal to apply a Hadamard (H) gate. This operation puts the platform into a superposition of the higher and lower states. Then try your flashlight!'],
+      },
+    ],
+    door: { x: 925, y: 215, key: null, lock: [] },
+    decor: [{ type: 'sign', x: 862, y: 92, lines: ['STAIRS'] }],
+    shortest: 2,
+    goal: 'Cross the three platforms to the stairs.',
+    concept:
+      'Superposition. H (Hadamard) puts a qubit into an equal mix of state 0 and state 1, so the platform is lowered and raised at once: the dotted outlines. Light is a measurement. Your flashlight forces it to pick one, at random. H works on a raised platform too.',
+    hints: [],
+    takeaway: 'H made each platform a 50/50 superposition, from lowered or from raised, and the flashlight made it pick one, at random: a measurement cannot be undone, only retried.',
   },
 ];
 

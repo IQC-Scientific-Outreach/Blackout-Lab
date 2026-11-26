@@ -534,6 +534,7 @@ export function startGame() {
         npcs: (room.npcs || []).map((n) => ({ ...n, near: false })),
         portals: (room.portals || []).map((p) => ({ ...p, near: false })),
         battery: room.battery ? { ...room.battery, taken: false } : null,
+        flashlight: room.flashlight ? { ...room.flashlight, taken: false } : null,
         intercoms: (room.intercoms || []).map((i) => ({ ...i, heard: false, near: false })),
         door: null,
       };
@@ -632,6 +633,7 @@ export function startGame() {
     }
     if (level.beast) startBeast(!carry); // a restart (R) skips the intro; a fall does not reload at all (respawn)
     G.titleCard = level.title || null;
+    G.banner = null;
     ui.setHintsShown(!level.story); // in story mode, hints come over the intercom
     // The opening line is said every time the floor starts, restarts and falls included.
     for (const line of story().intro || []) remark(line, story().introHold);
@@ -640,7 +642,14 @@ export function startGame() {
 
   // `quiet`: a cavity's drive, every frame; the rack is then redrawn ten times a second.
   function applySnapshot(snap, quiet) {
+    const prev = G.q;
     G.q = snap;
+    // New measurements, for the Professor to answer (story mode).
+    if (G.level && G.level.events && prev && snap.ops.length > prev.ops.length) {
+      for (const op of snap.ops.slice(prev.ops.length)) {
+        if (op.kind === 'measure') storyEvent('collapse', { q: snap.labels[op.qubits[0]], value: op.result });
+      }
+    }
     for (const p of G.platforms) {
       const now = snap.definite[p.qi];
       p.p1 = snap.p1[p.qi];
@@ -1304,6 +1313,18 @@ export function startGame() {
       say(`You picked up the canister. It holds the sealed qubit ${c.q}.`, 'info', LONG_TOAST);
       if (story().onCanister) story().onCanister(storyCtx(null));
     }
+    const fl = G.room.flashlight;
+    if (fl && !fl.taken && Math.abs(cx - fl.x) < 18 && Math.abs(feet - fl.y) < 8) {
+      fl.taken = true;
+      G.torch.battery = 'ok';
+      G.torch.on = false; // Switch mode: F turns it on
+      audio.play('success');
+      G.banner = { text: 'FLASHLIGHT ACQUIRED!', t: 0, dur: 2.2 };
+      panel.log('Flashlight acquired. F shines it.', 'good');
+      ui.announce('Flashlight acquired! Press F to shine it.');
+      updateHud();
+      storyEvent('flashlight');
+    }
     const b = G.room.battery;
     if (!b || b.taken) return;
     if (b.diesOnArrival && G.torch.battery === 'low' && pl.onGround && Math.abs(feet - b.y) < 2) {
@@ -1664,6 +1685,19 @@ export function startGame() {
     sayIntercom();
   }
 
+  // Something happened that the Professor answers (a story level's `events`): he cuts in through
+  // the event's intercom, and `sets` becomes what that intercom says from then on.
+  function storyEvent(on, what = {}) {
+    for (const ev of G.level.events || []) {
+      if (ev.on !== on || (ev.q !== undefined && (ev.q !== what.q || ev.value !== what.value))) continue;
+      const box = G.room.intercoms.find((i) => i.id === ev.from);
+      if (!box) continue;
+      if (ev.sets) box.lines = ev.sets;
+      G.intercom = null;
+      speak(box, ev.lines);
+    }
+  }
+
   function clearIntercom() {
     const ic = G.intercom;
     if (!ic) return;
@@ -1683,6 +1717,7 @@ export function startGame() {
 
   function updateIntercoms(dt) {
     const room = G.room;
+    if (G.banner && (G.banner.t += dt) > G.banner.dur) G.banner = null;
     const ic = G.intercom;
     if (ic) {
       ic.t += dt;

@@ -657,6 +657,23 @@ export function createRenderer(canvas) {
       ctx.fillRect(c.x + 7, c.y - 10, 2, 6);
       if (!c.carried) drawCanister(c.x, c.y - 4);
     }
+    const fl = G.room.flashlight;
+    if (fl && !fl.taken) {
+      // A flashlight lying on the floor, its lens glinting.
+      const bob = Math.sin(G.t * 3) * 1.5;
+      ctx.save();
+      ctx.translate(fl.x, fl.y - 6 + bob);
+      ctx.fillStyle = '#2b3550';
+      rr(ctx, -11, -4, 16, 8, 2);
+      ctx.fill();
+      ctx.fillStyle = '#55617a';
+      ctx.fillRect(-11, -4, 3, 8);
+      ctx.fillStyle = '#3a4762';
+      ctx.fillRect(5, -6, 6, 12);
+      ctx.fillStyle = C.torch;
+      ctx.fillRect(10, -5, 2, 10);
+      ctx.restore();
+    }
     const b = G.room.battery;
     if (b) {
       ctx.fillStyle = '#1b2740';
@@ -903,6 +920,8 @@ export function createRenderer(canvas) {
     for (const n of room.npcs) hole(n.x, n.y - 20, 46, 0.55);
     for (const pt of room.portals) hole(pt.x, pt.y - 52, 60, 0.5);
     if (room.battery) hole(room.battery.x, room.battery.y - 36, 44, 0.5);
+    if (room.flashlight && !room.flashlight.taken) hole(room.flashlight.x, room.flashlight.y - 8, 40, 0.6);
+    for (const ic of room.intercoms || []) hole(ic.x, ic.y - 50, 26, 0.35);
     if (G.canister && !G.canister.carried && G.canister.roomId === room.id) hole(G.canister.x, G.canister.y - 12, 34, 0.5);
     for (const d of room.decor) {
       if (d.type === 'candle') hole(d.x, d.y - 30 + (d.drop || 0), (d.reach || 118) + (Math.sin(G.t * 11) * 4), 0.86);
@@ -2783,12 +2802,37 @@ export function createRenderer(canvas) {
     drawLights(G);
     drawSwapArrows(G);
     drawIntercomGlow(G);
+    const fl = G.room.flashlight;
+    if (fl && !fl.taken) glow(fl.x + 11, fl.y - 6, 22 + Math.sin(G.t * 4) * 4, 'rgba(255,217,138,0.45)');
     drawBlackoutFx(G);
     drawFx(G);
     drawSpeech(G);
     drawRadio(G);
     ctx.restore();
     drawTitleCard(G);
+    drawBanner(G);
+  }
+
+  // A short announcement in block letters across the middle (FLASHLIGHT ACQUIRED!).
+  function drawBanner(G) {
+    const b = G.banner;
+    if (!b) return;
+    const k = b.t / b.dur;
+    const alpha = Math.min(1, b.t / 0.15, (1 - k) / 0.2);
+    const pop = 1 + 0.25 * Math.max(0, 1 - b.t / 0.2);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.translate(WORLD.w / 2, WORLD.h / 2 - 40);
+    ctx.scale(pop, pop);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 56px ${SIGN_FONT}`;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(7,11,20,0.9)';
+    ctx.strokeText(b.text, 0, 0);
+    ctx.fillStyle = C.torch;
+    ctx.fillText(b.text, 0, 0);
+    ctx.restore();
   }
 
   // -- story mode -----------------------------------------------------------------

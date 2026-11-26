@@ -88,6 +88,14 @@ export function createAudio() {
       tone(160, 0, 0.16, 'square', 0.05);
       tone(120, 0.18, 0.22, 'square', 0.05);
     },
+    // An item found: a quick rising fanfare (C E G, then a held high C).
+    success: () => {
+      tone(523, 0, 0.09, 'square', 0.04);
+      tone(659, 0.09, 0.09, 'square', 0.04);
+      tone(784, 0.18, 0.09, 'square', 0.04);
+      tone(1047, 0.27, 0.45, 'square', 0.045);
+      tone(1568, 0.27, 0.45, 'triangle', 0.025);
+    },
     unlock: () => {
       tone(523, 0, 0.12, 'triangle', 0.07);
       tone(659, 0.11, 0.12, 'triangle', 0.07);

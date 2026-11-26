@@ -127,11 +127,13 @@ Story mode is listed under its own heading in "Skip to floor", after the bonus l
 
 - **Title card.** Each story level opens with its name in block letters. The card goes, and the clock starts, as soon as the player moves.
 - **Intercoms.** These are speaker boxes on the wall. In front of one, an H shows above it; press H to call the Professor. His answer appears as a radio bubble with a lightning-bolt tail to the speaker, in the terminals' blue, and goes into the log. Walking, jumping, gates and the flashlight all keep working while the bubble is up. H, E, X or Enter clears it, and so do using a terminal, walking into the bubble, and clicking its ✕. Time spent on the Professor's messages does not count towards the level's time. A few intercoms speak by themselves, the first time the player reaches them; with **Automatic Hints** (Options, off by default) every intercom does.
-- **Unlock Code.** Under Options, a code unlocks every level.
+- **Unlock Code.** Under Options, a code unlocks every level. Otherwise each story level opens once the one before it is cleared.
+- **The Professor answers events** (a level's `events`): picking up the flashlight, or a qubit measured to a given value, makes him cut in through an intercom, and can change what that intercom says when called.
 
 | Story level | What happens | What it teaches |
 | --- | --- | --- |
 | 0 The Lobby | A bright lobby; the player has no flashlight yet. X at T1 raises a platform (with the floor underneath). SWAP at T2 carries the player across on a moving platform to the stair landing. X at T3 sets the lock to the key, 1. The stair door opens at once, and the building shakes, cables spark and fall, and the lights go out. | X flips a qubit with certainty; SWAP exchanges two qubits; a lock reads its lamps. |
+| 1 Superposition | Built from floor 1, in the dark. The flashlight lies on the floor in front of the player (FLASHLIGHT ACQUIRED!). A starts in superposition, with the only floor under it; the Professor answers each look at it ("That was lucky!" or "Bad luck!", then a hint about H). B starts lowered: H at T2, then look. C starts raised, out of reach: H at T3 works from raised too, then look until it is lowered. The intercoms by T2 and T3 speak only when called. | Superposition and measurement: H makes a 50/50 superposition from either state, and a look picks one at random. |
 
 ## Where the quantum computing is
 

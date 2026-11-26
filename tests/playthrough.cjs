@@ -1710,7 +1710,13 @@ async function main() {
       bot.key('ArrowLeft', false);
       if (Math.abs(pl.y + 32 - s.y) > 2) throw new Error(`missed the jump to y ${s.y}: landed at ${pl.y + 32}`);
     };
+    // At T1 the Professor moves on to how to use it; applying the gate clears him.
+    const T1 = g.room.terminals.find((t) => t.id === 'T1');
+    await bot.walkTo(T1.x);
+    await bot.until(() => g.intercom && /flip the platform's state with an X gate/.test(g.intercom.lines[g.intercom.index]), 2000, 'the message at T1');
     await bot.terminal('T1', [1]);
+    if (g.intercom) throw new Error('applying the gate should clear the message');
+    out.push('at T1 the Professor explained the X gate, and applying it cleared him');
     const A = bot.platform('A');
     await bot.until(() => A.state === 1 && Math.abs(A.y - A.y1) < 1, 4000, 'A to rise');
     await jumpTo(A, 300);

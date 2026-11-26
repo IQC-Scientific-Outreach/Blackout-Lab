@@ -536,13 +536,15 @@ export const BEAST = {
 //   story      true
 //   title      the level's name in block letters over the screen until the player first moves
 //   lit        the room starts with its lights on (no darkness until a blackout)
-//   intercoms  { id, x, y, lines, auto?, zone? }: a speaker box on the wall at x, over the surface
+//   intercoms  { id, x, y, lines, auto?, zone?, then? }: a speaker box on the wall at x, over the surface
 //              at y. Near it, H calls the Professor, who says `lines`, one radio bubble each.
 //              auto: he speaks by himself the first time the player is in `zone` ([x0, x1] on that
 //              surface; within 60 px of the box if not given). With Automatic Hints on (Options),
-//              every intercom does that.
-//   blackout   { from, lines }: when the exit unlocks, the building shakes, cables fall, the lights
-//              go out, and intercom `from` says `lines`; the exit opens once he has finished.
+//              every intercom does that. then: { at, lines }: when the player first stands at
+//              terminal `at`, he says `lines` instead (cutting off what he was saying), and from
+//              then on that is what this intercom says.
+//   blackout   { from, lines }: when the exit unlocks (it opens at once), the building shakes,
+//              cables fall, the lights go out, and intercom `from` says `lines`.
 export const STORY_LEVELS = [
   {
     id: 'lobby',
@@ -584,6 +586,8 @@ export const STORY_LEVELS = [
         auto: true,
         zone: [0, 300],
         lines: ["Thank heavens you're here! We're almost ready for the experiment, please make your way to the stairs. You'll need to use the terminals to flip some platforms to get here."],
+        // At T1, the Professor moves on to how to use it (and H at this box says so from then on).
+        then: { at: 'T1', lines: ["Use the terminal to flip the platform's state with an X gate. Stand in front of it and press 1 or Enter to apply the gate."] },
       },
       { id: 'I2', x: 720, y: 300, auto: true, zone: [455, 960], lines: ['Oh dear, that is a long jump. Try swapping these two platforms and jumping on while they move.'] },
       { id: 'I3', x: 120, y: 170, auto: true, zone: [0, 260], lines: ['Looks like it is locked, perhaps if you use the terminal to change the code to "1" it will open?'] },

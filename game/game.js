@@ -1692,6 +1692,15 @@ export function startGame() {
       if (r && pl.x < r.x + r.w && pl.x + PLAYER.w > r.x && pl.y < r.y + r.h && pl.y + PLAYER.h > r.y) clearIntercom();
     }
     if (!room.intercoms.length) return;
+    // An intercom's next message, when the player reaches the terminal it is about: it replaces
+    // whatever the Professor is saying, and becomes what that intercom says from then on.
+    for (const i of room.intercoms) {
+      if (!i.then || i.thenSaid || !G.passive || G.passive.id !== i.then.at) continue;
+      i.thenSaid = true;
+      i.lines = i.then.lines;
+      G.intercom = null;
+      speak(i, i.lines);
+    }
     const near = intercomNear();
     for (const i of room.intercoms) i.near = i === near;
     const pl = G.player;

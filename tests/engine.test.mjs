@@ -279,3 +279,136 @@ test('auto gates re-prepare a key after a refused one', () => {
   assert.deepEqual(out.state.groups, [[0, 1]]);
   assert.equal(out.state.stats.gates, 0);
 });
+
+test('identity does nothing, and is listed as qc.id', () => {
+  const q = lab(['+']);
+  q.apply('i', [0]);
+  close(q.snapshot().p1[0], 0.5);
+  assert.equal(q.snapshot().bloch[0][0], 1);
+  assert.match(q.code(), /qc\.id\(0\)/);
+});
+
+test('an emergency light damps a qubit to 0, even a certain 1, and says so', () => {
+  const q = lab(['1', '+'], 3);
+  q.reset(0, 'emergency');
+  q.reset(1, 'emergency');
+  assert.deepEqual(q.snapshot().definite, [0, 0]);
+  assert.equal(q.snapshot().ops[0].by, 'emergency');
+  assert.match(q.code(), /emergency light: A damped to 0/);
+});
+
+test('CZ flips the phase of |11> only, either way round', () => {
+  // On |+>|1>, CZ turns the + into a -: H then shows it as a certain 1.
+  const q = lab(['+', '1']);
+  q.apply('cz', [0, 1]);
+  q.apply('h', [0]);
+  assert.deepEqual(q.snapshot().definite, [1, 1]);
+  const r = lab(['1', '+']);
+  r.apply('cz', [1, 0]);
+  r.apply('h', [1]);
+  assert.deepEqual(r.snapshot().definite, [1, 1]);
+  // With the other qubit at 0, nothing happens.
+  const s = lab(['+', '0']);
+  s.apply('cz', [0, 1]);
+  s.apply('h', [0]);
+  assert.deepEqual(s.snapshot().definite, [0, 0]);
+  assert.match(q.code(), /qc\.cz\(0, 1\)/);
+});
+
+test('bonus level 3, stage 2: A ends 0 and B ends 1 with H, Z on A, H on B and CZ', () => {
+  const q = lab(['0', '0']);
+  for (const [g, w] of [['h', 0], ['z', 0], ['h', 0], ['h', 1], ['cz', 0], ['h', 1], ['h', 0], ['z', 0], ['h', 0]]) q.apply(g, g === 'cz' ? [0, 1] : [w]);
+  assert.deepEqual(q.snapshot().definite, [0, 1]);
+});
+
+test('bonus level 1: the loop H, CNOT, CNOT, H never makes B a certain 1; after A reads 1 it does', () => {
+  const loop = [['h', [0]], ['cx', [0, 1]], ['cx', [0, 1]], ['h', [0]]];
+  const q = lab(['0', '0']);
+  for (let k = 0; k < 12; k += 1) {
+    const [g, w] = loop[k % 4];
+    q.apply(g, w);
+    assert.notEqual(q.snapshot().definite[1], 1, 'unwatched, B is never a certain 1');
+  }
+  assert.deepEqual(q.snapshot().definite, [0, 0], 'and every four steps it is back where it began');
+  // Look at A after the first H and find 1: from then on, A is 1 for three steps in four and B for one.
+  let r;
+  for (let seed = 1; !r || r.snapshot().definite[0] !== 1; seed += 1) {
+    r = lab(['0', '0'], seed);
+    r.apply('h', [0]);
+    r.measure(0, true);
+  }
+  const seen = [];
+  for (let k = 1; k < 9; k += 1) {
+    const [g, w] = loop[k % 4];
+    r.apply(g, w);
+    seen.push(r.snapshot().definite.map((d) => (d === null ? '?' : d)).join(''));
+  }
+  assert.deepEqual(seen, ['11', '10', '?0', '10', '11', '10', '?0', '10']);
+});
+
+test('bonus level 2: X, SWAP A B, X, SWAP B C, SWAP A B turns 000 into 011', () => {
+  const q = lab(['0', '0', '0']);
+  for (const [g, w] of [['x', [0]], ['swap', [0, 1]], ['x', [0]], ['swap', [1, 2]], ['swap', [0, 1]]]) q.apply(g, w);
+  assert.deepEqual(q.snapshot().definite, [0, 1, 1]);
+});
+
+test('Ry turns 0 into +, then 1, then -, then back', () => {
+  const q = lab(['0']);
+  q.apply('ry', [0], Math.PI / 2);
+  close(q.snapshot().p1[0], 0.5);
+  close(q.snapshot().bloch[0][0], 1, 'the + side of the Bloch sphere');
+  q.apply('ry', [0], Math.PI / 2);
+  assert.deepEqual(q.snapshot().definite, [1]);
+  q.apply('ry', [0], Math.PI / 2);
+  close(q.snapshot().bloch[0][0], -1, 'the - side');
+  q.apply('ry', [0], Math.PI / 2);
+  assert.deepEqual(q.snapshot().definite, [0]);
+  assert.throws(() => q.apply('ry', [0]), /needs an angle/);
+  assert.match(q.code(), /qc\.ry\(1\.570796, 0\)/);
+});
+
+test('a cavity drive is one growing circuit entry per stretch, cut by anything else on that qubit', () => {
+  const q = lab(['0', '0'], 2);
+  for (let k = 0; k < 30; k += 1) q.drive(0, Math.PI / 30);
+  q.apply('h', [1]); // other qubits do not cut the stretch
+  for (let k = 0; k < 30; k += 1) q.drive(0, Math.PI / 30);
+  let ops = q.snapshot().ops;
+  assert.equal(ops.filter((op) => op.kind === 'drive').length, 1);
+  close(ops[0].angle, 2 * Math.PI);
+  assert.deepEqual([q.snapshot().definite[0]], [0], 'a full Rabi cycle returns to 0');
+  q.measure(0, true, 'torch');
+  q.drive(0, 0.1);
+  ops = q.snapshot().ops;
+  assert.equal(ops.filter((op) => op.kind === 'drive').length, 2, 'a measurement starts a new stretch');
+  assert.match(q.code(), /qc\.ry\(6\.283185, 0\) {2}# cavity drive on A/);
+});
+
+test('SWAP exchanges two qubits\' states, superpositions and phases included', () => {
+  const q = lab(['-', '0', '1']);
+  q.apply('swap', [0, 1]);
+  const snap = q.snapshot();
+  assert.deepEqual(snap.definite, [0, null, 1]);
+  close(snap.bloch[1][0], -1, 'the - moved to B');
+  assert.match(q.code(), /qc\.swap\(0, 1\)/);
+  // H, SWAP, Z on the other qubit, SWAP back, H: an X, as in bonus levels 1 and 2.
+  const r = lab(['0', '0']);
+  for (const [g, w] of [['h', [0]], ['swap', [0, 1]], ['z', [1]], ['swap', [0, 1]], ['h', [0]]]) r.apply(g, w);
+  assert.deepEqual(r.snapshot().definite, [1, 0]);
+});
+
+test('bonus level 7: RY(pi/8) turns monster (1) towards cute (0) with P(cute) = sin^2(k pi/16), certain after eight', () => {
+  const q = lab(['1']);
+  for (let k = 1; k <= 8; k += 1) {
+    q.apply('ry', [0], Math.PI / 8);
+    close(1 - q.snapshot().p1[0], Math.sin((k * Math.PI) / 16) ** 2, `after ${k} turns`);
+  }
+  assert.deepEqual(q.snapshot().definite, [0]);
+  // A look that comes out monster leaves it a plain 1 again: every turn is undone.
+  let r;
+  for (let seed = 1; !r || r.snapshot().definite[0] !== 1; seed += 1) {
+    r = lab(['1'], seed);
+    for (let k = 0; k < 4; k += 1) r.apply('ry', [0], Math.PI / 8);
+    r.measure(0, true);
+  }
+  assert.deepEqual(r.snapshot().definite, [1]);
+});

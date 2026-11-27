@@ -9,12 +9,12 @@ const SCREENS = ['title', 'pause', 'complete', 'over', 'win', 'error'];
 export function grabDom() {
   const ids = [
     'lab', 'viewport', 'game', 'overlay', 'toast', 'touch', 'prompt', 'dock-play', 'dock-terminal', 'term-title', 'term-ops',
-    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'note', 'opt-floor',
+    'term-status', 'term-close', 'hud-floor', 'hud-name', 'hud-lives', 'hud-torch', 'btn-restart', 'btn-pause', 'btn-sound', 'btn-menu', 'btn-reset', 'star-total', 'options', 'opt-code', 'btn-code', 'opt-code-status', 'note', 'opt-floor',
     'btn-start', 'btn-floors', 'title-floors', 'opt-lives', 'btn-resume',
     'btn-restart-2', 'btn-quit', 'complete-eyebrow', 'complete-h', 'complete-stars', 'complete-star-list', 'complete-takeaway',
     'complete-stats', 'btn-next', 'btn-replay', 'btn-retry', 'btn-over-quit', 'win-stars', 'win-stats', 'win-floors', 'btn-home', 'error-text',
     'btn-error-retry', 'circuit-labels', 'circuit-gates', 'circuit-readout', 'circuit-desc', 'stats', 'code', 'copy-code', 'probs', 'joint', 'floor-tag', 'goal', 'concept',
-    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand',
+    'gate-list', 'hints', 'hint-button', 'log', 'live', 'about', 'circuit-expand', 'dev', 'dev-circuit-right', 'dev-swap-delay', 'dev-swap-delay-text', 'pause-dev-slot', 'pause-keys',
   ];
   const dom = {};
   for (const id of ids) {
@@ -50,16 +50,58 @@ export function createUI(dom, handlers) {
   let screen = 'title';
   let toastLeft = 0;
   let terminal = null;
+  let passive = false; // a passive terminal (developer option): shown, but the game keeps the keys
+  // Developer options live on the title screen and move into the pause screen while it shows.
+  const devHome = { parent: dom.dev.parentElement, next: dom.dev.nextElementSibling };
+  // The pause screen repeats the title screen's list of controls.
+  dom.pauseKeys.appendChild(document.querySelector('#screen-title .keys').cloneNode(true));
 
   function focusLater(el) {
     if (el && el.focus) requestAnimationFrame(() => el.focus({ preventScroll: true }));
   }
 
+  // While a menu screen shows (any but the title, whose About links stay in reach), the rest
+  // of the page is inert: Tab and screen readers stay inside the screen, as in a dialog.
+  // Left alone: the live region that announces events, the page's heading, and the Main menu
+  // button (a way out from any of these screens, the cleared-floor one included).
+  // On the cleared-floor screen the instrument rack stays live too: its notes scroll and the
+  // circuit can be collapsed or expanded while you read.
+  // (When expanded, the circuit's panel is moved under the game, out of the rack.)
+  const rack = document.querySelector('.rack');
+  const circuitPanel = document.getElementById('circuit').closest('.module');
+  let rackLive = false;
+  const keep = (el) => el.hasAttribute('aria-live') || el.matches('h1') || el === dom.btnMenu || (rackLive && (el === rack || el === circuitPanel));
+  function shield(el, on) {
+    if (keep(el)) {
+      if (el.inert) el.inert = false;
+      return;
+    }
+    const holdsKept = el.querySelector('h1') || el.contains(dom.btnMenu) || (rackLive && el.contains(circuitPanel));
+    if (holdsKept) for (const child of el.children) shield(child, on);
+    else el.inert = on;
+  }
+
+  function setModal(on) {
+    for (let node = dom.overlay; node && node !== dom.lab; node = node.parentElement) {
+      for (const other of node.parentElement.children) if (other !== node) shield(other, on);
+    }
+  }
+
   function showScreen(name) {
     screen = name;
+    rackLive = name === 'complete';
+    setModal(!!name && name !== 'title');
     dom.overlay.hidden = !name;
     if (name) dom.toast.hidden = true;
     for (const s of SCREENS) dom[`screen_${s}`].hidden = s !== name;
+    // The Options and Developer options panels live on the title screen, and visit the pause screen.
+    if (name === 'pause') {
+      dom.pauseDevSlot.appendChild(dom.options);
+      dom.pauseDevSlot.appendChild(dom.dev);
+    } else if (name === 'title') {
+      devHome.parent.insertBefore(dom.dev, devHome.next);
+      devHome.parent.insertBefore(dom.options, dom.dev);
+    }
     if (name) {
       const first = dom[`screen_${name}`].querySelector('.primary:not(:disabled)') || dom[`screen_${name}`].querySelector('button:not(:disabled)');
       focusLater(first);
@@ -104,33 +146,68 @@ export function createUI(dom, handlers) {
 
   function opLabel(op) {
     if (op.gate === 'cx') return `${op.q[0]} → ${op.q[1]}`;
+    if (op.gate === 'cz') return `${op.q[0]} · ${op.q[1]}`;
+    if (op.gate === 'swap') return `${op.q[0]} ↔ ${op.q[1]}`;
+    if (op.gate === 'ry') return `${op.q[0]}, ${Math.round((op.angle / Math.PI) * 100) / 100 === 0.5 ? 'π/2' : `${(op.angle / Math.PI).toFixed(2)}π`}`;
     return op.q.join(', ');
   }
 
-  function openTerminal(term, carrying) {
+  // Options (passive terminal developer option):
+  //   passive  shown just by standing at the terminal; the game keeps the keys
+  //   numbers  each gate shows the number key that applies it
+  function openTerminal(term, carrying, { passive: asPassive = false, numbers = asPassive } = {}) {
     terminal = term;
+    passive = asPassive;
+    const keys = Math.min(term.ops.length, 9);
+    const range = keys > 1 ? `1 to ${keys}` : '1';
     dom.dockPlay.hidden = true;
     dom.dockTerminal.hidden = false;
+    dom.termClose.hidden = passive;
     const kind = term.box ? 'Box port' : term.port ? `${term.id} · dead terminal, canister port only` : `Terminal ${term.id}`;
-    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''} · flashlight lowered`;
+    dom.termTitle.textContent = `${kind}${term.sealed ? ` · holds sealed qubit ${term.sealed}` : ''}${passive ? '' : ' · flashlight lowered'}`;
     dom.termOps.innerHTML = term.ops
       .map((op, i) => {
         const info = GATE_INFO[op.gate];
         const locked = op.needsCanister && !carrying;
-        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : info.name;
+        const what = locked ? 'needs the canister' : op.gate === 'cx' ? 'control → target' : op.gate === 'cz' ? 'phase if both are 1' : op.gate === 'swap' ? 'trade places' : info.name;
         const on = op.gate === 'cx' ? `from ${op.q[0]} to ${op.q[1]}` : `on ${op.q.join(' and ')}`;
         return (
           `<button type="button" class="op-btn" data-op="${i}" data-locked="${locked ? 1 : 0}" title="${esc(info.text)}" aria-label="${esc(`${info.name} ${on}. ${locked ? 'Needs the canister. ' : ''}${info.text}`)}"${locked ? ' disabled' : ''}>` +
-          `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span></button>`
+          `<span class="op-gate">${esc(info.symbol)}</span><span class="op-target">${esc(opLabel(op))}</span><span class="op-hint">${esc(what)}</span>` +
+          `${numbers && i < 9 ? `<kbd class="op-key" aria-hidden="true">${i + 1}</kbd>` : ''}</button>`
         );
       })
       .join('');
-    setTerminalStatus('Pick a gate. Nothing is observed while you are at the terminal.', '');
+    if (passive && term.quick) {
+      setTerminalStatus('Press 1 or E, or click the gate. Then run: the cat comes for this terminal.', '');
+      return;
+    }
+    if (passive) {
+      setTerminalStatus(`Enter applies the highlighted gate. Q or E moves the highlight (also [ and ], or comma and full stop). Or press ${range}, or click a gate.`, '');
+      return;
+    }
+    setTerminalStatus(
+      numbers
+        ? `Pick a gate: arrow keys then Enter or Space, or press ${range}. Nothing is observed while you are at the terminal.`
+        : 'Pick a gate. Nothing is observed while you are at the terminal.',
+      ''
+    );
     focusLater(dom.termOps.querySelector('button:not(:disabled)') || dom.termClose);
+  }
+
+  // The gate Enter applies at a terminal, highlighted.
+  function setSelected(i) {
+    for (const b of dom.termOps.querySelectorAll('button')) {
+      const on = Number(b.dataset.op) === i;
+      b.classList.toggle('is-selected', on);
+      if (on) b.setAttribute('aria-current', 'true');
+      else b.removeAttribute('aria-current');
+    }
   }
 
   function closeTerminal() {
     terminal = null;
+    passive = false;
     dom.dockTerminal.hidden = true;
     dom.dockPlay.hidden = false;
     focusLater(dom.game);
@@ -146,7 +223,7 @@ export function createUI(dom, handlers) {
     const active = document.activeElement;
     if (busy) focusedOp = active && active.dataset ? active.dataset.op : undefined;
     for (const b of dom.termOps.querySelectorAll('button')) b.disabled = busy || b.dataset.locked === '1';
-    if (!busy && terminal) {
+    if (!busy && terminal && !passive) {
       const again = focusedOp !== undefined ? dom.termOps.querySelector(`button[data-op="${focusedOp}"]:not(:disabled)`) : null;
       const now = document.activeElement;
       if (again) again.focus({ preventScroll: true });
@@ -154,15 +231,16 @@ export function createUI(dom, handlers) {
     }
   }
 
-  function showComplete({ name, index, total, stars, of, earned, takeaway, stats, last }) {
-    dom.completeEyebrow.textContent = `Floor ${index + 1} of ${total} cleared`;
+  // `bonus`: { tag, more } for a bonus level (more: another bonus level follows), else null.
+  function showComplete({ name, index, total, stars, of, earned, takeaway, stats, last, bonus }) {
+    dom.completeEyebrow.textContent = bonus ? `${bonus.tag} cleared` : `Floor ${index + 1} of ${total} cleared`;
     dom.completeH.textContent = name;
     dom.completeStars.innerHTML = starsHtml(stars, of);
     dom.completeStars.setAttribute('aria-label', `${stars} of ${of} stars`);
     dom.completeStarList.innerHTML = earned.map((e) => `<li class="${e.got ? '' : 'missed'}">${esc(e.text)}</li>`).join('');
     dom.completeTakeaway.textContent = takeaway;
     dom.completeStats.textContent = stats;
-    dom.btnNext.textContent = last ? 'Up to the terrace' : 'Next floor';
+    dom.btnNext.textContent = bonus ? (bonus.more ? bonus.next || 'Next bonus level' : 'Back to title') : last ? 'Up to the terrace' : 'Next floor';
     showScreen('complete');
   }
 
@@ -175,7 +253,8 @@ export function createUI(dom, handlers) {
 
   // -- wiring ---------------------------------------------------------------
 
-  const instruments = Array.from(dom.about.parentElement.children).filter((el) => el !== dom.about);
+  // Every instrument module, wherever it is now (the circuit may sit under the game).
+  const instruments = () => Array.from(document.querySelectorAll('.lab .module')).filter((el) => el !== dom.about);
   // A project link shows its own address as text. Until an address is filled in
   // (index.html), the line says so instead of offering a link that goes nowhere.
   for (const link of dom.about.querySelectorAll('a')) {
@@ -202,13 +281,63 @@ export function createUI(dom, handlers) {
   });
   click(dom.btnErrorRetry, handlers.errorRetry);
   click(dom.btnSound, handlers.sound);
+  click(dom.btnMenu, handlers.menu);
   click(dom.hintButton, handlers.hint);
   click(dom.termClose, handlers.closeTerminal);
   dom.termOps.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-op]');
     if (btn && !btn.disabled) handlers.applyOp(Number(btn.dataset.op));
+    if (passive && ev.detail > 0) dom.game.focus({ preventScroll: true }); // a click hands the keys back to the game
   });
-  dom.optLives.addEventListener('change', () => handlers.option('lives', dom.optLives.checked));
+  const livesRadios = Array.from(document.querySelectorAll('input[name="opt-lives"]'));
+  for (const radio of livesRadios) radio.addEventListener('change', () => radio.checked && handlers.option('lives', radio.value === 'on'));
+  // Developer options: each control is one entry of the game's `dev` settings.
+  const devSwitches = {
+    circuitRight: dom.devCircuitRight,
+  };
+  const panelRadios = Array.from(document.querySelectorAll('input[name="dev-panel"]'));
+  for (const [name, input] of Object.entries(devSwitches)) input.addEventListener('change', () => handlers.dev(name, input.checked));
+  for (const radio of panelRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('panel', radio.value));
+  const torchRadios = Array.from(document.querySelectorAll('input[name="opt-torch"]'));
+  for (const radio of torchRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('torchMode', radio.value));
+  const hintRadios = Array.from(document.querySelectorAll('input[name="opt-hints"]'));
+  for (const radio of hintRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('autoHints', radio.value === 'on'));
+  // Unlock Code: Enter (the button, or the key in the box) tries it.
+  const tryCode = () => {
+    const ok = handlers.code(dom.optCode.value);
+    dom.optCodeStatus.textContent = ok ? 'All levels unlocked.' : 'That code does not work.';
+    if (ok) dom.optCode.value = '';
+  };
+  dom.btnCode.addEventListener('click', tryCode);
+  dom.optCode.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      tryCode();
+    }
+  });
+  const mouseRadios = Array.from(document.querySelectorAll('input[name="opt-mouse"]'));
+  for (const radio of mouseRadios) radio.addEventListener('change', () => radio.checked && handlers.dev('mouseAim', radio.value === 'on'));
+  dom.devSwapDelay.addEventListener('input', () => handlers.dev('swapDelay', Number(dom.devSwapDelay.value)));
+  // Reset Progress: a second press within a few seconds confirms it.
+  let resetArmed = null;
+  dom.btnReset.addEventListener('click', () => {
+    if (resetArmed) {
+      clearTimeout(resetArmed);
+      resetArmed = null;
+      dom.btnReset.textContent = 'Press to Reset';
+      dom.btnReset.classList.remove('armed');
+      handlers.reset();
+      return;
+    }
+    dom.btnReset.textContent = 'Press again to erase all stars and times';
+    dom.btnReset.classList.add('armed');
+    announce('Press Reset Progress again to erase all stars and best times.');
+    resetArmed = setTimeout(() => {
+      resetArmed = null;
+      dom.btnReset.textContent = 'Press to Reset';
+      dom.btnReset.classList.remove('armed');
+    }, 4000);
+  });
   dom.btnFloors.addEventListener('click', () => {
     const open = dom.titleFloors.hidden;
     dom.titleFloors.hidden = !open;
@@ -266,32 +395,76 @@ export function createUI(dom, handlers) {
     setTerminalStatus,
     setTerminalBusy,
     showComplete,
+    setSelected,
     showWin,
     showError(text) {
       dom.errorText.textContent = text;
       showScreen('error');
     },
+    // Story levels give hints over the intercom, so the panel's hint button and list stand down.
+    setHintsShown(on) {
+      dom.hintButton.hidden = !on;
+      dom.hints.hidden = !on;
+    },
     setPlaying(playing) {
       dom.btnPause.disabled = !playing;
       dom.btnRestart.disabled = !playing;
     },
+    setMenuButton(enabled) {
+      dom.btnMenu.disabled = !enabled;
+    },
+    setDev(dev) {
+      for (const [name, input] of Object.entries(devSwitches)) input.checked = !!dev[name];
+      for (const radio of panelRadios) radio.checked = radio.value === dev.panel;
+      for (const radio of torchRadios) radio.checked = radio.value === dev.torchMode;
+      for (const radio of mouseRadios) radio.checked = (radio.value === 'on') === !!dev.mouseAim;
+      for (const radio of hintRadios) radio.checked = (radio.value === 'on') === !!dev.autoHints;
+      dom.devSwapDelay.value = String(dev.swapDelay);
+      dom.devSwapDelayText.textContent = `${dev.swapDelay} s`;
+      dom.devSwapDelay.setAttribute('aria-valuetext', `${dev.swapDelay} seconds`);
+      dom.lab.classList.toggle('panel-bottom', dev.panel === 'bottom');
+    },
     // The title screen swaps the instruments in the rack for a short "about" panel.
     setAbout(on) {
-      for (const el of instruments) el.hidden = on;
+      for (const el of instruments()) el.hidden = on;
       dom.about.hidden = !on;
     },
     setSound(on) {
       dom.btnSound.setAttribute('aria-pressed', on ? 'true' : 'false');
     },
     setOptions({ lives, floor }) {
-      dom.optLives.checked = lives;
+      for (const radio of livesRadios) radio.checked = (radio.value === 'on') === !!lives;
       dom.optFloor.value = String(floor);
     },
-    setFloors(names, ending) {
-      dom.optFloor.innerHTML = [...names, ending].map((name, i) => `<option value="${i}">${esc(name)}</option>`).join('');
-      const buttons = names.map((name, i) => `<button type="button" class="key-btn" data-floor="${i}">${esc(name)}</button>`).join('');
-      dom.winFloors.innerHTML = buttons;
-      dom.titleFloors.innerHTML = buttons;
+    // floors and bonus: [{ name, index, got, of, best }] (got of `of` stars, best time in seconds
+    // or null); ending: the terrace's name. Each level shows its stars and best time.
+    setFloors(floors, ending, bonus = [], story = []) {
+      const time = (secs) => `${Math.floor(secs / 60)}:${String(Math.round(secs) % 60).padStart(2, '0')}`;
+      const said = (f) => `${f.name}. ${f.got} of ${f.of} stars.${f.best != null ? ` Best time ${time(f.best)}.` : ' Not cleared yet.'}`;
+      const plain = (f) => `${f.name}  ${'★'.repeat(f.got)}${'☆'.repeat(f.of - f.got)}${f.best != null ? `  ${time(f.best)}` : ''}`;
+      const option = (f) => `<option value="${f.index}"${f.locked ? ' disabled' : ''}>${esc(f.locked ? `${f.name}  (locked)` : plain(f))}</option>`;
+      dom.optFloor.innerHTML =
+        floors.map(option).join('') +
+        `<option value="${floors.length}">${esc(ending)}</option>` +
+        (bonus.length ? `<optgroup label="Bonus levels">${bonus.map(option).join('')}</optgroup>` : '') +
+        (story.length ? `<optgroup label="Story mode">${story.map(option).join('')}</optgroup>` : '');
+      // A locked story level shows a lock and cannot be chosen (it opens when the one before is cleared).
+      const button = (f, cls) =>
+        `<button type="button" class="key-btn floor-btn${cls}${f.locked ? ' locked' : ''}" data-floor="${f.index}"${f.locked ? ' disabled' : ''} aria-label="${esc(f.locked ? `${f.name}. Locked: clear the level before it.` : said(f))}">` +
+        `<span class="floor-name">${esc(f.name)}</span>` +
+        (f.locked
+          ? '<span class="floor-lock" aria-hidden="true">🔒</span>'
+          : `<span class="floor-stars" aria-hidden="true">${starsHtml(f.got, f.of)}</span><span class="floor-best" aria-hidden="true">${f.best != null ? time(f.best) : ''}</span>`) +
+        '</button>';
+      const buttons = floors.map((f) => button(f, '')).join('');
+      const extra = bonus.length ? `<p class="bonus-head">Bonus levels</p>${bonus.map((b) => button(b, ' bonus')).join('')}` : '';
+      const tales = story.length ? `<p class="bonus-head">Story mode</p>${story.map((b) => button(b, ' bonus story')).join('')}` : '';
+      dom.winFloors.innerHTML = buttons + extra + tales;
+      dom.titleFloors.innerHTML = buttons + extra + tales;
+    },
+    setStarTotal(got, of) {
+      dom.starTotal.innerHTML = `${starsHtml(Math.min(got, 1), 1)} <b>${got}</b> of ${of} stars`;
+      dom.starTotal.setAttribute('aria-label', `${got} of ${of} stars earned`);
     },
     setNote(text) {
       dom.note.hidden = !text;

@@ -13,6 +13,7 @@
 // Only the module syntax the game uses is supported: `import { a, b } from './x.js'`
 // and `export const|let|function|class name`. Anything else stops the build.
 
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -93,11 +94,17 @@ ${bundle(modules)}`;
   const entry = /^<script type="module" src="main\.js"><\/script>\n/m;
   if (!link.test(page) || !entry.test(page)) fail('index.html no longer links main.css and main.js the way this script expects');
   const style = `<style>\n/* ${'='.repeat(74)}\n   main.css\n   ${'='.repeat(74)} */\n${css}\n</style>\n`;
+  // The content security policy lets exactly this inline script run, by its hash.
+  const body = `\n${script}`;
+  const hash = createHash('sha256').update(body).digest('base64');
+  const csp = /script-src 'self'/;
+  if (!csp.test(page)) fail("index.html's content security policy no longer has script-src 'self'");
   // A classic script at the end of <body>, so the page exists before it runs (as a module would).
   return page
+    .replace(csp, () => `script-src 'sha256-${hash}'`)
     .replace(link, () => style)
     .replace(entry, '')
-    .replace(/<\/body>/, () => `<script>\n${script}</script>\n</body>`);
+    .replace(/<\/body>/, () => `<script>${body}</script>\n</body>`);
 }
 
 const html = build();

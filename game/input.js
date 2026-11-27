@@ -7,13 +7,18 @@ const KEYS = {
   jump: ['Space', 'ArrowUp', 'KeyW'],
   tiltUp: ['KeyI'],
   tiltDown: ['KeyK'],
-  use: ['KeyE', 'Enter'],
+  use: ['KeyE'], // and, at a terminal, moves the gate highlight right
+  apply: ['Enter', 'NumpadEnter'], // at a terminal, applies the highlighted gate; elsewhere, as E
+  selLeft: ['KeyQ', 'BracketLeft', 'Comma'], // q Q [ { , <
+  selRight: ['BracketRight', 'Period'], // ] } . > (and E)
   torch: ['KeyF'],
   pause: ['KeyP', 'Escape'],
   restart: ['KeyR'],
   mute: ['KeyM'],
   hint: ['KeyH'],
 };
+// 1 to 9 apply a terminal's gates directly.
+for (let k = 1; k <= 9; k += 1) KEYS[`op${k}`] = [`Digit${k}`, `Numpad${k}`];
 
 const ACTION_OF = {};
 for (const action of Object.keys(KEYS)) for (const code of KEYS[action]) ACTION_OF[code] = action;
@@ -21,7 +26,8 @@ for (const action of Object.keys(KEYS)) for (const code of KEYS[action]) ACTION_
 export function createInput(canvas, world) {
   const held = {}; // action -> true while down
   const pressed = {};
-  const pointer = { x: 0, y: 0, active: false, moved: false };
+  // inside: whether the pointer is over the game picture (where the platforms are).
+  const pointer = { x: 0, y: 0, active: false, moved: false, inside: false };
   let enabled = true;
 
   function isTyping(target) {
@@ -59,7 +65,14 @@ export function createInput(canvas, world) {
   window.addEventListener('keydown', keydown);
   window.addEventListener('keyup', keyup);
   window.addEventListener('blur', blur);
-  canvas.addEventListener('pointermove', toWorld);
+  canvas.addEventListener('pointermove', (ev) => {
+    pointer.inside = true;
+    toWorld(ev);
+  });
+  canvas.addEventListener('pointerleave', () => {
+    pointer.inside = false;
+    pointer.moved = true;
+  });
   canvas.addEventListener('pointerdown', (ev) => {
     toWorld(ev);
     if (canvas.focus) canvas.focus({ preventScroll: true });

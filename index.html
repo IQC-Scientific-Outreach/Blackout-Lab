@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Blackout Lab</title>
 <meta name="description" content="A 2D platformer where the level is a quantum circuit.">
+<!-- Only this page's own scripts run, and the only things fetched from elsewhere are the fonts. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&amp;family=Big+Shoulders+Display:wght@700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap">
 <link rel="stylesheet" href="main.css">
 <script type="module" src="main.js"></script>
 </head>
@@ -22,6 +27,7 @@
       <button type="button" class="key-btn" id="btn-restart" disabled>Restart floor <kbd>R</kbd></button>
       <button type="button" class="key-btn" id="btn-pause" disabled>Pause <kbd>P</kbd></button>
       <button type="button" class="key-btn" id="btn-sound" aria-pressed="true">Sound <kbd>M</kbd></button>
+      <button type="button" class="key-btn" id="btn-menu" disabled>Main menu</button>
     </div>
   </header>
 
@@ -45,39 +51,109 @@
                 <button type="button" class="primary" id="btn-start" disabled>Waiting for the lab</button>
                 <button type="button" class="key-btn" id="btn-floors" aria-expanded="false" aria-controls="title-floors" disabled>Skip to floor</button>
               </div>
+              <p class="star-total" id="star-total" aria-live="off"></p>
               <div class="replay-floors" id="title-floors" hidden></div>
               <div class="boot" id="boot">
-                <p class="boot-line">The physics is ideal quantum mechanics, worked out exactly in your browser: no
-                  install, no quantum computer, no noise.</p>
+                <p class="boot-line">Developed by Dev Chauhan, Yusuf Ahmed, and Ayesha Iqbal</p>
               </div>
+              <details class="dev" id="options">
+                <summary>Options</summary>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-torch-name">
+                  <b class="opt-name" id="opt-torch-name">Flashlight Switch</b>
+                  <span class="opt-choices">
+                    <label title="The flashlight shines while F is held down."><input type="radio" name="opt-torch" id="opt-torch-hold" value="hold" checked> Hold F</label>
+                    <label title="Each press of F switches the flashlight on, or off."><input type="radio" name="opt-torch" id="opt-torch-switch" value="switch"> Press F</label>
+                  </span>
+                </div>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-mouse-name">
+                  <b class="opt-name" id="opt-mouse-name">Mouse Aim</b>
+                  <span class="opt-choices">
+                    <label title="The flashlight points straight ahead, tilted with I and K."><input type="radio" name="opt-mouse" id="opt-mouse-off" value="off" checked> Off</label>
+                    <label title="The mouse also aims the flashlight, while the pointer is over the game."><input type="radio" name="opt-mouse" id="opt-mouse-on" value="on"> On</label>
+                  </span>
+                </div>
+                <div class="opt-row" role="radiogroup" aria-labelledby="opt-hints-name">
+                  <b class="opt-name" id="opt-hints-name">Automatic Hints</b>
+                  <span class="opt-choices">
+                    <label title="The Professor speaks when you press H at an intercom."><input type="radio" name="opt-hints" id="opt-hints-off" value="off" checked> Off</label>
+                    <label title="The Professor speaks by himself at each intercom the first time you reach it."><input type="radio" name="opt-hints" id="opt-hints-on" value="on"> On</label>
+                  </span>
+                </div>
+                <div class="opt-row">
+                  <label class="opt-name" for="opt-code">Unlock Code</label>
+                  <span class="opt-choices">
+                    <input type="text" id="opt-code" class="opt-code" autocomplete="off" spellcheck="false" maxlength="12" aria-describedby="opt-code-status">
+                    <button type="button" class="key-btn mini" id="btn-code">Enter</button>
+                    <span class="dev-hint" id="opt-code-status" aria-live="polite"></span>
+                  </span>
+                </div>
+                <div class="opt-row">
+                  <b class="opt-name" id="opt-reset-name">Reset Progress</b>
+                  <span class="opt-choices"><button type="button" class="key-btn mini" id="btn-reset" aria-describedby="opt-reset-name">Press to Reset</button></span>
+                </div>
+              </details>
+              <details class="dev" id="dev">
+                <summary>Developer options</summary>
+                <label class="dev-opt dev-range" title="How long SWAP waits, with arrows showing where the platforms will go, before they set off.">
+                  <b>Swap delay</b> <input type="range" id="dev-swap-delay" min="1" max="5" step="1" value="3">
+                  <span class="dev-hint" id="dev-swap-delay-text">3 s</span></label>
+                <div class="dev-opt" role="radiogroup" aria-labelledby="dev-panel-name">
+                  <b id="dev-panel-name">Panel position</b>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-right" value="right" checked> Right</label>
+                  <label><input type="radio" name="dev-panel" id="dev-panel-bottom" value="bottom"> Bottom</label>
+                </div>
+                <label class="dev-opt" title="Every new step in the circuit gets its own column, after everything before it.">
+                  <input type="checkbox" role="switch" id="dev-circuit-right"> <b>Circuit always adds to the right</b></label>
+              </details>
             </div>
             <div class="title-side">
               <h2>Controls</h2>
               <dl class="keys">
                 <div><dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd> or <kbd>A</kbd> <kbd>D</kbd></dt><dd>Walk</dd></div>
                 <div><dt><kbd>Space</kbd> or <kbd>W</kbd></dt><dd>Jump</dd></div>
-                <div><dt>Mouse, or <kbd>I</kbd> <kbd>K</kbd></dt><dd>Aim the flashlight</dd></div>
-                <div><dt><kbd>F</kbd></dt><dd>Flashlight on / off</dd></div>
-                <div><dt><kbd>E</kbd></dt><dd>Use a terminal, talk, open a door</dd></div>
+                <div><dt><kbd>F</kbd></dt><dd>Flashlight (Hold F or Press F: see Options)</dd></div>
+                <div><dt><kbd>I</kbd> <kbd>K</kbd>, or the mouse (Mouse Aim)</dt><dd>Aim the flashlight</dd></div>
+                <div><dt><kbd>Enter</kbd></dt><dd>Apply the highlighted gate at a terminal</dd></div>
+                <div><dt><kbd>Q</kbd> <kbd>E</kbd></dt><dd>Move the highlight (also <kbd>[</kbd> <kbd>]</kbd>, <kbd>,</kbd> <kbd>.</kbd>)</dd></div>
+                <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>&hellip;</dt><dd>Apply a gate directly</dd></div>
+                <div><dt><kbd>E</kbd></dt><dd>Talk, open a door, use a port</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>Show a hint</dd></div>
                 <div><dt><kbd>P</kbd></dt><dd>Pause and options</dd></div>
               </dl>
-              <p class="fine">Fall into the gap and you lose a life and the floor resets. Lose all three on one
-                floor and you start again from floor 1. There is no timer. Unlimited lives are in the pause menu.</p>
+              <p class="fine">Fall into the gap and you lose a life, but every qubit stays as you left it. Lose all
+                three on one floor and you start again from floor 1. Stars are for the fewest gates and for solving
+                without luck, never for speed. Unlimited lives are in the pause menu.</p>
             </div>
           </section>
 
           <section class="screen screen-card" id="screen-pause" aria-labelledby="pause-h" hidden>
             <h2 id="pause-h">Paused</h2>
-            <fieldset class="options">
-              <legend>Options</legend>
-              <label class="opt" for="opt-lives"><input type="checkbox" id="opt-lives"> Unlimited lives</label>
-              <label class="opt" for="opt-floor">Skip to floor <select id="opt-floor"></select></label>
-            </fieldset>
-            <div class="title-actions">
-              <button type="button" class="primary" id="btn-resume">Resume</button>
-              <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
-              <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+            <div class="pause-cols">
+              <div class="pause-main">
+                <fieldset class="options">
+                  <legend>This Game</legend>
+                  <div class="opt-row" role="radiogroup" aria-labelledby="opt-lives-name">
+                    <b class="opt-name" id="opt-lives-name">Unlimited Lives</b>
+                    <span class="opt-choices">
+                      <label><input type="radio" name="opt-lives" id="opt-lives-off" value="off" checked> Off</label>
+                      <label><input type="radio" name="opt-lives" id="opt-lives" value="on"> On</label>
+                    </span>
+                  </div>
+                  <div class="opt-row">
+                    <label class="opt-name" for="opt-floor">Skip to Floor</label>
+                    <span class="opt-choices"><select id="opt-floor"></select></span>
+                  </div>
+                </fieldset>
+                <div id="pause-dev-slot"></div>
+                <div class="title-actions">
+                  <button type="button" class="primary" id="btn-resume">Resume</button>
+                  <button type="button" class="key-btn" id="btn-restart-2">Restart floor</button>
+                  <button type="button" class="key-btn" id="btn-quit">Back to title</button>
+                </div>
+              </div>
+              <div class="pause-keys" id="pause-keys">
+                <h3 class="plate plate-small">Controls</h3>
+              </div>
             </div>
           </section>
 
@@ -171,10 +247,28 @@
             <li><span>View GitHub Repository:</span> <a href="" target="_blank" rel="noopener noreferrer"></a></li>
           </ul>
         </section>
+        <section class="module goal-module" aria-labelledby="floor-tag">
+          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
+          <p class="goal" id="goal"></p>
+        </section>
+        <section class="module is-off" id="canister-module" aria-labelledby="canister-h">
+          <h2 class="plate" id="canister-h">Canister qubit</h2>
+          <div class="canister-view" id="canister-view" role="img" aria-label="The canister you are holding">
+            <canvas id="canister-canvas" aria-hidden="true"></canvas>
+            <p class="canister-state" id="canister-state" aria-hidden="true"></p>
+            <p class="canister-state" id="cat-state" aria-hidden="true"></p>
+          </div>
+        </section>
+        <section class="module is-off" id="lock-module" aria-labelledby="lock-h">
+          <h2 class="plate" id="lock-h">Exit lock</h2>
+          <div class="canister-view lock-view">
+            <canvas id="lock-canvas" role="img" aria-label="The exit lock, magnified"></canvas>
+          </div>
+        </section>
         <section class="module" aria-labelledby="mod-circuit-h">
           <div class="module-head">
             <h2 class="plate" id="mod-circuit-h">Circuit</h2>
-            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="false">Expand</button>
+            <button type="button" class="key-btn mini" id="circuit-expand" aria-expanded="true">Collapse</button>
           </div>
           <div class="circuit" id="circuit">
             <div class="circuit-fixed" id="circuit-labels"></div>
@@ -183,11 +277,6 @@
           </div>
           <div class="sr-only" id="circuit-desc"></div>
           <p class="fine" id="stats">0 gates</p>
-          <details class="code-box">
-            <summary>This floor as Qiskit code</summary>
-            <pre id="code" tabindex="0"></pre>
-            <button type="button" class="key-btn" id="copy-code">Copy code</button>
-          </details>
         </section>
 
         <section class="module" aria-labelledby="mod-probs-h">
@@ -200,14 +289,19 @@
 
         <section class="module" aria-labelledby="mod-notes-h">
           <h2 class="plate" id="mod-notes-h">Lab notes</h2>
-          <p class="floor-tag" id="floor-tag">Floor 1 of 7</p>
-          <p class="goal" id="goal"></p>
           <p class="concept" id="concept"></p>
           <ol class="hints" id="hints"></ol>
           <button type="button" class="key-btn" id="hint-button">Show a hint (H)</button>
           <ul class="gate-list" id="gate-list"></ul>
           <h3 class="plate plate-small">Event log</h3>
           <ul class="log" id="log"></ul>
+        </section>
+        <section class="module" id="code-module" aria-label="Qiskit code">
+          <details class="code-box">
+            <summary>This floor as Qiskit code</summary>
+            <pre id="code" tabindex="0"></pre>
+            <button type="button" class="key-btn" id="copy-code">Copy code</button>
+          </details>
         </section>
       </div>
     </aside>

@@ -5,19 +5,22 @@
 // not match its lock, a floor the engine cannot start.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVELS, GATE_INFO, roomsOf } from '../game/levels.js';
+import { LEVELS, BONUS_LEVELS, BEAST, STORY_LEVELS, GATE_INFO, ROLE_NAME, ROLE_WORDS, roomsOf } from '../game/levels.js';
+import { LIGHT_KINDS } from '../game/geometry.js';
 import { Lab } from '../game/quantum.js';
 
-const ROLES = ['platform', 'canister', 'sealed', 'box', 'door'];
+const ROLES = ['platform', 'canister', 'sealed', 'box', 'door', 'beast'];
 
-for (const [index, level] of LEVELS.entries()) {
-  test(`floor ${index + 1}: ${level.name}`, () => {
+const ALL = [...LEVELS.map((level, i) => [`floor ${i + 1}`, level]), ...BONUS_LEVELS.map((level, i) => [`bonus level ${i + 1}`, level]), ['bonus level 7', BEAST], ...STORY_LEVELS.map((level, i) => [`story level ${i}`, level])];
+
+for (const [where0, level] of ALL) {
+  test(`${where0}: ${level.name}`, () => {
     const ids = level.qubits.map((q) => q.id);
     const known = (id, where) => assert.ok(ids.includes(id), `${where} uses qubit ${id}, which is not in this floor's qubits`);
     const gateOps = (ops, where) => {
       for (const op of ops || []) {
         assert.ok(op.gate in GATE_INFO, `${where}: unknown gate ${op.gate}`);
-        if (op.gate === 'cx') assert.equal(op.q.length, 2, `${where}: cx needs [control, target]`);
+        if (['cx', 'cz', 'swap'].includes(op.gate)) assert.equal(op.q.length, 2, `${where}: ${op.gate} needs two qubits`);
         else if (op.gate !== 'measure') assert.equal(op.q.length, 1, `${where}: ${op.gate} acts on one qubit`);
         op.q.forEach((id) => known(id, where));
       }
@@ -33,9 +36,31 @@ for (const [index, level] of LEVELS.entries()) {
       for (const p of room.platforms || []) {
         known(p.q, where('platform'));
         assert.ok([0, 1].includes(p.need), where(`platform ${p.q}: need must be 0 or 1`));
+        if (p.axis === 'x') assert.ok([p.x0, p.x1, p.y].every(Number.isFinite), where(`sideways platform ${p.q} needs x0, x1 and y`));
+        else assert.ok([p.x, p.y0, p.y1].every(Number.isFinite), where(`platform ${p.q} needs x, y0 and y1`));
       }
-      for (const t of room.terminals || []) gateOps(t.ops, where(`terminal ${t.id}`));
+      for (const light of room.lights || []) {
+        assert.ok(light.kind in LIGHT_KINDS, where(`unknown light kind ${light.kind}`));
+        assert.ok([light.x, light.y, light.angle, light.spread, light.range].every(Number.isFinite), where('a light needs x, y, angle, spread and range'));
+      }
+      for (const c of room.cavities || []) {
+        assert.ok([c.x, c.w, c.y, c.to, c.rate].every(Number.isFinite) && ['up', 'down'].includes(c.dir), where('a cavity needs x, w, y, to, rate and dir up or down'));
+        assert.equal(c.dir === 'up', c.to < c.y, where('a cavity runs from its emitting cap (y) towards its far cap (to)'));
+      }
+      for (const t of room.terminals || []) {
+        gateOps(t.ops, where(`terminal ${t.id}`));
+        const all = [...t.ops, ...(t.broken ? t.broken.ops : [])];
+        for (const op of all) if (op.gate === 'ry') assert.ok(Number.isFinite(op.angle), where(`terminal ${t.id}: ry needs an angle`));
+        for (const op of all) if ('delay' in op) assert.ok(op.gate === 'swap' && Number.isFinite(op.delay) && op.delay >= 0, where(`terminal ${t.id}: only a swap takes a delay, of 0 seconds or more`));
+        if (t.broken) {
+          gateOps(t.broken.ops, where(`broken terminal ${t.id}`));
+          assert.equal(t.ops.length, 0, where(`broken terminal ${t.id} cannot offer gates as well`));
+          assert.ok(t.broken.ops.length && t.broken.every > 0, where(`broken terminal ${t.id} needs ops and a period, every > 0`));
+          assert.ok(t.broken.ops.every((op) => op.gate !== 'measure'), where(`broken terminal ${t.id}: gates only`));
+        }
+      }
       if (room.canister) known(room.canister.q, where('canister'));
+      if (room.battery && 'range' in room.battery) assert.ok(room.battery.range > 0, where('battery range must be positive'));
       if (room.door) {
         const { key, lock } = room.door;
         lock.forEach((id) => known(id, where('door lock')));
@@ -49,5 +74,38 @@ for (const [index, level] of LEVELS.entries()) {
     const prep = (level.prep || []).map((op) => ({ gate: op.gate, qubits: op.q.map((id) => index[id]) }));
     const snap = new Lab(level.qubits.map((q) => ({ id: q.id, init: q.init })), { prep }).snapshot();
     assert.deepEqual(snap.labels, ids);
+  });
+}
+
+test('bonus level 7: one beast qubit, starting as a monster, and two quick RY(pi/8) terminals', () => {
+  assert.deepEqual(BEAST.qubits, [{ id: 'CAT', init: '1', role: 'beast' }]);
+  assert.ok(ROLE_NAME.beast && ROLE_WORDS.beast.length === 2);
+  assert.equal(BEAST.terminals.length, 2);
+  for (const t of BEAST.terminals) {
+    assert.ok(t.quick, `${t.id} is used with one press of E`);
+    assert.deepEqual(t.ops.map((op) => [op.gate, op.angle]), [['ry', Math.PI / 8]]);
+  }
+  assert.ok(BEAST.terminals[0].x < BEAST.beast.head.x && BEAST.terminals[1].x > BEAST.beast.head.x, 'one terminal on each side of the roof');
+  // Eight turns make it certainly cute, as the level says.
+  assert.equal(BEAST.shortest, Math.round(Math.PI / BEAST.terminals[0].ops[0].angle));
+});
+
+for (const [i, level] of STORY_LEVELS.entries()) {
+  test(`story level ${i}: ${level.name} has its title, intercoms and blackout in order`, () => {
+    assert.ok(level.story && Array.isArray(level.title) && level.title.length, 'a story level has a title for its title card');
+    for (const room of roomsOf(level)) {
+      const ids = (room.intercoms || []).map((ic) => ic.id);
+      assert.equal(new Set(ids).size, ids.length, 'intercom ids must be unique');
+      for (const ic of room.intercoms || []) {
+        assert.ok([ic.x, ic.y].every(Number.isFinite), `intercom ${ic.id} needs x and y`);
+        assert.ok(Array.isArray(ic.lines) && ic.lines.length && ic.lines.every((l) => typeof l === 'string' && l.length), `intercom ${ic.id} needs lines`);
+        assert.ok(room.solids.some((s) => ic.x >= s.x && ic.x <= s.x + s.w && Math.abs(s.y - ic.y) < 1), `intercom ${ic.id} should stand over a surface`);
+        if (ic.zone) assert.ok(ic.zone.length === 2 && ic.zone[0] < ic.zone[1], `intercom ${ic.id}: zone is [x0, x1]`);
+      }
+      if (level.blackout) {
+        assert.ok(ids.includes(level.blackout.from), 'the blackout speaks through one of the intercoms');
+        assert.ok(room.door && room.door.key, 'a blackout follows the exit unlocking, so the exit needs a key');
+      }
+    }
   });
 }

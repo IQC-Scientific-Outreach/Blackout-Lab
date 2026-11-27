@@ -1740,6 +1740,9 @@ async function main() {
     if (Math.abs(pl.y + 32 - C.y) > 2) throw new Error('the player should ride C across');
     await jumpTo(g.room.solids[1], C.x + 10);
     await bot.until(() => g.intercom && g.intercom.box.id === 'I3', 2000, 'the lock message');
+    // The landing is reached from the right, so its intercom stands to the right of T3, met first.
+    const I3 = g.room.intercoms[2];
+    if (!(I3.x > g.room.terminals[2].x) || I3.term !== 'T3') throw new Error('the landing intercom should stand just right of T3');
     await bot.tap('KeyH');
     out.push('X raised A, SWAP carried the player across on C, onto the stair landing (real jumps)');
     await bot.terminal('T3', [1]);

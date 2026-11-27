@@ -540,8 +540,9 @@ export const BEAST = {
 //   events     the Professor's answers to what happens: see the story level that uses them
 //   intercoms  { id, x, y, lines, auto?, zone?, then? }: a speaker box on the wall at x, over the surface
 //              at y. Near it, H calls the Professor, who says `lines`, one radio bubble each.
-//              Put it just left of a terminal (within 50 px, on its surface) and H also calls him
-//              from anywhere the terminal can be used: left, so players try it before the terminal.
+//              Put it just before a terminal, on the side the player walks in from (usually the left;
+//              the right on the lobby's landing), within 50 px on its surface, so players meet it
+//              first; H then also calls him from anywhere the terminal can be used.
 //              auto: he speaks by himself the first time the player is in `zone` ([x0, x1] on that
 //              surface; within 60 px of the box if not given). With Automatic Hints on (Options),
 //              every intercom does that. then: { at, lines }: when the player first stands at
@@ -594,7 +595,7 @@ export const STORY_LEVELS = [
         then: { at: 'T1', lines: ["Use the terminal to flip the platform's state with an X gate. Stand in front of it and press 1 or Enter to apply the gate."] },
       },
       { id: 'I2', x: 605, y: 300, auto: true, zone: [455, 960], lines: ['Oh dear, that is a long jump. Try swapping these two platforms and jumping on while they move.'] },
-      { id: 'I3', x: 25, y: 170, auto: true, zone: [0, 260], lines: ['Looks like it is locked, perhaps if you use the terminal to change the code to "1" it will open?'] },
+      { id: 'I3', x: 95, y: 170, auto: true, zone: [0, 260], lines: ['Looks like it is locked, perhaps if you use the terminal to change the code to "1" it will open?'] },
     ],
     blackout: {
       from: 'I3',
